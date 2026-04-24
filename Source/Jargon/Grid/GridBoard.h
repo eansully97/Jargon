@@ -38,6 +38,9 @@ public:
 	TArray<AGridTile*> BuildPath(AGridTile* StartTile, AGridTile* EndTile) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Grid")
+	TArray<AGridTile*> GetTilesWithinRadius(AGridTile* CenterTile, int32 Radius) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Grid")
 	void ClearHighlights();
 
 	UFUNCTION(BlueprintCallable, Category = "Grid")

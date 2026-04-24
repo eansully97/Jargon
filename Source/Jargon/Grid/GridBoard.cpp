@@ -295,6 +295,46 @@ TArray<AGridTile*> AGridBoard::BuildPath(AGridTile* StartTile, AGridTile* EndTil
 	return Path;
 }
 
+TArray<AGridTile*> AGridBoard::GetTilesWithinRadius(AGridTile* CenterTile, int32 Radius) const
+{
+	TArray<AGridTile*> TilesInRadius;
+
+	if (!CenterTile || Radius < 0)
+	{
+		return TilesInRadius;
+	}
+
+	const FIntPoint CenterCoord = CenterTile->GetCoord();
+
+	for (int32 X = CenterCoord.X - Radius; X <= CenterCoord.X + Radius; ++X)
+	{
+		for (int32 Y = CenterCoord.Y - Radius; Y <= CenterCoord.Y + Radius; ++Y)
+		{
+			const FIntPoint CandidateCoord(X, Y);
+			if (!IsCoordValid(CandidateCoord))
+			{
+				continue;
+			}
+
+			const int32 ManhattanDistance =
+				FMath::Abs(CandidateCoord.X - CenterCoord.X) +
+				FMath::Abs(CandidateCoord.Y - CenterCoord.Y);
+
+			if (ManhattanDistance > Radius)
+			{
+				continue;
+			}
+
+			if (AGridTile* CandidateTile = GetTile(CandidateCoord))
+			{
+				TilesInRadius.Add(CandidateTile);
+			}
+		}
+	}
+
+	return TilesInRadius;
+}
+
 void AGridBoard::ClearHighlights()
 {
 	for (TPair<FIntPoint, TObjectPtr<AGridTile>>& Pair : TileMap)

@@ -13,4 +13,5 @@ class JARGON_API APlayerBattleUnit : public ABattleUnit
 
 public:
 	APlayerBattleUnit();
+
 };

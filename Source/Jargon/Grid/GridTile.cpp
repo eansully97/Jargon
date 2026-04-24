@@ -5,6 +5,7 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Grid/BattleTileEffect.h"
 #include "Materials/MaterialInterface.h"
 
 AGridTile::AGridTile()
@@ -101,6 +102,26 @@ void AGridTile::SetHighlightState(ETileHighlightState NewState)
 FVector AGridTile::GetUnitStandLocation() const
 {
 	return GetActorLocation() + FVector(0.f, 0.f, UnitStandZOffset);
+}
+
+void AGridTile::AddTileEffect(ABattleTileEffect* TileEffect)
+{
+	if (!TileEffect)
+	{
+		return;
+	}
+
+	TileEffects.AddUnique(TileEffect);
+}
+
+void AGridTile::RemoveTileEffect(ABattleTileEffect* TileEffect)
+{
+	if (!TileEffect)
+	{
+		return;
+	}
+
+	TileEffects.RemoveSingleSwap(TileEffect);
 }
 
 void AGridTile::RefreshVisualState()

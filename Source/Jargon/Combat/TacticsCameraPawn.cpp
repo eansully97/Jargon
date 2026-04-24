@@ -15,7 +15,7 @@ ATacticsCameraPawn::ATacticsCameraPawn()
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(SceneRoot);
-	SpringArm->TargetArmLength = 1800.f;
+	SpringArm->TargetArmLength = SpringArmLength;
 	SpringArm->SetRelativeRotation(FRotator(-60.f, 0.f, 0.f));
 	SpringArm->bDoCollisionTest = false;
 	SpringArm->bEnableCameraLag = false;
@@ -27,4 +27,16 @@ ATacticsCameraPawn::ATacticsCameraPawn()
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 
 	AutoPossessPlayer = EAutoReceiveInput::Disabled;
+}
+
+void ATacticsCameraPawn::SetSpringArmLength(const float Length) const
+{
+	SpringArm->TargetArmLength = Length;
+}
+
+void ATacticsCameraPawn::BeginPlay()
+{
+	Super::BeginPlay();
+
+	SetSpringArmLength(SpringArmLength);
 }

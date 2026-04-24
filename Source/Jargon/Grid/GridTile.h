@@ -11,6 +11,7 @@ class UStaticMeshComponent;
 class USceneComponent;
 class UMaterialInterface;
 class ABattleUnit;
+class ABattleTileEffect;
 
 UCLASS()
 class JARGON_API AGridTile : public AActor
@@ -65,6 +66,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid")
 	FVector GetUnitStandLocation() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Grid|Effects")
+	void AddTileEffect(ABattleTileEffect* TileEffect);
+
+	UFUNCTION(BlueprintCallable, Category = "Grid|Effects")
+	void RemoveTileEffect(ABattleTileEffect* TileEffect);
+
+	const TArray<TObjectPtr<ABattleTileEffect>>& GetTileEffects() const
+	{
+		return TileEffects;
+	}
+
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
@@ -88,6 +100,9 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Grid")
 	ETileHighlightState HighlightState = ETileHighlightState::None;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Grid|Effects")
+	TArray<TObjectPtr<ABattleTileEffect>> TileEffects;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	TObjectPtr<UMaterialInterface> DefaultMaterial = nullptr;

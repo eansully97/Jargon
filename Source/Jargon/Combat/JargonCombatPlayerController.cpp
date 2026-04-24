@@ -3,12 +3,12 @@
 #include "Combat/JargonCombatPlayerController.h"
 
 #include "Blueprint/UserWidget.h"
-#include "Data/CardDefinition.h"
-#include "Units/BattleUnit.h"
 #include "Combat/JargonCombatGameMode.h"
+#include "Data/CardDefinition.h"
 #include "GameFramework/PlayerController.h"
 #include "Grid/GridTile.h"
 #include "InputCoreTypes.h"
+#include "Units/BattleUnit.h"
 #include "Widgets/CombatHUDWidget.h"
 
 AJargonCombatPlayerController::AJargonCombatPlayerController()
@@ -17,6 +17,7 @@ AJargonCombatPlayerController::AJargonCombatPlayerController()
 	bEnableClickEvents = false;
 	bEnableMouseOverEvents = false;
 	DefaultMouseCursor = EMouseCursor::Default;
+	bStartingDeckInitialized = false;
 }
 
 void AJargonCombatPlayerController::BeginPlay()
@@ -36,8 +37,6 @@ void AJargonCombatPlayerController::SetupInputComponent()
 		InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AJargonCombatPlayerController::HandleLeftClick);
 		InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AJargonCombatPlayerController::HandleRightClick);
 		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AJargonCombatPlayerController::HandleCancelSelection);
-		InputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AJargonCombatPlayerController::HandleEndTurnInput);
-		InputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &AJargonCombatPlayerController::HandleEndTurnInput);
 	}
 }
 
@@ -71,6 +70,18 @@ void AJargonCombatPlayerController::InitializeCombatUI()
 
 	CombatHUD->AddToViewport();
 	CombatHUD->OnHandCardClicked().AddUObject(this, &AJargonCombatPlayerController::SelectCard);
+	CombatHUD->OnEndTurnClicked().AddUObject(this, &AJargonCombatPlayerController::RequestEndTurn);
+
+	CombatGameMode->OnPhaseChanged.RemoveDynamic(this, &AJargonCombatPlayerController::HandleCombatPhaseChanged);
+	CombatGameMode->OnPhaseChanged.AddDynamic(this, &AJargonCombatPlayerController::HandleCombatPhaseChanged);
+
+	CombatGameMode->OnEnergyChanged.RemoveDynamic(this, &AJargonCombatPlayerController::HandleCombatEnergyChanged);
+	CombatGameMode->OnEnergyChanged.AddDynamic(this, &AJargonCombatPlayerController::HandleCombatEnergyChanged);
+
+	CombatGameMode->OnPlayerActionAvailabilityChanged.RemoveDynamic(this, &AJargonCombatPlayerController::HandlePlayerActionAvailabilityChanged);
+	CombatGameMode->OnPlayerActionAvailabilityChanged.AddDynamic(this, &AJargonCombatPlayerController::HandlePlayerActionAvailabilityChanged);
+
+	RefreshCombatStateHUD();
 
 	FInputModeGameAndUI InputMode;
 	InputMode.SetWidgetToFocus(CombatHUD->TakeWidget());
@@ -79,10 +90,18 @@ void AJargonCombatPlayerController::InitializeCombatUI()
 	SetInputMode(InputMode);
 
 	RefreshHUD();
+	BroadcastCardCounts();
 }
 
 void AJargonCombatPlayerController::InitializeStartingDeck()
 {
+	if (bStartingDeckInitialized)
+	{
+		RefreshHUD();
+		BroadcastCardCounts();
+		return;
+	}
+
 	DrawPile.Reset();
 	Hand.Reset();
 	DiscardPile.Reset();
@@ -94,6 +113,7 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("CombatPlayerController could not initialize starting deck because CombatGameMode was null."));
 		RefreshHUD();
+		BroadcastCardCounts();
 		return;
 	}
 
@@ -105,8 +125,10 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 		}
 	}
 
+	bStartingDeckInitialized = true;
 	DrawCards(CombatGameMode->GetStartingHandSize());
 	RefreshHUD();
+	BroadcastCardCounts();
 }
 
 void AJargonCombatPlayerController::DrawCards(int32 Count)
@@ -128,6 +150,7 @@ void AJargonCombatPlayerController::DrawCards(int32 Count)
 	}
 
 	RefreshHUD();
+	BroadcastCardCounts();
 }
 
 void AJargonCombatPlayerController::SelectCard(UCardDefinition* Card)
@@ -135,6 +158,33 @@ void AJargonCombatPlayerController::SelectCard(UCardDefinition* Card)
 	if (SelectedCard == Card)
 	{
 		ClearSelectedCard();
+		return;
+	}
+
+	if (!Card)
+	{
+		return;
+	}
+
+	if (Card->TargetType == ECardTargetType::Self)
+	{
+		AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+		if (!CombatGameMode)
+		{
+			return;
+		}
+
+		const bool bPlayedSuccessfully = CombatGameMode->TryPlayCardOnSelf(Card);
+		if (bPlayedSuccessfully)
+		{
+			RemoveCardFromHand(Card);
+			ClearSelectedCard();
+		}
+		else
+		{
+			RefreshHUD();
+		}
+
 		return;
 	}
 
@@ -164,6 +214,33 @@ void AJargonCombatPlayerController::RemoveCardFromHand(UCardDefinition* Card)
 	}
 
 	RefreshHUD();
+	BroadcastCardCounts();
+}
+
+void AJargonCombatPlayerController::HandleCombatPhaseChanged(ECombatPhase)
+{
+	RefreshCombatStateHUD();
+}
+
+void AJargonCombatPlayerController::HandleCombatEnergyChanged(int32)
+{
+	RefreshCombatStateHUD();
+}
+
+void AJargonCombatPlayerController::HandlePlayerActionAvailabilityChanged(bool /*bCanMove*/, bool /*bCanAttack*/)
+{
+	RefreshCombatStateHUD();
+}
+
+void AJargonCombatPlayerController::RequestSelectFriendlyUnit(ABattleUnit* Unit)
+{
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode || !Unit)
+	{
+		return;
+	}
+
+	CombatGameMode->TrySelectFriendlyUnit(Unit);
 }
 
 void AJargonCombatPlayerController::RequestMoveToTile(AGridTile* Tile)
@@ -177,9 +254,36 @@ void AJargonCombatPlayerController::RequestMoveToTile(AGridTile* Tile)
 	CombatGameMode->TryMovePlayerUnitToTile(Tile);
 }
 
+void AJargonCombatPlayerController::RequestBasicAttackOnUnit(ABattleUnit* Unit)
+{
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode || !Unit)
+	{
+		return;
+	}
+
+	CombatGameMode->TryBasicAttackWithPlayerUnit(Unit);
+}
+
 void AJargonCombatPlayerController::RequestPlayCardOnUnit(ABattleUnit* Unit)
 {
 	if (!SelectedCard || !Unit)
+	{
+		return;
+	}
+
+	AGridTile* TargetTile = Unit->GetCurrentTile();
+	if (!TargetTile)
+	{
+		return;
+	}
+
+	RequestPlayCardOnTile(TargetTile);
+}
+
+void AJargonCombatPlayerController::RequestPlayCardOnTile(AGridTile* Tile)
+{
+	if (!SelectedCard || !Tile)
 	{
 		return;
 	}
@@ -190,7 +294,7 @@ void AJargonCombatPlayerController::RequestPlayCardOnUnit(ABattleUnit* Unit)
 		return;
 	}
 
-	const bool bPlayedSuccessfully = CombatGameMode->TryPlayCardOnTarget(SelectedCard, Unit);
+	const bool bPlayedSuccessfully = CombatGameMode->TryPlayCardOnTile(SelectedCard, Tile);
 	if (bPlayedSuccessfully)
 	{
 		RemoveCardFromHand(SelectedCard);
@@ -213,7 +317,6 @@ void AJargonCombatPlayerController::HandleLeftClick()
 {
 	FHitResult HitResult;
 	const bool bHit = GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
 	if (!bHit)
 	{
 		return;
@@ -225,24 +328,59 @@ void AJargonCombatPlayerController::HandleLeftClick()
 		return;
 	}
 
-	if (ABattleUnit* HitUnit = Cast<ABattleUnit>(HitActor))
+	ABattleUnit* HitUnit = Cast<ABattleUnit>(HitActor);
+	AGridTile* HitTile = Cast<AGridTile>(HitActor);
+
+	if (SelectedCard)
 	{
-		if (SelectedCard)
+		if (SelectedCard->TargetType == ECardTargetType::Self)
 		{
-			RequestPlayCardOnUnit(HitUnit);
+			return;
+		}
+
+		if (SelectedCard->UsesBoardTileTargeting())
+		{
+			AGridTile* ResolvedTargetTile = HitTile;
+			if (!ResolvedTargetTile && HitUnit)
+			{
+				ResolvedTargetTile = HitUnit->GetCurrentTile();
+			}
+
+			if (ResolvedTargetTile)
+			{
+				RequestPlayCardOnTile(ResolvedTargetTile);
+			}
+			return;
 		}
 
 		return;
 	}
 
-	if (AGridTile* HitTile = Cast<AGridTile>(HitActor))
+	if (HitUnit)
 	{
-		if (!SelectedCard)
+		if (HitUnit->GetTeam() == ETeam::Player)
 		{
-			RequestMoveToTile(HitTile);
+			RequestSelectFriendlyUnit(HitUnit);
+		}
+		else
+		{
+			RequestBasicAttackOnUnit(HitUnit);
+		}
+		return;
+	}
+
+	if (HitTile)
+	{
+		if (ABattleUnit* OccupyingUnit = HitTile->GetOccupyingUnit())
+		{
+			if (OccupyingUnit->GetTeam() == ETeam::Player)
+			{
+				RequestSelectFriendlyUnit(OccupyingUnit);
+				return;
+			}
 		}
 
-		return;
+		RequestMoveToTile(HitTile);
 	}
 }
 
@@ -273,4 +411,33 @@ void AJargonCombatPlayerController::RefreshHUD()
 
 	CombatHUD->RefreshHand(Hand);
 	CombatHUD->SetSelectedCard(SelectedCard);
+}
+
+void AJargonCombatPlayerController::RefreshCombatStateHUD()
+{
+	if (!CombatHUD)
+	{
+		return;
+	}
+
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
+	{
+		return;
+	}
+
+	const ECombatPhase CurrentPhase = CombatGameMode->GetCurrentCombatPhase();
+	CombatHUD->SetPhaseText(CurrentPhase);
+	CombatHUD->SetEnergyValues(CombatGameMode->GetCurrentEnergy(), CombatGameMode->GetCurrentMaxEnergy());
+	CombatHUD->SetActionAvailability(
+		CurrentPhase,
+		CombatGameMode->HasPlayerMoveRemaining(),
+		CombatGameMode->HasPlayerAttackRemaining()
+	);
+}
+
+void AJargonCombatPlayerController::BroadcastCardCounts()
+{
+	OnDeckChanged.Broadcast(DrawPile.Num());
+	OnHandChanged.Broadcast(Hand.Num());
 }

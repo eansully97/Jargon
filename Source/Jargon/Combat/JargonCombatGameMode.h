@@ -5,17 +5,24 @@
 #include "CoreMinimal.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/GameModeBase.h"
+#include "TimerManager.h"
 #include "JargonCombatGameMode.generated.h"
 
 class AGridBoard;
 class AGridTile;
 class ABattleUnit;
+class ABattleTileEffect;
 class APlayerBattleUnit;
-class AEnemyDummyUnit;
+class AEnemyBattleUnit;
 class ATacticsCameraPawn;
 class UCardDefinition;
 class UCombatHUDWidget;
 class AJargonCombatPlayerController;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatPhaseChangedSignature, ECombatPhase, NewPhase);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatEnergyChangedSignature, int32, NewEnergy);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentActingEnemyChangedSignature, ABattleUnit*, NewActingEnemy);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPlayerActionAvailabilityChangedSignature, bool, bCanMove, bool, bCanAttack);
 
 UCLASS()
 class JARGON_API AJargonCombatGameMode : public AGameModeBase
@@ -28,9 +35,17 @@ public:
 	virtual void BeginPlay() override;
 
 	void InitializeCombat();
+	void InitializeCombatantFacing();
 
+	bool TrySelectFriendlyUnit(ABattleUnit* FriendlyUnit);
 	bool TryMovePlayerUnitToTile(AGridTile* DestinationTile);
+	bool TryBasicAttackWithPlayerUnit(ABattleUnit* Target);
 	bool TryPlayCardOnTarget(UCardDefinition* Card, ABattleUnit* Target);
+	bool TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget);
+	bool TryPlayCardOnSelf(UCardDefinition* Card);
+	ABattleTileEffect* SpawnPersistentTileEffect(const UCardDefinition* Card, const ABattleUnit* SourceUnit, AGridTile* TargetTile);
+	ABattleUnit* SpawnSummonedUnitFromCard(const UCardDefinition* Card, const ABattleUnit* SourceUnit, AGridTile* TargetTile);
+	void NotifyTileEffectsUnitEntered(ABattleUnit* EnteringUnit, AGridTile* EnteredTile);
 
 	void HandleUnitDied(ABattleUnit* DeadUnit);
 	void HandleVictory();
@@ -47,6 +62,18 @@ public:
 	const TArray<TObjectPtr<ABattleUnit>>& GetEnemyUnits() const
 	{
 		return EnemyUnits;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	ABattleUnit* GetCurrentActingEnemy() const
+	{
+		return CurrentActingEnemy;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	ABattleUnit* GetSelectedFriendlyUnit() const
+	{
+		return SelectedFriendlyUnit;
 	}
 
 	AGridBoard* GetGridBoard() const
@@ -69,32 +96,54 @@ public:
 		return StartingHandSize;
 	}
 
-	ECombatPhase GetCombatPhase() const
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	ECombatPhase GetCurrentCombatPhase() const
 	{
 		return CombatPhase;
 	}
 
+	UFUNCTION(BlueprintCallable, Category = "Combat")
 	int32 GetCurrentRound() const
 	{
 		return CurrentRound;
 	}
 
+	UFUNCTION(BlueprintCallable, Category = "Combat")
 	int32 GetCurrentEnergy() const
 	{
 		return CurrentEnergy;
 	}
 
-	bool HasPlayerMoveRemaining() const
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	int32 GetCurrentMaxEnergy() const
 	{
-		return !bPlayerMoveUsed;
+		return CurrentMaxEnergy;
 	}
+
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	bool HasPlayerMoveRemaining() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	bool HasPlayerAttackRemaining() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Combat")
+	FOnCombatPhaseChangedSignature OnPhaseChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Combat")
+	FOnCombatEnergyChangedSignature OnEnergyChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Combat")
+	FOnPlayerActionAvailabilityChangedSignature OnPlayerActionAvailabilityChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Combat")
+	FOnCurrentActingEnemyChangedSignature OnCurrentActingEnemyChanged;
 
 protected:
 	void InitializeCameraPawn();
 	void FindGridBoard();
 	void SpawnCombatants();
 	void SpawnEnemiesFromPendingEncounter();
-	void SpawnLegacyFallbackEnemy();
+	void SpawnFallbackEnemy();
 	bool AreAllEnemiesDefeated() const;
 
 	void StartBattleFlow();
@@ -102,13 +151,37 @@ protected:
 	void EndPlayerTurn();
 	void StartEnemyTurn();
 	void ResolveEnemyTurn();
-	void ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
+	void ResolveNextEnemyAction();
+	float ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
 	void EndEnemyTurn();
+	void NotifyPlayerTurnStartTileEffects();
 	void RefreshPlayerMovementHighlights();
+	void RefreshSelectedFriendlyUnitPresentation();
+	void SetSelectedFriendlyUnit(ABattleUnit* NewSelectedFriendlyUnit);
+
 	AJargonCombatPlayerController* GetCombatPlayerController() const;
 
 	int32 GetTileDistance(const AGridTile* TileA, const AGridTile* TileB) const;
+	int32 CalculateMaxEnergyForRound(int32 RoundNumber) const;
+	bool IsFriendlyUnitSelectable(const ABattleUnit* Unit) const;
+	ABattleUnit* FindFallbackSelectedFriendlyUnit() const;
+	ABattleUnit* FindPreferredEnemyTarget(ABattleUnit* EnemyUnit) const;
+	bool TryPlayCardWithResolvedTile(UCardDefinition* Card, AGridTile* TileTarget, ABattleUnit* ExplicitUnitTarget, bool bSkipRangeValidation);
 	AGridTile* FindBestEnemyMoveDestination(ABattleUnit* EnemyUnit, ABattleUnit* TargetUnit) const;
+	int32 GetPreferredEnemyDistance(const ABattleUnit* EnemyUnit) const;
+	bool CanUnitAttackFromTile(const ABattleUnit* EnemyUnit, const AGridTile* FromTile, const ABattleUnit* TargetUnit) const;
+	int32 GetEnemyTileScore(const ABattleUnit* EnemyUnit, const AGridTile* CandidateTile, const ABattleUnit* TargetUnit) const;
+
+	void SetCombatPhase(ECombatPhase NewPhase);
+	void SetCurrentEnergy(int32 NewEnergy);
+	void SetCurrentActingEnemy(ABattleUnit* NewActingEnemy);
+	void BroadcastPlayerActionAvailabilityChanged();
+	float StartPresentedBasicAttack(ABattleUnit* Attacker, ABattleUnit* Target, bool bReturnToPlayerTurnAfterDamage);
+	void ApplyPresentedBasicAttackDamage(ABattleUnit* Attacker, ABattleUnit* Target, bool bReturnToPlayerTurnAfterDamage);
+	void ScheduleNextEnemyAction(float DelaySeconds);
+	void ScheduleEndEnemyTurn(float DelaySeconds);
+	void ClearEnemyTurnTimer();
+	void ClearBasicAttackTimer();
 
 protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
@@ -118,12 +191,24 @@ protected:
 	TObjectPtr<APlayerBattleUnit> PlayerUnit = nullptr;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
+	TArray<TObjectPtr<ABattleUnit>> FriendlyUnits;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TArray<TObjectPtr<ABattleUnit>> EnemyUnits;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
+	TObjectPtr<ABattleUnit> CurrentActingEnemy = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
+	TObjectPtr<ABattleUnit> SelectedFriendlyUnit = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
+	TArray<TObjectPtr<ABattleTileEffect>> ActiveTileEffects;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<ATacticsCameraPawn> SpawnedCameraPawn = nullptr;
 
-	UPROPERTY(VisibleAnywhere, Category = "Combat")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
 	ECombatPhase CombatPhase = ECombatPhase::BattleStart;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
@@ -132,8 +217,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
 	TSubclassOf<APlayerBattleUnit> PlayerUnitClass;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Legacy")
-	TSubclassOf<AEnemyDummyUnit> EnemyUnitClass;
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Enemy", meta = (DisplayName = "Fallback Enemy Unit Class"))
+	TSubclassOf<AEnemyBattleUnit> EnemyUnitClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|UI")
 	TSubclassOf<UCombatHUDWidget> CombatHUDClass;
@@ -151,14 +236,35 @@ protected:
 	int32 CurrentEnergy = 0;
 
 	UPROPERTY(VisibleAnywhere, Category = "Combat|Turn")
-	bool bPlayerMoveUsed = false;
+	int32 CurrentMaxEnergy = 0;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0", DisplayName = "Starting Max Energy"))
+	int32 EnergyPerTurn = 1;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0"))
-	int32 EnergyPerTurn = 1;
+	int32 MaxEnergyIncreasePerRound = 1;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0"))
+	int32 MaxEnergyCap = 3;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0"))
 	int32 CardsDrawnPerTurn = 1;
 
 	UPROPERTY(VisibleAnywhere, Category = "Combat|Turn")
-	bool bFirstPlayerTurnStarted = false;
+	int32 EnemyTurnActionIndex = 0;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0.0"))
+	float EnemyTurnStartDelay = 0.35f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0.0"))
+	float EnemyActionDelay = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0.0"))
+	float EnemyTurnEndDelay = 0.35f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn|Presentation")
+	FLinearColor SelectedFriendlyUnitHighlightColor = FLinearColor(0.15f, 0.85f, 1.f, 0.2f);
+
+	FTimerHandle EnemyTurnTimerHandle;
+	FTimerHandle BasicAttackDamageTimerHandle;
 };

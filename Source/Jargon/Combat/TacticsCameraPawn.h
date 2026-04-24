@@ -25,6 +25,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<USpringArmComponent> SpringArm;
 
+
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<UCameraComponent> Camera;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Presentation")
+	float SpringArmLength = 1500;
+
+	void SetSpringArmLength(float Length) const;
+
+	virtual void BeginPlay() override;
 };
