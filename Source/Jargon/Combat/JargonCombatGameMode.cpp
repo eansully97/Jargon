@@ -253,66 +253,107 @@ bool AJargonCombatGameMode::TrySelectFriendlyUnit(ABattleUnit* FriendlyUnit)
 	return true;
 }
 
-float AJargonCombatGameMode::StartPresentedBasicAttack(
+bool AJargonCombatGameMode::StartPresentedBasicAttack(
 	ABattleUnit* Attacker,
 	ABattleUnit* Target,
-	bool bReturnToPlayerTurnAfterDamage)
+	bool bReturnToPlayerTurnAfterSequence,
+	bool bContinueEnemyTurnAfterSequence)
 {
 	if (!Attacker || !Target || !Attacker->CanAttackTarget(Target))
 	{
-		return -1.f;
-	}
-
-	Attacker->PlayBasicAttackPresentation(Target);
-
-	const float DamageDelay = FMath::Max(0.f, Attacker->GetBasicAttackDamageDelay());
-	if (DamageDelay <= KINDA_SMALL_NUMBER)
-	{
-		ApplyPresentedBasicAttackDamage(Attacker, Target, bReturnToPlayerTurnAfterDamage);
-		return 0.f;
+		return false;
 	}
 
 	UWorld* World = GetWorld();
 	if (!World)
 	{
-		ApplyPresentedBasicAttackDamage(Attacker, Target, bReturnToPlayerTurnAfterDamage);
-		return 0.f;
+		return false;
 	}
 
 	ClearBasicAttackTimer();
 
-	FTimerDelegate DamageDelegate;
-	DamageDelegate.BindUObject(
-		this,
-		&AJargonCombatGameMode::ApplyPresentedBasicAttackDamage,
-		Attacker,
-		Target,
-		bReturnToPlayerTurnAfterDamage
-	);
+	PendingAttackAttacker = Attacker;
+	PendingAttackTarget = Target;
+	bReturnToPlayerTurnAfterAttackSequence = bReturnToPlayerTurnAfterSequence;
+	bContinueEnemyTurnAfterAttackSequence = bContinueEnemyTurnAfterSequence;
 
-	World->GetTimerManager().SetTimer(BasicAttackDamageTimerHandle, DamageDelegate, DamageDelay, false);
-	return DamageDelay;
+	Attacker->PlayBasicAttackPresentation(Target);
+
+	const float DamageDelay = FMath::Max(0.f, Attacker->GetBasicAttackDamageDelay());
+	const float PresentationDuration = FMath::Max(0.f, Attacker->GetBasicAttackPresentationDuration());
+	const float CompletionDelay = FMath::Max(DamageDelay, PresentationDuration);
+
+	if (DamageDelay <= KINDA_SMALL_NUMBER)
+	{
+		ApplyPresentedBasicAttackDamage();
+	}
+	else
+	{
+		World->GetTimerManager().SetTimer(
+			BasicAttackDamageTimerHandle,
+			this,
+			&AJargonCombatGameMode::ApplyPresentedBasicAttackDamage,
+			DamageDelay,
+			false
+		);
+	}
+
+	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+	{
+		return true;
+	}
+
+	if (CompletionDelay <= KINDA_SMALL_NUMBER)
+	{
+		HandlePresentedBasicAttackCompleted();
+	}
+	else
+	{
+		World->GetTimerManager().SetTimer(
+			BasicAttackCompletionTimerHandle,
+			this,
+			&AJargonCombatGameMode::HandlePresentedBasicAttackCompleted,
+			CompletionDelay,
+			false
+		);
+	}
+
+	return true;
 }
 
-void AJargonCombatGameMode::ApplyPresentedBasicAttackDamage(
-	ABattleUnit* Attacker,
-	ABattleUnit* Target,
-	bool bReturnToPlayerTurnAfterDamage)
+void AJargonCombatGameMode::ApplyPresentedBasicAttackDamage()
 {
+	ABattleUnit* Attacker = PendingAttackAttacker.Get();
+	ABattleUnit* Target = PendingAttackTarget.Get();
 	if (IsValid(Attacker) && IsValid(Target))
 	{
 		Attacker->PerformBasicAttack(Target);
 	}
+}
 
-	if (bReturnToPlayerTurnAfterDamage && CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
+void AJargonCombatGameMode::HandlePresentedBasicAttackCompleted()
+{
+	const bool bShouldReturnToPlayerTurn = bReturnToPlayerTurnAfterAttackSequence;
+	const bool bShouldContinueEnemyTurn = bContinueEnemyTurnAfterAttackSequence;
+	ClearBasicAttackTimer();
+
+	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
 	{
-		SetCombatPhase(ECombatPhase::PlayerTurn);
+		return;
 	}
 
-	if (CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
+	if (bShouldReturnToPlayerTurn)
 	{
+		SetCombatPhase(ECombatPhase::PlayerTurn);
 		RefreshPlayerMovementHighlights();
 		BroadcastPlayerActionAvailabilityChanged();
+		return;
+	}
+
+	if (bShouldContinueEnemyTurn && CombatPhase == ECombatPhase::EnemyTurn)
+	{
+		SetCurrentActingEnemy(nullptr);
+		ScheduleNextEnemyAction(0.f);
 	}
 }
 
@@ -325,13 +366,14 @@ void AJargonCombatGameMode::ScheduleNextEnemyAction(float DelaySeconds)
 	}
 
 	World->GetTimerManager().ClearTimer(EnemyTurnTimerHandle);
-	World->GetTimerManager().SetTimer(
-		EnemyTurnTimerHandle,
-		this,
-		&AJargonCombatGameMode::ResolveNextEnemyAction,
-		FMath::Max(0.01f, DelaySeconds),
-		false
-	);
+
+	if (DelaySeconds <= KINDA_SMALL_NUMBER)
+	{
+		EnemyTurnTimerHandle = World->GetTimerManager().SetTimerForNextTick(this, &AJargonCombatGameMode::ResolveNextEnemyAction);
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(EnemyTurnTimerHandle, this, &AJargonCombatGameMode::ResolveNextEnemyAction, DelaySeconds, false);
 }
 
 void AJargonCombatGameMode::ScheduleEndEnemyTurn(float DelaySeconds)
@@ -343,13 +385,14 @@ void AJargonCombatGameMode::ScheduleEndEnemyTurn(float DelaySeconds)
 	}
 
 	World->GetTimerManager().ClearTimer(EnemyTurnTimerHandle);
-	World->GetTimerManager().SetTimer(
-		EnemyTurnTimerHandle,
-		this,
-		&AJargonCombatGameMode::EndEnemyTurn,
-		FMath::Max(0.01f, DelaySeconds),
-		false
-	);
+
+	if (DelaySeconds <= KINDA_SMALL_NUMBER)
+	{
+		EnemyTurnTimerHandle = World->GetTimerManager().SetTimerForNextTick(this, &AJargonCombatGameMode::EndEnemyTurn);
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(EnemyTurnTimerHandle, this, &AJargonCombatGameMode::EndEnemyTurn, DelaySeconds, false);
 }
 
 void AJargonCombatGameMode::ClearEnemyTurnTimer()
@@ -372,6 +415,11 @@ void AJargonCombatGameMode::ClearBasicAttackTimer()
 	}
 
 	World->GetTimerManager().ClearTimer(BasicAttackDamageTimerHandle);
+	World->GetTimerManager().ClearTimer(BasicAttackCompletionTimerHandle);
+	PendingAttackAttacker.Reset();
+	PendingAttackTarget.Reset();
+	bReturnToPlayerTurnAfterAttackSequence = false;
+	bContinueEnemyTurnAfterAttackSequence = false;
 }
 
 void AJargonCombatGameMode::InitializeCameraPawn()
@@ -433,6 +481,17 @@ void AJargonCombatGameMode::FindGridBoard()
 	}
 }
 
+void AJargonCombatGameMode::RegisterBattleUnitCallbacks(ABattleUnit* Unit)
+{
+	if (!Unit)
+	{
+		return;
+	}
+
+	Unit->OnMovementCompleted().RemoveAll(this);
+	Unit->OnMovementCompleted().AddUObject(this, &AJargonCombatGameMode::HandleBattleUnitMovementCompleted);
+}
+
 void AJargonCombatGameMode::SpawnCombatants()
 {
 	EnemyUnits.Reset();
@@ -477,6 +536,7 @@ void AJargonCombatGameMode::SpawnCombatants()
 		return;
 	}
 
+	RegisterBattleUnitCallbacks(PlayerUnit);
 	PlayerUnit->PlaceOnTile(PlayerSpawnTile);
 	FriendlyUnits.Add(PlayerUnit);
 
@@ -484,6 +544,12 @@ void AJargonCombatGameMode::SpawnCombatants()
 	if (GameInstance && GameInstance->HasPendingEncounterData())
 	{
 		SpawnEnemiesFromPendingEncounter();
+
+		if (EnemyUnits.Num() == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Pending encounter produced no valid enemy spawns. Falling back to default enemy spawn."));
+			SpawnFallbackEnemy();
+		}
 	}
 	else
 	{
@@ -524,38 +590,29 @@ void AJargonCombatGameMode::SpawnEnemiesFromPendingEncounter()
 			continue;
 		}
 
-		AGridTile* SpawnTile = GridBoard ? GridBoard->GetTile(SpawnEntry.SpawnCoord) : nullptr;
+		AGridTile* SpawnTile = ResolveEnemySpawnTile(SpawnEntry.SpawnCoord);
 		if (!SpawnTile)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("SpawnEnemiesFromPendingEncounter could not find tile at coord (%d, %d)."),
-				SpawnEntry.SpawnCoord.X,
-				SpawnEntry.SpawnCoord.Y);
+			UE_LOG(LogTemp, Warning, TEXT("SpawnEnemiesFromPendingEncounter could not resolve a valid tile near coord %s."),
+				*SpawnEntry.SpawnCoord.ToString());
 			continue;
 		}
 
-		if (!SpawnTile->IsWalkable())
+		if (SpawnTile->GetCoord() != SpawnEntry.SpawnCoord)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("SpawnEnemiesFromPendingEncounter skipped non-walkable tile at coord (%d, %d)."),
-				SpawnEntry.SpawnCoord.X,
-				SpawnEntry.SpawnCoord.Y);
-			continue;
+			UE_LOG(LogTemp, Log, TEXT("SpawnEnemiesFromPendingEncounter resolved fallback tile %s for preferred coord %s."),
+				*SpawnTile->GetCoord().ToString(),
+				*SpawnEntry.SpawnCoord.ToString());
 		}
 
-		ABattleUnit* SpawnedEnemy = GetWorld()->SpawnActor<ABattleUnit>(
-			SpawnEntry.UnitClass,
-			SpawnTile->GetUnitStandLocation(),
-			FRotator::ZeroRotator
-		);
-
+		ABattleUnit* SpawnedEnemy = SpawnEnemyUnitAtTile(SpawnEntry.UnitClass, SpawnTile);
 		if (!SpawnedEnemy)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("SpawnEnemiesFromPendingEncounter failed to spawn enemy unit at coord (%d, %d)."),
-				SpawnEntry.SpawnCoord.X,
-				SpawnEntry.SpawnCoord.Y);
+			UE_LOG(LogTemp, Warning, TEXT("SpawnEnemiesFromPendingEncounter failed to spawn enemy unit near coord %s."),
+				*SpawnEntry.SpawnCoord.ToString());
 			continue;
 		}
 
-		SpawnedEnemy->PlaceOnTile(SpawnTile);
 		EnemyUnits.Add(SpawnedEnemy);
 	}
 }
@@ -575,26 +632,48 @@ void AJargonCombatGameMode::SpawnFallbackEnemy()
 		return;
 	}
 
-	if (!EnemySpawnTile->IsWalkable())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("SpawnFallbackEnemy aborted because fallback enemy spawn tile is not walkable."));
-		return;
-	}
-
-	AEnemyBattleUnit* SpawnedEnemy = GetWorld()->SpawnActor<AEnemyBattleUnit>(
-		EnemyUnitClass,
-		EnemySpawnTile->GetUnitStandLocation(),
-		FRotator::ZeroRotator
-	);
-
+	ABattleUnit* SpawnedEnemy = SpawnEnemyUnitAtTile(EnemyUnitClass, EnemySpawnTile);
 	if (!SpawnedEnemy)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("SpawnFallbackEnemy failed to spawn EnemyUnitClass."));
 		return;
 	}
 
-	SpawnedEnemy->PlaceOnTile(EnemySpawnTile);
 	EnemyUnits.Add(SpawnedEnemy);
+}
+
+AGridTile* AJargonCombatGameMode::ResolveEnemySpawnTile(const FHexCoord& PreferredCoord) const
+{
+	return GridBoard ? GridBoard->FindNearestWalkableTile(PreferredCoord) : nullptr;
+}
+
+ABattleUnit* AJargonCombatGameMode::SpawnEnemyUnitAtTile(TSubclassOf<ABattleUnit> UnitClass, AGridTile* SpawnTile)
+{
+	if (!UnitClass || !SpawnTile || !SpawnTile->IsWalkable())
+	{
+		return nullptr;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	ABattleUnit* SpawnedEnemy = World->SpawnActor<ABattleUnit>(
+		UnitClass,
+		SpawnTile->GetUnitStandLocation(),
+		FRotator::ZeroRotator
+	);
+
+	if (!SpawnedEnemy)
+	{
+		return nullptr;
+	}
+
+	RegisterBattleUnitCallbacks(SpawnedEnemy);
+	SpawnedEnemy->PlaceOnTile(SpawnTile);
+	return SpawnedEnemy;
 }
 
 bool AJargonCombatGameMode::AreAllEnemiesDefeated() const
@@ -629,6 +708,151 @@ void AJargonCombatGameMode::StartBattleFlow()
 	StartPlayerTurn();
 }
 
+void AJargonCombatGameMode::ClearPendingMovementSequence()
+{
+	PendingMovementContext = EPendingMovementContext::None;
+	PendingMovementUnit.Reset();
+}
+
+bool AJargonCombatGameMode::StartPlayerControlledMoveSequence(
+	ABattleUnit* MovingUnit,
+	const TArray<AGridTile*>& Path,
+	bool bConsumeMoveAction)
+{
+	if (!MovingUnit || MovingUnit->IsDead() || Path.Num() < 2)
+	{
+		return false;
+	}
+
+	PendingMovementContext = EPendingMovementContext::PlayerControlled;
+	PendingMovementUnit = MovingUnit;
+	SetCombatPhase(ECombatPhase::Resolving);
+
+	if (!MovingUnit->MoveAlongPath(Path))
+	{
+		ClearPendingMovementSequence();
+
+		if (CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
+		{
+			SetCombatPhase(ECombatPhase::PlayerTurn);
+		}
+
+		return false;
+	}
+
+	if (bConsumeMoveAction)
+	{
+		MovingUnit->ConsumeMoveAction();
+	}
+
+	RefreshPlayerMovementHighlights();
+	BroadcastPlayerActionAvailabilityChanged();
+	return true;
+}
+
+bool AJargonCombatGameMode::StartEnemyMoveSequence(ABattleUnit* EnemyUnit, const TArray<AGridTile*>& Path)
+{
+	if (!EnemyUnit || EnemyUnit->IsDead() || Path.Num() < 2)
+	{
+		return false;
+	}
+
+	PendingMovementContext = EPendingMovementContext::Enemy;
+	PendingMovementUnit = EnemyUnit;
+	if (EnemyUnit->MoveAlongPath(Path))
+	{
+		return true;
+	}
+
+	ClearPendingMovementSequence();
+	return false;
+}
+
+void AJargonCombatGameMode::HandleBattleUnitMovementCompleted(ABattleUnit* MovedUnit)
+{
+	if (!MovedUnit || PendingMovementUnit.Get() != MovedUnit)
+	{
+		return;
+	}
+
+	const EPendingMovementContext CompletedContext = PendingMovementContext;
+	ClearPendingMovementSequence();
+
+	switch (CompletedContext)
+	{
+	case EPendingMovementContext::PlayerControlled:
+		HandlePlayerControlledMoveCompleted(MovedUnit);
+		break;
+
+	case EPendingMovementContext::Enemy:
+		HandleEnemyMoveCompleted(MovedUnit);
+		break;
+
+	case EPendingMovementContext::None:
+	default:
+		break;
+	}
+}
+
+void AJargonCombatGameMode::HandlePlayerControlledMoveCompleted(ABattleUnit* MovedUnit)
+{
+	if (!MovedUnit)
+	{
+		return;
+	}
+
+	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+	{
+		return;
+	}
+
+	SetCombatPhase(ECombatPhase::PlayerTurn);
+	RefreshPlayerMovementHighlights();
+	BroadcastPlayerActionAvailabilityChanged();
+}
+
+void AJargonCombatGameMode::HandleEnemyMoveCompleted(ABattleUnit* MovedUnit)
+{
+	if (!MovedUnit)
+	{
+		return;
+	}
+
+	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+	{
+		return;
+	}
+
+	if (CombatPhase != ECombatPhase::EnemyTurn)
+	{
+		return;
+	}
+
+	if (MovedUnit->IsDead())
+	{
+		SetCurrentActingEnemy(nullptr);
+		ScheduleNextEnemyAction(0.f);
+		return;
+	}
+
+	ABattleUnit* PostMoveTarget = FindPreferredEnemyTarget(MovedUnit);
+	if (PostMoveTarget && MovedUnit->CanAttackTarget(PostMoveTarget))
+	{
+		UE_LOG(LogTemp, Log, TEXT("Enemy '%s' attacks '%s' after moving for %d damage."),
+			*GetNameSafe(MovedUnit),
+			*GetNameSafe(PostMoveTarget),
+			MovedUnit->GetAttackDamage());
+
+		if (StartPresentedBasicAttack(MovedUnit, PostMoveTarget, false, true))
+		{
+			return;
+		}
+	}
+
+	SetCurrentActingEnemy(nullptr);
+	ScheduleNextEnemyAction(0.f);
+}
+
 void AJargonCombatGameMode::StartPlayerTurn()
 {
 	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
@@ -655,6 +879,7 @@ void AJargonCombatGameMode::StartPlayerTurn()
 	SetCurrentActingEnemy(nullptr);
 	ClearEnemyTurnTimer();
 	ClearBasicAttackTimer();
+	ClearPendingMovementSequence();
 	EnemyTurnActionIndex = 0;
 	SetCombatPhase(ECombatPhase::PlayerTurn);
 	SetSelectedFriendlyUnit(SelectedFriendlyUnit);
@@ -711,6 +936,7 @@ void AJargonCombatGameMode::StartEnemyTurn()
 void AJargonCombatGameMode::ResolveEnemyTurn()
 {
 	SetCurrentActingEnemy(nullptr);
+	ClearPendingMovementSequence();
 	EnemyTurnActionIndex = 0;
 	ScheduleNextEnemyAction(EnemyTurnStartDelay);
 }
@@ -749,7 +975,7 @@ void AJargonCombatGameMode::ResolveNextEnemyAction()
 		}
 
 		SetCurrentActingEnemy(EnemyUnit);
-		const float NextActionDelay = ResolveSingleEnemyAction(EnemyUnit);
+		const bool bStartedAction = ResolveSingleEnemyAction(EnemyUnit);
 
 		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
 		{
@@ -757,25 +983,29 @@ void AJargonCombatGameMode::ResolveNextEnemyAction()
 			return;
 		}
 
-		ScheduleNextEnemyAction(FMath::Max(EnemyActionDelay, NextActionDelay));
-		return;
+		if (bStartedAction)
+		{
+			return;
+		}
+
+		SetCurrentActingEnemy(nullptr);
 	}
 
 	SetCurrentActingEnemy(nullptr);
 	ScheduleEndEnemyTurn(EnemyTurnEndDelay);
 }
 
-float AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
+bool AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
 {
 	if (!EnemyUnit || EnemyUnit->IsDead())
 	{
-		return EnemyActionDelay;
+		return false;
 	}
 
 	ABattleUnit* TargetUnit = FindPreferredEnemyTarget(EnemyUnit);
 	if (!TargetUnit)
 	{
-		return EnemyActionDelay;
+		return false;
 	}
 
 	if (EnemyUnit->CanAttackTarget(TargetUnit))
@@ -785,8 +1015,7 @@ float AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
 			*GetNameSafe(TargetUnit),
 			EnemyUnit->GetAttackDamage());
 
-		const float DamageDelay = StartPresentedBasicAttack(EnemyUnit, TargetUnit, false);
-		return FMath::Max(0.f, DamageDelay) + EnemyActionDelay;
+		return StartPresentedBasicAttack(EnemyUnit, TargetUnit, false, true);
 	}
 
 	AGridTile* BestDestination = FindBestEnemyMoveDestination(EnemyUnit, TargetUnit);
@@ -795,28 +1024,18 @@ float AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
 		const TArray<AGridTile*> Path = GridBoard->BuildPath(EnemyUnit->GetCurrentTile(), BestDestination);
 		if (Path.Num() >= 2)
 		{
-			EnemyUnit->MoveAlongPath(Path);
+			if (StartEnemyMoveSequence(EnemyUnit, Path))
+			{
+				UE_LOG(LogTemp, Log, TEXT("Enemy '%s' moves to %s."),
+					*GetNameSafe(EnemyUnit),
+					*BestDestination->GetCoord().ToString());
 
-			UE_LOG(LogTemp, Log, TEXT("Enemy '%s' moves to (%d, %d)."),
-				*GetNameSafe(EnemyUnit),
-				BestDestination->GetCoord().X,
-				BestDestination->GetCoord().Y);
+				return true;
+			}
 		}
 	}
 
-	ABattleUnit* PostMoveTarget = FindPreferredEnemyTarget(EnemyUnit);
-	if (PostMoveTarget && EnemyUnit->CanAttackTarget(PostMoveTarget))
-	{
-		UE_LOG(LogTemp, Log, TEXT("Enemy '%s' attacks '%s' after moving for %d damage."),
-			*GetNameSafe(EnemyUnit),
-			*GetNameSafe(PostMoveTarget),
-			EnemyUnit->GetAttackDamage());
-
-		const float DamageDelay = StartPresentedBasicAttack(EnemyUnit, PostMoveTarget, false);
-		return FMath::Max(0.f, DamageDelay) + EnemyActionDelay;
-	}
-
-	return EnemyActionDelay;
+	return false;
 }
 
 void AJargonCombatGameMode::EndEnemyTurn()
@@ -828,6 +1047,7 @@ void AJargonCombatGameMode::EndEnemyTurn()
 
 	SetCurrentActingEnemy(nullptr);
 	ClearEnemyTurnTimer();
+	ClearPendingMovementSequence();
 	EnemyTurnActionIndex = 0;
 	CurrentRound++;
 	StartPlayerTurn();
@@ -876,22 +1096,38 @@ void AJargonCombatGameMode::RefreshPlayerMovementHighlights()
 	}
 }
 
+void AJargonCombatGameMode::RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card)
+{
+	if (!GridBoard)
+	{
+		return;
+	}
+
+	GridBoard->ClearHighlights();
+
+	if (!SourceUnit || !Card)
+	{
+		return;
+	}
+
+	AGridTile* SourceTile = SourceUnit->GetCurrentTile();
+	if (!SourceTile)
+	{
+		return;
+	}
+
+	if (Card->TargetType == ECardTargetType::Self)
+	{
+		SourceTile->SetHighlightState(ETileHighlightState::Selected);
+		return;
+	}
+
+	GridBoard->HighlightTilesInRangeFrom(SourceTile, Card->Range);
+}
+
 AJargonCombatPlayerController* AJargonCombatGameMode::GetCombatPlayerController() const
 {
 	return Cast<AJargonCombatPlayerController>(UGameplayStatics::GetPlayerController(this, 0));
-}
-
-int32 AJargonCombatGameMode::GetTileDistance(const AGridTile* TileA, const AGridTile* TileB) const
-{
-	if (!TileA || !TileB)
-	{
-		return MAX_int32;
-	}
-
-	const FIntPoint CoordA = TileA->GetCoord();
-	const FIntPoint CoordB = TileB->GetCoord();
-
-	return FMath::Abs(CoordA.X - CoordB.X) + FMath::Abs(CoordA.Y - CoordB.Y);
 }
 
 int32 AJargonCombatGameMode::CalculateMaxEnergyForRound(int32 RoundNumber) const
@@ -909,7 +1145,7 @@ int32 AJargonCombatGameMode::CalculateMaxEnergyForRound(int32 RoundNumber) const
 
 ABattleUnit* AJargonCombatGameMode::FindPreferredEnemyTarget(ABattleUnit* EnemyUnit) const
 {
-	if (!EnemyUnit || EnemyUnit->IsDead() || !EnemyUnit->GetCurrentTile())
+	if (!GridBoard || !EnemyUnit || EnemyUnit->IsDead() || !EnemyUnit->GetCurrentTile())
 	{
 		return nullptr;
 	}
@@ -925,7 +1161,7 @@ ABattleUnit* AJargonCombatGameMode::FindPreferredEnemyTarget(ABattleUnit* EnemyU
 			continue;
 		}
 
-		const int32 DistanceToTarget = GetTileDistance(EnemyUnit->GetCurrentTile(), CandidateUnit->GetCurrentTile());
+		const int32 DistanceToTarget = GridBoard->GetTileDistance(EnemyUnit->GetCurrentTile(), CandidateUnit->GetCurrentTile());
 		if (DistanceToTarget == MAX_int32)
 		{
 			continue;
@@ -1020,11 +1256,17 @@ ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromCard(
 		return nullptr;
 	}
 
+	RegisterBattleUnitCallbacks(SpawnedUnit);
 	SpawnedUnit->PlaceOnTile(TargetTile);
 
 	if (SpawnedUnit->GetTeam() == ETeam::Player)
 	{
 		FriendlyUnits.AddUnique(SpawnedUnit);
+
+		if (Card->bSummonEntersWithAttackExhausted)
+		{
+			SpawnedUnit->ConsumeAttackAction();
+		}
 	}
 
 	ABattleUnit* FirstValidEnemy = nullptr;
@@ -1105,17 +1347,22 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 
 	if (!bSkipRangeValidation)
 	{
+		if (!GridBoard)
+		{
+			return false;
+		}
+
 		AGridTile* PlayerTile = PlayerUnit->GetCurrentTile();
 		if (!PlayerTile)
 		{
 			return false;
 		}
 
-		const int32 ManhattanDistance = GetTileDistance(PlayerTile, TileTarget);
-		if (ManhattanDistance > Card->Range)
+		const int32 TargetDistance = GridBoard->GetTileDistance(PlayerTile, TileTarget);
+		if (TargetDistance > Card->Range)
 		{
 			UE_LOG(LogTemp, Log, TEXT("Card target out of range. Required <= %d, actual %d."),
-				Card->Range, ManhattanDistance);
+				Card->Range, TargetDistance);
 			return false;
 		}
 	}
@@ -1165,7 +1412,9 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 		PlayerUnit->ConsumeMoveAction();
 	}
 
-	if (CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
+	if (!ResolveResult.bContinuesAsynchronously &&
+		CombatPhase != ECombatPhase::Victory &&
+		CombatPhase != ECombatPhase::Defeat)
 	{
 		SetCombatPhase(ECombatPhase::PlayerTurn);
 	}
@@ -1243,8 +1492,7 @@ bool AJargonCombatGameMode::CanUnitAttackFromTile(
 		return false;
 	}
 
-	const int32 DistanceToTarget = GetTileDistance(FromTile, TargetUnit->GetCurrentTile());
-	return DistanceToTarget <= EnemyUnit->GetAttackRange();
+	return GridBoard && GridBoard->AreTilesWithinRange(FromTile, TargetUnit->GetCurrentTile(), EnemyUnit->GetAttackRange());
 }
 
 int32 AJargonCombatGameMode::GetEnemyTileScore(
@@ -1260,7 +1508,13 @@ int32 AJargonCombatGameMode::GetEnemyTileScore(
 
 	const AGridTile* TargetTile = TargetUnit->GetCurrentTile();
 	const int32 PreferredDistance = GetPreferredEnemyDistance(EnemyUnit);
-	const int32 DistanceToTarget = GetTileDistance(CandidateTile, TargetTile);
+	const int32 DistanceToTarget = GridBoard
+		? GridBoard->GetTileDistance(CandidateTile, TargetTile)
+		: MAX_int32;
+	if (DistanceToTarget == MAX_int32)
+	{
+		return MAX_int32;
+	}
 
 	int32 Score = 0;
 
@@ -1280,10 +1534,6 @@ int32 AJargonCombatGameMode::GetEnemyTileScore(
 		Score += 8;
 	}
 
-	// Mild anti-crowding penalty.
-	const FIntPoint CandidateCoord = CandidateTile->GetCoord();
-	const FIntPoint TargetCoord = TargetTile->GetCoord();
-
 	for (const TObjectPtr<ABattleUnit>& OtherEnemy : EnemyUnits)
 	{
 		if (!IsValid(OtherEnemy) || OtherEnemy == EnemyUnit || OtherEnemy->IsDead())
@@ -1297,27 +1547,18 @@ int32 AJargonCombatGameMode::GetEnemyTileScore(
 			continue;
 		}
 
-		const int32 DistanceToOther = GetTileDistance(CandidateTile, OtherTile);
+		const int32 DistanceToOther = GridBoard
+			? GridBoard->GetTileDistance(CandidateTile, OtherTile)
+			: MAX_int32;
+		if (DistanceToOther == MAX_int32)
+		{
+			continue;
+		}
 
 		// Slight penalty for standing adjacent to allies.
 		if (DistanceToOther <= 1)
 		{
 			Score += 2;
-		}
-
-		// Extra penalty for lining up directly behind another enemy
-		// on the same row or column relative to the player.
-		const FIntPoint OtherCoord = OtherTile->GetCoord();
-
-		const bool bSameColumnAsTarget =
-			(CandidateCoord.X == OtherCoord.X) && (CandidateCoord.X == TargetCoord.X);
-
-		const bool bSameRowAsTarget =
-			(CandidateCoord.Y == OtherCoord.Y) && (CandidateCoord.Y == TargetCoord.Y);
-
-		if (bSameColumnAsTarget || bSameRowAsTarget)
-		{
-			Score += 3;
 		}
 	}
 
@@ -1376,12 +1617,7 @@ bool AJargonCombatGameMode::TryMovePlayerUnitToTile(AGridTile* DestinationTile)
 		return false;
 	}
 
-	SelectedFriendlyUnit->ConsumeMoveAction();
-	SelectedFriendlyUnit->MoveAlongPath(Path);
-	BroadcastPlayerActionAvailabilityChanged();
-
-	RefreshPlayerMovementHighlights();
-	return true;
+	return StartPlayerControlledMoveSequence(SelectedFriendlyUnit, Path, true);
 }
 
 bool AJargonCombatGameMode::TryBasicAttackWithPlayerUnit(ABattleUnit* Target)
@@ -1414,8 +1650,7 @@ bool AJargonCombatGameMode::TryBasicAttackWithPlayerUnit(ABattleUnit* Target)
 
 	SetCombatPhase(ECombatPhase::Resolving);
 
-	const float DamageDelay = StartPresentedBasicAttack(SelectedFriendlyUnit, Target, true);
-	if (DamageDelay < 0.f)
+	if (!StartPresentedBasicAttack(SelectedFriendlyUnit, Target, true, false))
 	{
 		if (CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
 		{
@@ -1487,6 +1722,30 @@ void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit)
 		return;
 	}
 
+	if (PendingMovementUnit.Get() == DeadUnit)
+	{
+		const EPendingMovementContext CompletedContext = PendingMovementContext;
+		ClearPendingMovementSequence();
+		const bool bShouldRestorePlayerTurnAfterMovement =
+			(CompletedContext == EPendingMovementContext::PlayerControlled) &&
+			(DeadUnit != PlayerUnit);
+
+		if (CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
+		{
+			if (bShouldRestorePlayerTurnAfterMovement)
+			{
+				SetCombatPhase(ECombatPhase::PlayerTurn);
+				RefreshPlayerMovementHighlights();
+				BroadcastPlayerActionAvailabilityChanged();
+			}
+			else if (CompletedContext == EPendingMovementContext::Enemy && CombatPhase == ECombatPhase::EnemyTurn)
+			{
+				SetCurrentActingEnemy(nullptr);
+				ScheduleNextEnemyAction(0.f);
+			}
+		}
+	}
+
 	const bool bWasSelectedFriendlyUnit = (DeadUnit == SelectedFriendlyUnit);
 	FriendlyUnits.RemoveSingleSwap(DeadUnit);
 
@@ -1527,6 +1786,7 @@ void AJargonCombatGameMode::HandleVictory()
 	SetCurrentActingEnemy(nullptr);
 	ClearEnemyTurnTimer();
 	ClearBasicAttackTimer();
+	ClearPendingMovementSequence();
 	SetCombatPhase(ECombatPhase::Victory);
 
 	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
@@ -1542,7 +1802,7 @@ void AJargonCombatGameMode::HandleVictory()
 		GameInstance->MarkEncounterCleared(PendingEncounterId);
 	}
 
-	GameInstance->PrepareReturnToExploration();
+	GameInstance->HandleCombatVictory();
 	ReturnToExploration();
 }
 
@@ -1556,6 +1816,7 @@ void AJargonCombatGameMode::HandleDefeat()
 	SetCurrentActingEnemy(nullptr);
 	ClearEnemyTurnTimer();
 	ClearBasicAttackTimer();
+	ClearPendingMovementSequence();
 	SetCombatPhase(ECombatPhase::Defeat);
 
 	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
@@ -1565,7 +1826,7 @@ void AJargonCombatGameMode::HandleDefeat()
 		return;
 	}
 
-	GameInstance->PrepareReturnToExploration();
+	GameInstance->HandleCombatDefeat();
 	ReturnToExploration();
 }
 
@@ -1574,16 +1835,16 @@ void AJargonCombatGameMode::ReturnToExploration()
 	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
 	if (!GameInstance)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ReturnToExploration failed because UJargonGameInstance was not available."));
+		UE_LOG(LogTemp, Warning, TEXT("ReturnFromCombat failed because UJargonGameInstance was not available."));
 		return;
 	}
 
-	const FName ReturnMapName = GameInstance->GetReturnMapName();
-	if (ReturnMapName.IsNone())
+	const FName DestinationMapName = GameInstance->GetPostCombatDestinationMapName();
+	if (DestinationMapName.IsNone())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ReturnToExploration failed because ReturnMapName is None."));
+		UE_LOG(LogTemp, Warning, TEXT("ReturnFromCombat failed because no destination map name was available."));
 		return;
 	}
 
-	UGameplayStatics::OpenLevel(this, ReturnMapName);
+	UGameplayStatics::OpenLevel(this, DestinationMapName);
 }

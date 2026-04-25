@@ -36,6 +36,7 @@ protected:
 	void DisableEncounter();
 	void StartEncounterForPlayer(AActor* TriggeringActor);
 	void UpdateSimplePacing(float DeltaSeconds);
+	UEncounterDefinition* ResolveEncounterDefinitionToStart() const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
@@ -46,6 +47,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Encounter")
 	TObjectPtr<UEncounterDefinition> EncounterDefinition = nullptr;
+
+	UPROPERTY(EditAnywhere, Category = "Encounter")
+	TArray<TObjectPtr<UEncounterDefinition>> EncounterDefinitionPool;
 
 	UPROPERTY(Transient)
 	bool bEncounterStarting = false;

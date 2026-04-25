@@ -53,6 +53,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Summon")
 	TSubclassOf<ABattleUnit> SummonedUnitClass;
 
+	/** By default, freshly summoned friendly units cannot basic attack on the turn they enter play. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Summon")
+	bool bSummonEntersWithAttackExhausted = true;
+
+	/** Bonus damage dealt when a pushed unit collides with an obstruction before finishing the push. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Push", meta = (ClampMin = "0"))
+	int32 PushCollisionDamage = 1;
+
 	UFUNCTION(BlueprintPure, Category = "Card")
 	bool UsesBoardTileTargeting() const
 	{
@@ -87,5 +95,11 @@ public:
 	int32 GetConfiguredAreaRadius() const
 	{
 		return FMath::Max(0, Radius);
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Card")
+	int32 GetConfiguredPushCollisionDamage() const
+	{
+		return FMath::Max(0, PushCollisionDamage);
 	}
 };

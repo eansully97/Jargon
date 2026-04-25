@@ -14,6 +14,9 @@ class UWidgetComponent;
 class UBattleUnitStatusWidget;
 class UAnimationAsset;
 class UMaterialInstanceDynamic;
+class ABattleUnit;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBattleUnitMovementCompletedSignature, ABattleUnit*);
 
 UCLASS()
 class JARGON_API ABattleUnit : public AActor
@@ -22,6 +25,8 @@ class JARGON_API ABattleUnit : public AActor
 
 public:
 	ABattleUnit();
+
+	virtual void Tick(float DeltaSeconds) override;
 
 	void FaceDirection(const FVector& WorldDirection);
 	void FaceLocation(const FVector& WorldLocation);
@@ -123,7 +128,13 @@ public:
 	void SetCurrentTile(AGridTile* Tile);
 
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
-	void MoveAlongPath(const TArray<AGridTile*>& Path);
+	bool MoveAlongPath(const TArray<AGridTile*>& Path);
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit")
+	bool IsMovingAlongPath() const
+	{
+		return bIsMovingAlongPath;
+	}
 
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void ApplyDamage(int32 Amount);
@@ -146,6 +157,9 @@ public:
 		return BasicAttackDamageDelay;
 	}
 
+	UFUNCTION(BlueprintPure, Category = "Battle Unit|Presentation")
+	float GetBasicAttackPresentationDuration() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void AddTemporaryShield(int32 Amount);
 
@@ -159,6 +173,11 @@ public:
 	bool IsActingHighlighted() const
 	{
 		return bActingHighlight;
+	}
+
+	FOnBattleUnitMovementCompletedSignature& OnMovementCompleted()
+	{
+		return MovementCompletedDelegate;
 	}
 
 protected:
@@ -178,6 +197,12 @@ protected:
 	UFUNCTION()
 	void ReturnToIdleAfterBasicAttack();
 	FTimerHandle BasicAttackTimerHandle;
+
+	void AdvanceMovementSegment();
+	void HandlePathSegmentArrival(AGridTile* ReachedTile, bool bIsFinalTile);
+	void EnterTileDuringPathMovement(AGridTile* Tile, bool bKeepOccupancyAfterEntry);
+	void FinishPathMovement();
+	void StopPathMovement();
 
 	void PlayDeathPresentation();
 	void FinalizeDeathAndDestroy();
@@ -231,6 +256,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Presentation", meta = (ClampMin = "0.0"))
 	float BasicAttackDamageDelay = 0.25f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Movement", meta = (ClampMin = "0.01"))
+	float MovementSecondsPerTile = 0.18f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Presentation")
 	bool bFaceTargetOnBasicAttack = true;
 
@@ -245,6 +273,27 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Turn")
 	bool bAttackActionUsedThisTurn = false;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AGridTile>> ActiveMovePath;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Movement")
+	bool bIsMovingAlongPath = false;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Movement")
+	int32 ActiveMoveSegmentIndex = INDEX_NONE;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Movement")
+	float ActiveMoveSegmentElapsed = 0.f;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Movement")
+	float ActiveMoveSegmentDuration = 0.f;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Movement")
+	FVector ActiveMoveSegmentStart = FVector::ZeroVector;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Movement")
+	FVector ActiveMoveSegmentEnd = FVector::ZeroVector;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Presentation")
 	bool bActingHighlight = false;
@@ -271,9 +320,6 @@ protected:
 	float HitFlashDuration = 0.2f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Visual")
-	FLinearColor ActingHighlightColor = FLinearColor(1.f, 0.5f, 0.f, 0.2f);
-
-	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Visual")
 	FName HighlightStrengthParameterName = TEXT("HighlightStrength");
 
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Visual")
@@ -291,6 +337,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Death", meta = (ClampMin = "0.0"))
 	float DeathDestroyDelay = 0.75f;
 
+	FOnBattleUnitMovementCompletedSignature MovementCompletedDelegate;
 	FTimerHandle HitFlashTimerHandle;
 	FTimerHandle DeathTimerHandle;
 };

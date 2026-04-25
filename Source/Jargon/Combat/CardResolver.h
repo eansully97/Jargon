@@ -41,6 +41,9 @@ struct JARGON_API FCardResolveResult
 
 	UPROPERTY()
 	bool bConsumePlayerMove = false;
+
+	UPROPERTY()
+	bool bContinuesAsynchronously = false;
 };
 
 class JARGON_API FCardResolver
@@ -109,5 +112,4 @@ private:
 
 	static AGridTile* GetResolvedTargetTile(const FCardResolveContext& Context);
 	static ABattleUnit* GetResolvedTargetUnit(const FCardResolveContext& Context);
-	static int32 GetTileDistance(const AGridTile* TileA, const AGridTile* TileB);
 };

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/JargonTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "JargonCombatPlayerController.generated.h"
 

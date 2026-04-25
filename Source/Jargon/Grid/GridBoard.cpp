@@ -1,10 +1,38 @@
-﻿// GridBoard.cpp
+// GridBoard.cpp
 
 #include "Grid/GridBoard.h"
 
 #include "Containers/Queue.h"
 #include "Components/SceneComponent.h"
 #include "Grid/GridTile.h"
+
+namespace
+{
+	const TArray<FHexCoord>& GetHexNeighborOffsets()
+	{
+		static const TArray<FHexCoord> NeighborOffsets =
+		{
+			FHexCoord(1, 0),
+			FHexCoord(1, -1),
+			FHexCoord(0, -1),
+			FHexCoord(-1, 0),
+			FHexCoord(-1, 1),
+			FHexCoord(0, 1)
+		};
+
+		return NeighborOffsets;
+	}
+
+	FIntVector AxialToCube(const FHexCoord& Coord)
+	{
+		return FIntVector(Coord.Q, Coord.GetS(), Coord.R);
+	}
+
+	int32 CubeDot(const FIntVector& A, const FIntVector& B)
+	{
+		return (A.X * B.X) + (A.Y * B.Y) + (A.Z * B.Z);
+	}
+}
 
 AGridBoard::AGridBoard()
 {
@@ -16,8 +44,11 @@ AGridBoard::AGridBoard()
 	Width = 8;
 	Height = 6;
 	TileSize = 200.f;
-	PlayerSpawnCoord = FIntPoint(1, 1);
-	EnemySpawnCoord = FIntPoint(6, 4);
+	PlayerSpawnCoord = FHexCoord(1, 1);
+	EnemySpawnCoord = FHexCoord(6, 4);
+	RandomBlockedTileMin = 3;
+	RandomBlockedTileMax = 6;
+	bProtectSpawnNeighborsFromRandomBlocking = true;
 }
 
 void AGridBoard::BeginPlay()
@@ -27,10 +58,34 @@ void AGridBoard::BeginPlay()
 	GenerateBoard();
 }
 
+void AGridBoard::RebuildGridInEditor()
+{
+	RebuildGrid();
+}
+
+void AGridBoard::RebuildGrid()
+{
+	ClearSpawnedTiles();
+	GenerateBoard();
+}
+
+void AGridBoard::ClearSpawnedTiles()
+{
+	for (TPair<FHexCoord, TObjectPtr<AGridTile>>& Pair : TileMap)
+	{
+		if (AGridTile* Tile = Pair.Value.Get())
+		{
+			Tile->Destroy();
+		}
+	}
+	TileMap.Empty();
+}
+
 void AGridBoard::GenerateBoard()
 {
 	DestroyExistingTiles();
 	TileMap.Empty();
+	BuildResolvedBlockedCoords();
 
 	if (!TileClass)
 	{
@@ -50,11 +105,11 @@ void AGridBoard::GenerateBoard()
 		return;
 	}
 
-	for (int32 X = 0; X < Width; ++X)
+	for (int32 Q = 0; Q < Width; ++Q)
 	{
-		for (int32 Y = 0; Y < Height; ++Y)
+		for (int32 R = 0; R < Height; ++R)
 		{
-			const FIntPoint Coord(X, Y);
+			const FHexCoord Coord(Q, R);
 			const FVector SpawnLocation = GetTileWorldLocation(Coord);
 			const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
 
@@ -82,7 +137,7 @@ void AGridBoard::GenerateBoard()
 	ClearHighlights();
 }
 
-AGridTile* AGridBoard::GetTile(const FIntPoint& Coord) const
+AGridTile* AGridBoard::GetTile(const FHexCoord& Coord) const
 {
 	if (const TObjectPtr<AGridTile>* FoundTile = TileMap.Find(Coord))
 	{
@@ -92,9 +147,9 @@ AGridTile* AGridBoard::GetTile(const FIntPoint& Coord) const
 	return nullptr;
 }
 
-bool AGridBoard::IsCoordValid(const FIntPoint& Coord) const
+bool AGridBoard::IsCoordValid(const FHexCoord& Coord) const
 {
-	return Coord.X >= 0 && Coord.X < Width && Coord.Y >= 0 && Coord.Y < Height;
+	return Coord.Q >= 0 && Coord.Q < Width && Coord.R >= 0 && Coord.R < Height;
 }
 
 TArray<AGridTile*> AGridBoard::GetNeighbors(AGridTile* Tile) const
@@ -106,18 +161,11 @@ TArray<AGridTile*> AGridBoard::GetNeighbors(AGridTile* Tile) const
 		return Neighbors;
 	}
 
-	const FIntPoint Coord = Tile->GetCoord();
+	const FHexCoord Coord = Tile->GetCoord();
 
-	const TArray<FIntPoint> NeighborCoords =
+	for (const FHexCoord& NeighborOffset : GetHexNeighborOffsets())
 	{
-		FIntPoint(Coord.X + 1, Coord.Y),
-		FIntPoint(Coord.X - 1, Coord.Y),
-		FIntPoint(Coord.X, Coord.Y + 1),
-		FIntPoint(Coord.X, Coord.Y - 1)
-	};
-
-	for (const FIntPoint& NeighborCoord : NeighborCoords)
-	{
+		const FHexCoord NeighborCoord = Coord + NeighborOffset;
 		if (!IsCoordValid(NeighborCoord))
 		{
 			continue;
@@ -130,6 +178,32 @@ TArray<AGridTile*> AGridBoard::GetNeighbors(AGridTile* Tile) const
 	}
 
 	return Neighbors;
+}
+
+int32 AGridBoard::GetTileDistance(const AGridTile* TileA, const AGridTile* TileB) const
+{
+	if (!TileA || !TileB)
+	{
+		return MAX_int32;
+	}
+
+	return GetCoordDistance(TileA->GetCoord(), TileB->GetCoord());
+}
+
+int32 AGridBoard::GetCoordDistance(const FHexCoord& CoordA, const FHexCoord& CoordB) const
+{
+	const FHexCoord Delta = CoordA - CoordB;
+	return (FMath::Abs(Delta.Q) + FMath::Abs(Delta.R) + FMath::Abs(Delta.GetS())) / 2;
+}
+
+bool AGridBoard::AreTilesWithinRange(const AGridTile* TileA, const AGridTile* TileB, int32 Range) const
+{
+	if (Range < 0)
+	{
+		return false;
+	}
+
+	return GetTileDistance(TileA, TileB) <= Range;
 }
 
 TArray<AGridTile*> AGridBoard::FindReachableTiles(AGridTile* StartTile, int32 MoveRange) const
@@ -304,40 +378,46 @@ TArray<AGridTile*> AGridBoard::GetTilesWithinRadius(AGridTile* CenterTile, int32
 		return TilesInRadius;
 	}
 
-	const FIntPoint CenterCoord = CenterTile->GetCoord();
-
-	for (int32 X = CenterCoord.X - Radius; X <= CenterCoord.X + Radius; ++X)
+	for (const TPair<FHexCoord, TObjectPtr<AGridTile>>& Pair : TileMap)
 	{
-		for (int32 Y = CenterCoord.Y - Radius; Y <= CenterCoord.Y + Radius; ++Y)
+		AGridTile* CandidateTile = Pair.Value.Get();
+		if (!CandidateTile)
 		{
-			const FIntPoint CandidateCoord(X, Y);
-			if (!IsCoordValid(CandidateCoord))
-			{
-				continue;
-			}
+			continue;
+		}
 
-			const int32 ManhattanDistance =
-				FMath::Abs(CandidateCoord.X - CenterCoord.X) +
-				FMath::Abs(CandidateCoord.Y - CenterCoord.Y);
-
-			if (ManhattanDistance > Radius)
-			{
-				continue;
-			}
-
-			if (AGridTile* CandidateTile = GetTile(CandidateCoord))
-			{
-				TilesInRadius.Add(CandidateTile);
-			}
+		if (GetTileDistance(CenterTile, CandidateTile) <= Radius)
+		{
+			TilesInRadius.Add(CandidateTile);
 		}
 	}
 
 	return TilesInRadius;
 }
 
+AGridTile* AGridBoard::GetTileInPushDirection(
+	const AGridTile* SourceTile,
+	const AGridTile* TargetTile,
+	int32 StepDistance) const
+{
+	if (StepDistance <= 0 || !TargetTile)
+	{
+		return nullptr;
+	}
+
+	const FHexCoord DirectionOffset = GetPushDirectionOffset(SourceTile, TargetTile);
+	if (DirectionOffset.IsZero())
+	{
+		return nullptr;
+	}
+
+	const FHexCoord CandidateCoord = TargetTile->GetCoord() + (DirectionOffset * StepDistance);
+	return IsCoordValid(CandidateCoord) ? GetTile(CandidateCoord) : nullptr;
+}
+
 void AGridBoard::ClearHighlights()
 {
-	for (TPair<FIntPoint, TObjectPtr<AGridTile>>& Pair : TileMap)
+	for (TPair<FHexCoord, TObjectPtr<AGridTile>>& Pair : TileMap)
 	{
 		AGridTile* Tile = Pair.Value.Get();
 		if (!Tile)
@@ -381,34 +461,204 @@ void AGridBoard::HighlightReachableTilesFrom(AGridTile* StartTile, int32 MoveRan
 	StartTile->SetHighlightState(ETileHighlightState::Selected);
 }
 
+void AGridBoard::HighlightTilesInRangeFrom(AGridTile* StartTile, int32 Range)
+{
+	ClearHighlights();
+
+	if (!StartTile)
+	{
+		return;
+	}
+
+	const TArray<AGridTile*> TilesInRange = GetTilesWithinRadius(StartTile, Range);
+	for (AGridTile* Tile : TilesInRange)
+	{
+		if (!Tile)
+		{
+			continue;
+		}
+
+		Tile->SetHighlightState(ETileHighlightState::Reachable);
+	}
+
+	StartTile->SetHighlightState(ETileHighlightState::Selected);
+}
+
 AGridTile* AGridBoard::GetPlayerSpawnTile() const
 {
-	return GetTile(PlayerSpawnCoord);
+	return FindNearestWalkableTile(PlayerSpawnCoord);
 }
 
 AGridTile* AGridBoard::GetEnemySpawnTile() const
 {
-	return GetTile(EnemySpawnCoord);
+	return FindNearestWalkableTile(EnemySpawnCoord);
 }
 
-FVector AGridBoard::GetTileWorldLocation(const FIntPoint& Coord) const
+AGridTile* AGridBoard::FindNearestWalkableTile(const FHexCoord& PreferredCoord) const
 {
+	AGridTile* BestTile = nullptr;
+	int32 BestDistance = MAX_int32;
+	FHexCoord BestCoord;
+	bool bHasBestCoord = false;
+
+	for (const TPair<FHexCoord, TObjectPtr<AGridTile>>& Pair : TileMap)
+	{
+		AGridTile* CandidateTile = Pair.Value.Get();
+		if (!CandidateTile || !CandidateTile->IsWalkable())
+		{
+			continue;
+		}
+
+		const FHexCoord CandidateCoord = CandidateTile->GetCoord();
+		const int32 CandidateDistance = GetCoordDistance(PreferredCoord, CandidateCoord);
+		const bool bIsBetterDistance = CandidateDistance < BestDistance;
+		const bool bIsSameDistanceButEarlierCoord =
+			CandidateDistance == BestDistance &&
+			(!bHasBestCoord ||
+			 CandidateCoord.Q < BestCoord.Q ||
+			 (CandidateCoord.Q == BestCoord.Q && CandidateCoord.R < BestCoord.R));
+
+		if (!BestTile || bIsBetterDistance || bIsSameDistanceButEarlierCoord)
+		{
+			BestTile = CandidateTile;
+			BestDistance = CandidateDistance;
+			BestCoord = CandidateCoord;
+			bHasBestCoord = true;
+		}
+	}
+
+	return BestTile;
+}
+
+FVector AGridBoard::GetTileWorldLocation(const FHexCoord& Coord) const
+{
+	constexpr float SqrtThree = 1.7320508075688772f;
+
 	const FVector BoardOrigin = GetActorLocation();
-	return BoardOrigin + FVector(Coord.X * TileSize, Coord.Y * TileSize, 0.f);
+	const float WorldX = TileSize * SqrtThree * (static_cast<float>(Coord.Q) + (static_cast<float>(Coord.R) * 0.5f));
+	const float WorldY = TileSize * 1.5f * static_cast<float>(Coord.R);
+	return BoardOrigin + FVector(WorldX, WorldY, 0.f);
 }
 
-bool AGridBoard::IsCoordBlocked(const FIntPoint& Coord) const
+bool AGridBoard::IsCoordBlocked(const FHexCoord& Coord) const
 {
-	return BlockedCoords.Contains(Coord);
+	return ResolvedBlockedCoords.Contains(Coord);
+}
+
+FHexCoord AGridBoard::GetPushDirectionOffset(const AGridTile* SourceTile, const AGridTile* TargetTile) const
+{
+	if (!SourceTile || !TargetTile)
+	{
+		return FHexCoord();
+	}
+
+	const FHexCoord Delta = TargetTile->GetCoord() - SourceTile->GetCoord();
+	if (Delta.IsZero())
+	{
+		return FHexCoord();
+	}
+
+	const FIntVector DeltaCube = AxialToCube(Delta);
+
+	FHexCoord BestDirection;
+	int32 BestScore = MIN_int32;
+	bool bFoundDirection = false;
+
+	for (const FHexCoord& Direction : GetHexNeighborOffsets())
+	{
+		const int32 DirectionScore = CubeDot(DeltaCube, AxialToCube(Direction));
+		if (!bFoundDirection || DirectionScore > BestScore)
+		{
+			BestScore = DirectionScore;
+			BestDirection = Direction;
+			bFoundDirection = true;
+		}
+	}
+
+	return bFoundDirection ? BestDirection : FHexCoord();
 }
 
 void AGridBoard::DestroyExistingTiles()
 {
-	for (TPair<FIntPoint, TObjectPtr<AGridTile>>& Pair : TileMap)
+	for (TPair<FHexCoord, TObjectPtr<AGridTile>>& Pair : TileMap)
 	{
 		if (AGridTile* Tile = Pair.Value.Get())
 		{
 			Tile->Destroy();
 		}
 	}
+}
+
+void AGridBoard::BuildResolvedBlockedCoords()
+{
+	ResolvedBlockedCoords = BlockedCoords;
+
+	const int32 MinimumRandomBlockedTiles = FMath::Max(0, RandomBlockedTileMin);
+	const int32 MaximumRandomBlockedTiles = FMath::Max(MinimumRandomBlockedTiles, RandomBlockedTileMax);
+	if (MaximumRandomBlockedTiles <= 0)
+	{
+		return;
+	}
+
+	TArray<FHexCoord> CandidateCoords;
+	CandidateCoords.Reserve(Width * Height);
+
+	for (int32 Q = 0; Q < Width; ++Q)
+	{
+		for (int32 R = 0; R < Height; ++R)
+		{
+			const FHexCoord CandidateCoord(Q, R);
+			if (ResolvedBlockedCoords.Contains(CandidateCoord))
+			{
+				continue;
+			}
+
+			if (ShouldProtectCoordFromRandomBlocking(CandidateCoord))
+			{
+				continue;
+			}
+
+			CandidateCoords.Add(CandidateCoord);
+		}
+	}
+
+	if (CandidateCoords.Num() == 0)
+	{
+		return;
+	}
+
+	for (int32 Index = CandidateCoords.Num() - 1; Index > 0; --Index)
+	{
+		const int32 SwapIndex = FMath::RandRange(0, Index);
+		if (SwapIndex != Index)
+		{
+			CandidateCoords.Swap(Index, SwapIndex);
+		}
+	}
+
+	const int32 RandomBlockedTileCount = FMath::Clamp(
+		FMath::RandRange(MinimumRandomBlockedTiles, MaximumRandomBlockedTiles),
+		0,
+		CandidateCoords.Num());
+
+	for (int32 Index = 0; Index < RandomBlockedTileCount; ++Index)
+	{
+		ResolvedBlockedCoords.Add(CandidateCoords[Index]);
+	}
+}
+
+bool AGridBoard::ShouldProtectCoordFromRandomBlocking(const FHexCoord& Coord) const
+{
+	if (Coord == PlayerSpawnCoord || Coord == EnemySpawnCoord)
+	{
+		return true;
+	}
+
+	if (!bProtectSpawnNeighborsFromRandomBlocking)
+	{
+		return false;
+	}
+
+	return GetCoordDistance(Coord, PlayerSpawnCoord) <= 1 ||
+		GetCoordDistance(Coord, EnemySpawnCoord) <= 1;
 }

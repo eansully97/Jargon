@@ -12,6 +12,7 @@ class USceneComponent;
 class UMaterialInterface;
 class ABattleUnit;
 class ABattleTileEffect;
+class AGridBoard;
 
 UCLASS()
 class JARGON_API AGridTile : public AActor
@@ -22,13 +23,13 @@ public:
 	AGridTile();
 
 	UFUNCTION(BlueprintPure, Category = "Grid")
-	FIntPoint GetCoord() const
+	FHexCoord GetCoord() const
 	{
 		return Coord;
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "Grid")
-	void SetCoord(const FIntPoint& InCoord);
+	void SetCoord(const FHexCoord& InCoord);
 
 	UFUNCTION(BlueprintPure, Category = "Grid")
 	bool IsBlocked() const
@@ -66,6 +67,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid")
 	FVector GetUnitStandLocation() const;
 
+	UFUNCTION(BlueprintPure, Category = "Grid")
+	AGridBoard* GetOwningGridBoard() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Grid|Effects")
 	void AddTileEffect(ABattleTileEffect* TileEffect);
 
@@ -90,7 +94,7 @@ protected:
 	TObjectPtr<UStaticMeshComponent> TileMesh;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Grid")
-	FIntPoint Coord = FIntPoint::ZeroValue;
+	FHexCoord Coord;
 
 	UPROPERTY(EditInstanceOnly, Category = "Grid")
 	bool bBlocked = false;

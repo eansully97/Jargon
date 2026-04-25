@@ -213,8 +213,9 @@ bool FCardResolver::ResolveAOEDamage(
 		return false;
 	}
 
+	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
 	AGridTile* CenterTile = GetResolvedTargetTile(Context);
-	if (!CenterTile)
+	if (!GridBoard || !CenterTile)
 	{
 		return false;
 	}
@@ -243,7 +244,7 @@ bool FCardResolver::ResolveAOEDamage(
 			continue;
 		}
 
-		if (GetTileDistance(EnemyUnit->GetCurrentTile(), CenterTile) <= EffectRadius)
+		if (GridBoard->AreTilesWithinRange(EnemyUnit->GetCurrentTile(), CenterTile, EffectRadius))
 		{
 			TargetsToDamage.Add(EnemyUnit);
 		}
@@ -294,61 +295,52 @@ bool FCardResolver::ResolvePush(
 
 	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
 	AGridTile* SourceTile = Context.SourceUnit->GetCurrentTile();
-	AGridTile* TargetTile = GetResolvedTargetTile(Context);
+	AGridTile* TargetTile = TargetUnit->GetCurrentTile();
 
 	if (!GridBoard || !SourceTile || !TargetTile)
 	{
 		return false;
 	}
 
-	const FIntPoint SourceCoord = SourceTile->GetCoord();
-	const FIntPoint TargetCoord = TargetTile->GetCoord();
-	const FIntPoint Delta = TargetCoord - SourceCoord;
-
-	FIntPoint Direction = FIntPoint::ZeroValue;
-
-	if (FMath::Abs(Delta.X) >= FMath::Abs(Delta.Y))
-	{
-		Direction.X = FMath::Clamp(Delta.X, -1, 1);
-	}
-	else
-	{
-		Direction.Y = FMath::Clamp(Delta.Y, -1, 1);
-	}
-
-	if (Direction == FIntPoint::ZeroValue)
-	{
-		return false;
-	}
-
 	const int32 PushDistance = FMath::Max(1, Card->Value);
+	const int32 CollisionDamage = Card->GetConfiguredPushCollisionDamage();
 
 	AGridTile* BestDestination = nullptr;
+	bool bCollidedWithObstruction = false;
 
 	for (int32 Step = 1; Step <= PushDistance; ++Step)
 	{
-		const FIntPoint CandidateCoord = TargetCoord + FIntPoint(Direction.X * Step, Direction.Y * Step);
-		if (!GridBoard->IsCoordValid(CandidateCoord))
+		AGridTile* CandidateTile = GridBoard->GetTileInPushDirection(SourceTile, TargetTile, Step);
+		if (!CandidateTile)
 		{
+			bCollidedWithObstruction = true;
 			break;
 		}
 
-		AGridTile* CandidateTile = GridBoard->GetTile(CandidateCoord);
-		if (!CandidateTile || !CandidateTile->IsWalkable())
+		if (!CandidateTile->IsWalkable())
 		{
+			bCollidedWithObstruction = true;
 			break;
 		}
 
 		BestDestination = CandidateTile;
 	}
 
-	if (!BestDestination)
+	bool bResolvedAnyPushEffect = false;
+
+	if (BestDestination)
 	{
-		return false;
+		TargetUnit->PlaceOnTile(BestDestination);
+		bResolvedAnyPushEffect = true;
 	}
 
-	TargetUnit->PlaceOnTile(BestDestination);
-	return true;
+	if (bCollidedWithObstruction && CollisionDamage > 0 && !TargetUnit->IsDead())
+	{
+		TargetUnit->ApplyDamage(CollisionDamage);
+		bResolvedAnyPushEffect = true;
+	}
+
+	return bResolvedAnyPushEffect;
 }
 
 bool FCardResolver::ResolveMoveSelf(
@@ -393,8 +385,12 @@ bool FCardResolver::ResolveMoveSelf(
 		return false;
 	}
 
-	Context.SourceUnit->MoveAlongPath(Path);
+	if (!Context.GameMode->StartPlayerControlledMoveSequence(Context.SourceUnit, Path, false))
+	{
+		return false;
+	}
 
+	OutResult.bContinuesAsynchronously = true;
 	return true;
 }
 
@@ -422,17 +418,4 @@ ABattleUnit* FCardResolver::GetResolvedTargetUnit(const FCardResolveContext& Con
 
 	AGridTile* TargetTile = GetResolvedTargetTile(Context);
 	return TargetTile ? TargetTile->GetOccupyingUnit() : nullptr;
-}
-
-int32 FCardResolver::GetTileDistance(const AGridTile* TileA, const AGridTile* TileB)
-{
-	if (!TileA || !TileB)
-	{
-		return MAX_int32;
-	}
-
-	const FIntPoint CoordA = TileA->GetCoord();
-	const FIntPoint CoordB = TileB->GetCoord();
-
-	return FMath::Abs(CoordA.X - CoordB.X) + FMath::Abs(CoordA.Y - CoordB.Y);
 }

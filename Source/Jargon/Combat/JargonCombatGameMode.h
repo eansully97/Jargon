@@ -43,9 +43,13 @@ public:
 	bool TryPlayCardOnTarget(UCardDefinition* Card, ABattleUnit* Target);
 	bool TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget);
 	bool TryPlayCardOnSelf(UCardDefinition* Card);
+	bool StartPlayerControlledMoveSequence(ABattleUnit* MovingUnit, const TArray<AGridTile*>& Path, bool bConsumeMoveAction);
 	ABattleTileEffect* SpawnPersistentTileEffect(const UCardDefinition* Card, const ABattleUnit* SourceUnit, AGridTile* TargetTile);
 	ABattleUnit* SpawnSummonedUnitFromCard(const UCardDefinition* Card, const ABattleUnit* SourceUnit, AGridTile* TargetTile);
 	void NotifyTileEffectsUnitEntered(ABattleUnit* EnteringUnit, AGridTile* EnteredTile);
+	
+	void RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card);
+	void RefreshPlayerMovementHighlights();
 
 	void HandleUnitDied(ABattleUnit* DeadUnit);
 	void HandleVictory();
@@ -144,7 +148,10 @@ protected:
 	void SpawnCombatants();
 	void SpawnEnemiesFromPendingEncounter();
 	void SpawnFallbackEnemy();
+	AGridTile* ResolveEnemySpawnTile(const FHexCoord& PreferredCoord) const;
+	ABattleUnit* SpawnEnemyUnitAtTile(TSubclassOf<ABattleUnit> UnitClass, AGridTile* SpawnTile);
 	bool AreAllEnemiesDefeated() const;
+	void RegisterBattleUnitCallbacks(ABattleUnit* Unit);
 
 	void StartBattleFlow();
 	void StartPlayerTurn();
@@ -152,16 +159,18 @@ protected:
 	void StartEnemyTurn();
 	void ResolveEnemyTurn();
 	void ResolveNextEnemyAction();
-	float ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
+	bool ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
 	void EndEnemyTurn();
 	void NotifyPlayerTurnStartTileEffects();
-	void RefreshPlayerMovementHighlights();
 	void RefreshSelectedFriendlyUnitPresentation();
 	void SetSelectedFriendlyUnit(ABattleUnit* NewSelectedFriendlyUnit);
+	void ClearPendingMovementSequence();
+	bool StartEnemyMoveSequence(ABattleUnit* EnemyUnit, const TArray<AGridTile*>& Path);
+	void HandleBattleUnitMovementCompleted(ABattleUnit* MovedUnit);
+	void HandlePlayerControlledMoveCompleted(ABattleUnit* MovedUnit);
+	void HandleEnemyMoveCompleted(ABattleUnit* MovedUnit);
 
 	AJargonCombatPlayerController* GetCombatPlayerController() const;
-
-	int32 GetTileDistance(const AGridTile* TileA, const AGridTile* TileB) const;
 	int32 CalculateMaxEnergyForRound(int32 RoundNumber) const;
 	bool IsFriendlyUnitSelectable(const ABattleUnit* Unit) const;
 	ABattleUnit* FindFallbackSelectedFriendlyUnit() const;
@@ -176,12 +185,24 @@ protected:
 	void SetCurrentEnergy(int32 NewEnergy);
 	void SetCurrentActingEnemy(ABattleUnit* NewActingEnemy);
 	void BroadcastPlayerActionAvailabilityChanged();
-	float StartPresentedBasicAttack(ABattleUnit* Attacker, ABattleUnit* Target, bool bReturnToPlayerTurnAfterDamage);
-	void ApplyPresentedBasicAttackDamage(ABattleUnit* Attacker, ABattleUnit* Target, bool bReturnToPlayerTurnAfterDamage);
+	bool StartPresentedBasicAttack(
+		ABattleUnit* Attacker,
+		ABattleUnit* Target,
+		bool bReturnToPlayerTurnAfterSequence,
+		bool bContinueEnemyTurnAfterSequence);
+	void ApplyPresentedBasicAttackDamage();
+	void HandlePresentedBasicAttackCompleted();
 	void ScheduleNextEnemyAction(float DelaySeconds);
 	void ScheduleEndEnemyTurn(float DelaySeconds);
 	void ClearEnemyTurnTimer();
 	void ClearBasicAttackTimer();
+
+	enum class EPendingMovementContext : uint8
+	{
+		None,
+		PlayerControlled,
+		Enemy
+	};
 
 protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
@@ -263,8 +284,16 @@ protected:
 	float EnemyTurnEndDelay = 0.35f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn|Presentation")
-	FLinearColor SelectedFriendlyUnitHighlightColor = FLinearColor(0.15f, 0.85f, 1.f, 0.2f);
+	FLinearColor SelectedFriendlyUnitHighlightColor = FLinearColor(0.85f, 0.85f, 0.1f, 0.2f);
+
+	EPendingMovementContext PendingMovementContext = EPendingMovementContext::None;
+	TWeakObjectPtr<ABattleUnit> PendingMovementUnit;
+	TWeakObjectPtr<ABattleUnit> PendingAttackAttacker;
+	TWeakObjectPtr<ABattleUnit> PendingAttackTarget;
+	bool bReturnToPlayerTurnAfterAttackSequence = false;
+	bool bContinueEnemyTurnAfterAttackSequence = false;
 
 	FTimerHandle EnemyTurnTimerHandle;
 	FTimerHandle BasicAttackDamageTimerHandle;
+	FTimerHandle BasicAttackCompletionTimerHandle;
 };

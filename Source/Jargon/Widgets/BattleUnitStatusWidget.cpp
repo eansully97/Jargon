@@ -27,6 +27,7 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 	{
 		HPText->SetText(FText::GetEmpty());
 		AttackText->SetText(FText::GetEmpty());
+		AttackText->SetColorAndOpacity(AttackReadyColor);
 		ShieldText->SetText(FText::GetEmpty());
 		return;
 	}
@@ -41,6 +42,9 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 		FText::FromString(TEXT("ATK {0}")),
 		FText::AsNumber(ObservedUnit->GetAttackDamage())
 	));
+	AttackText->SetColorAndOpacity(
+		ObservedUnit->HasAttackActionRemaining() ? AttackReadyColor : AttackUnavailableColor
+	);
 
 	const int32 ShieldValue = ObservedUnit->GetTemporaryShield();
 	if (ShieldValue > 0)

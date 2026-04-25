@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Styling/SlateColor.h"
 #include "BattleUnitStatusWidget.generated.h"
 
 class UTextBlock;
@@ -30,6 +31,12 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> ShieldText = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit Status")
+	FSlateColor AttackReadyColor = FSlateColor(FLinearColor(0.95f, 0.95f, 0.05f, 1.f));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit Status")
+	FSlateColor AttackUnavailableColor = FSlateColor(FLinearColor(0.45f, 0.45f, 0.45f, 0.85f));
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Battle Unit Status")
 	TObjectPtr<ABattleUnit> ObservedUnit = nullptr;

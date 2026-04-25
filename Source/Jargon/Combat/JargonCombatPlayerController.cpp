@@ -4,11 +4,13 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Combat/JargonCombatGameMode.h"
+#include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
 #include "GameFramework/PlayerController.h"
 #include "Grid/GridTile.h"
 #include "InputCoreTypes.h"
 #include "Units/BattleUnit.h"
+#include "Units/PlayerBattleUnit.h"
 #include "Widgets/CombatHUDWidget.h"
 
 AJargonCombatPlayerController::AJargonCombatPlayerController()
@@ -117,11 +119,34 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 		return;
 	}
 
-	for (UCardDefinition* Card : CombatGameMode->GetStartingDeckDefinitions())
+	bool bLoadedPersistentRunDeck = false;
+
+	if (UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>())
 	{
-		if (Card)
+		GameInstance->EnsureRunInitializedFromSeedDeck(CombatGameMode->GetStartingDeckDefinitions());
+
+		if (GameInstance->HasActiveRun())
 		{
-			DrawPile.Add(Card);
+			for (UCardDefinition* Card : GameInstance->GetRunDeckCardsRef())
+			{
+				if (Card)
+				{
+					DrawPile.Add(Card);
+				}
+			}
+
+			bLoadedPersistentRunDeck = true;
+		}
+	}
+
+	if (!bLoadedPersistentRunDeck)
+	{
+		for (UCardDefinition* Card : CombatGameMode->GetStartingDeckDefinitions())
+		{
+			if (Card)
+			{
+				DrawPile.Add(Card);
+			}
 		}
 	}
 
@@ -155,25 +180,25 @@ void AJargonCombatPlayerController::DrawCards(int32 Count)
 
 void AJargonCombatPlayerController::SelectCard(UCardDefinition* Card)
 {
+	if (!Card)
+	{
+		return;
+	}
+
 	if (SelectedCard == Card)
 	{
 		ClearSelectedCard();
 		return;
 	}
 
-	if (!Card)
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
 	{
 		return;
 	}
 
 	if (Card->TargetType == ECardTargetType::Self)
 	{
-		AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
-		if (!CombatGameMode)
-		{
-			return;
-		}
-
 		const bool bPlayedSuccessfully = CombatGameMode->TryPlayCardOnSelf(Card);
 		if (bPlayedSuccessfully)
 		{
@@ -189,7 +214,9 @@ void AJargonCombatPlayerController::SelectCard(UCardDefinition* Card)
 	}
 
 	SelectedCard = Card;
-	bCardTargetingMode = (SelectedCard != nullptr);
+	bCardTargetingMode = true;
+
+	CombatGameMode->RefreshCardTargetHighlights(CombatGameMode->GetPlayerUnit(), SelectedCard);
 	RefreshHUD();
 }
 
@@ -197,6 +224,13 @@ void AJargonCombatPlayerController::ClearSelectedCard()
 {
 	SelectedCard = nullptr;
 	bCardTargetingMode = false;
+
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (CombatGameMode)
+	{
+		CombatGameMode->RefreshPlayerMovementHighlights();
+	}
+
 	RefreshHUD();
 }
 

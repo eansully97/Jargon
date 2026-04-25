@@ -5,6 +5,7 @@
 #include "Combat/JargonCombatGameMode.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Grid/GridBoard.h"
 #include "Grid/GridTile.h"
 #include "Components/WidgetComponent.h"
 #include "Widgets/BattleUnitStatusWidget.h"
@@ -13,7 +14,8 @@
 
 ABattleUnit::ABattleUnit()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
@@ -30,6 +32,32 @@ ABattleUnit::ABattleUnit()
 	StatusWidgetComponent->SetDrawAtDesiredSize(true);
 	StatusWidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, -50.f));
 	StatusWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+void ABattleUnit::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bIsMovingAlongPath || ActiveMovePath.Num() < 2 || ActiveMoveSegmentIndex < 0)
+	{
+		return;
+	}
+
+	ActiveMoveSegmentElapsed += DeltaSeconds;
+
+	const float SegmentDuration = FMath::Max(KINDA_SMALL_NUMBER, ActiveMoveSegmentDuration);
+	const float LerpAlpha = FMath::Clamp(ActiveMoveSegmentElapsed / SegmentDuration, 0.f, 1.f);
+	const FVector NewLocation = FMath::Lerp(ActiveMoveSegmentStart, ActiveMoveSegmentEnd, LerpAlpha);
+	SetActorLocation(NewLocation);
+
+	if (LerpAlpha >= 1.f)
+	{
+		AGridTile* ReachedTile = ActiveMovePath.IsValidIndex(ActiveMoveSegmentIndex)
+			? ActiveMovePath[ActiveMoveSegmentIndex].Get()
+			: nullptr;
+		const bool bIsFinalTile = ActiveMoveSegmentIndex >= ActiveMovePath.Num() - 1;
+		HandlePathSegmentArrival(ReachedTile, bIsFinalTile);
+	}
 }
 
 void ABattleUnit::BeginPlay()
@@ -49,6 +77,8 @@ void ABattleUnit::BeginPlay()
 
 void ABattleUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	StopPathMovement();
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(HitFlashTimerHandle);
@@ -209,6 +239,7 @@ void ABattleUnit::ResetTurnActions()
 {
 	bMoveActionUsedThisTurn = false;
 	bAttackActionUsedThisTurn = false;
+	RefreshStatusWidget();
 }
 
 bool ABattleUnit::ConsumeMoveAction()
@@ -219,6 +250,7 @@ bool ABattleUnit::ConsumeMoveAction()
 	}
 
 	bMoveActionUsedThisTurn = true;
+	RefreshStatusWidget();
 	return true;
 }
 
@@ -230,6 +262,7 @@ bool ABattleUnit::ConsumeAttackAction()
 	}
 
 	bAttackActionUsedThisTurn = true;
+	RefreshStatusWidget();
 	return true;
 }
 
@@ -287,21 +320,48 @@ void ABattleUnit::SetCurrentTile(AGridTile* Tile)
 	}
 }
 
-void ABattleUnit::MoveAlongPath(const TArray<AGridTile*>& Path)
+bool ABattleUnit::MoveAlongPath(const TArray<AGridTile*>& Path)
 {
-	if (bIsDead || Path.Num() == 0)
+	if (bIsDead || bIsMovingAlongPath || Path.Num() < 2)
 	{
-		return;
+		return false;
+	}
+
+	if (CurrentTile && Path[0] != CurrentTile)
+	{
+		return false;
 	}
 
 	AGridTile* DestinationTile = Path.Last();
-	if (!DestinationTile)
+	if (!DestinationTile || !DestinationTile->IsWalkable())
 	{
-		return;
+		return false;
 	}
 
-	FaceLocation(DestinationTile->GetUnitStandLocation());
-	PlaceOnTile(DestinationTile);
+	ActiveMovePath.Reset();
+	ActiveMovePath.Reserve(Path.Num());
+
+	for (AGridTile* PathTile : Path)
+	{
+		if (!PathTile)
+		{
+			StopPathMovement();
+			return false;
+		}
+
+		ActiveMovePath.Add(PathTile);
+	}
+
+	ClearCurrentTileOccupancy();
+	CurrentTile = nullptr;
+	bIsMovingAlongPath = true;
+	ActiveMoveSegmentIndex = 1;
+	ActiveMoveSegmentElapsed = 0.f;
+	ActiveMoveSegmentDuration = 0.f;
+
+	SetActorTickEnabled(true);
+	AdvanceMovementSegment();
+	return true;
 }
 
 void ABattleUnit::ApplyDamage(int32 Amount)
@@ -342,6 +402,7 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 	}
 
 	bIsDead = true;
+	StopPathMovement();
 	ClearCurrentTileOccupancy();
 	CurrentTile = nullptr;
 
@@ -400,14 +461,8 @@ bool ABattleUnit::CanAttackTarget(const ABattleUnit* Target) const
 		return false;
 	}
 
-	const FIntPoint MyCoord = CurrentTile->GetCoord();
-	const FIntPoint TargetCoord = Target->GetCurrentTile()->GetCoord();
-
-	const int32 ManhattanDistance =
-		FMath::Abs(MyCoord.X - TargetCoord.X) +
-		FMath::Abs(MyCoord.Y - TargetCoord.Y);
-
-	return ManhattanDistance <= AttackRange;
+	AGridBoard* GridBoard = CurrentTile->GetOwningGridBoard();
+	return GridBoard && GridBoard->AreTilesWithinRange(CurrentTile, Target->GetCurrentTile(), AttackRange);
 }
 
 void ABattleUnit::FaceDirection(const FVector& WorldDirection)
@@ -479,6 +534,11 @@ void ABattleUnit::PlayBasicAttackPresentation(ABattleUnit* Target)
 	}
 }
 
+float ABattleUnit::GetBasicAttackPresentationDuration() const
+{
+	return BasicAttackAnimation ? FMath::Max(0.f, BasicAttackAnimation->GetPlayLength()) : 0.f;
+}
+
 void ABattleUnit::ReturnToIdleAfterBasicAttack()
 {
 	if (bIsDead)
@@ -513,6 +573,119 @@ void ABattleUnit::PlayDeathPresentation()
 	{
 		StatusWidgetComponent->SetVisibility(false);
 	}
+}
+
+void ABattleUnit::AdvanceMovementSegment()
+{
+	if (!bIsMovingAlongPath)
+	{
+		return;
+	}
+
+	if (!ActiveMovePath.IsValidIndex(ActiveMoveSegmentIndex))
+	{
+		FinishPathMovement();
+		return;
+	}
+
+	AGridTile* NextTile = ActiveMovePath[ActiveMoveSegmentIndex].Get();
+	if (!NextTile)
+	{
+		StopPathMovement();
+		MovementCompletedDelegate.Broadcast(this);
+		return;
+	}
+
+	ActiveMoveSegmentStart = GetActorLocation();
+	ActiveMoveSegmentEnd = NextTile->GetUnitStandLocation();
+	ActiveMoveSegmentElapsed = 0.f;
+	ActiveMoveSegmentDuration = FMath::Max(0.01f, MovementSecondsPerTile);
+	FaceLocation(ActiveMoveSegmentEnd);
+}
+
+void ABattleUnit::HandlePathSegmentArrival(AGridTile* ReachedTile, bool bIsFinalTile)
+{
+	if (!ReachedTile)
+	{
+		StopPathMovement();
+		MovementCompletedDelegate.Broadcast(this);
+		return;
+	}
+
+	EnterTileDuringPathMovement(ReachedTile, bIsFinalTile);
+
+	if (bIsDead)
+	{
+		return;
+	}
+
+	if (!bIsMovingAlongPath)
+	{
+		MovementCompletedDelegate.Broadcast(this);
+		return;
+	}
+
+	if (bIsFinalTile)
+	{
+		FinishPathMovement();
+		return;
+	}
+
+	++ActiveMoveSegmentIndex;
+	AdvanceMovementSegment();
+}
+
+void ABattleUnit::EnterTileDuringPathMovement(AGridTile* Tile, bool bKeepOccupancyAfterEntry)
+{
+	if (!Tile || bIsDead)
+	{
+		return;
+	}
+
+	if ((Tile->IsOccupied() && Tile->GetOccupyingUnit() != this) || Tile->IsBlocked())
+	{
+		StopPathMovement();
+		return;
+	}
+
+	SetActorLocation(Tile->GetUnitStandLocation());
+	ClearCurrentTileOccupancy();
+	SetCurrentTile(Tile);
+
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (CombatGameMode)
+	{
+		CombatGameMode->NotifyTileEffectsUnitEntered(this, Tile);
+	}
+
+	if (bIsDead || !bIsMovingAlongPath)
+	{
+		return;
+	}
+
+	if (!bKeepOccupancyAfterEntry && CurrentTile == Tile)
+	{
+		ClearCurrentTileOccupancy();
+		SetCurrentTile(nullptr);
+	}
+}
+
+void ABattleUnit::FinishPathMovement()
+{
+	StopPathMovement();
+	MovementCompletedDelegate.Broadcast(this);
+}
+
+void ABattleUnit::StopPathMovement()
+{
+	bIsMovingAlongPath = false;
+	ActiveMovePath.Reset();
+	ActiveMoveSegmentIndex = INDEX_NONE;
+	ActiveMoveSegmentElapsed = 0.f;
+	ActiveMoveSegmentDuration = 0.f;
+	ActiveMoveSegmentStart = FVector::ZeroVector;
+	ActiveMoveSegmentEnd = FVector::ZeroVector;
+	SetActorTickEnabled(false);
 }
 
 void ABattleUnit::FinalizeDeathAndDestroy()
@@ -553,7 +726,7 @@ void ABattleUnit::SetActingHighlight(bool bInActingHighlight)
 
 	if (bActingHighlight)
 	{
-		SetHighlightColor(ActingHighlightColor);
+		SetHighlightColor(HighlightColor);
 		SetHighlightEnabled(true);
 	}
 	else

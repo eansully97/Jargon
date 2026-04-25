@@ -49,9 +49,9 @@ void AExplorationEnemyCharacter::BeginPlay()
 		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' has no EncounterId set."), *GetName());
 	}
 
-	if (!EncounterDefinition)
+	if (!EncounterDefinition && EncounterDefinitionPool.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' has no EncounterDefinition assigned."), *GetName());
+		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' has no EncounterDefinition or EncounterDefinitionPool assigned."), *GetName());
 	}
 
 	if (UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>())
@@ -129,15 +129,16 @@ void AExplorationEnemyCharacter::StartEncounterForPlayer(AActor* TriggeringActor
 		return;
 	}
 
-	if (!EncounterDefinition)
+	UEncounterDefinition* SelectedEncounterDefinition = ResolveEncounterDefinitionToStart();
+	if (!SelectedEncounterDefinition)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' cannot start encounter because EncounterDefinition is null."), *GetName());
+		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' cannot start encounter because no valid encounter definition was resolved."), *GetName());
 		return;
 	}
 
-	if (!EncounterDefinition->IsValidDefinition())
+	if (!SelectedEncounterDefinition->IsValidDefinition())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' has an invalid EncounterDefinition."), *GetName());
+		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' resolved an invalid EncounterDefinition."), *GetName());
 		return;
 	}
 
@@ -163,9 +164,10 @@ void AExplorationEnemyCharacter::StartEncounterForPlayer(AActor* TriggeringActor
 
 	FPendingEncounterRuntimeData PendingEncounter;
 	PendingEncounter.EncounterId = EncounterId;
-	PendingEncounter.CombatMapName = EncounterDefinition->CombatMapName;
+	PendingEncounter.CombatMapName = SelectedEncounterDefinition->CombatMapName;
+	PendingEncounter.VictoryCurrencyReward = SelectedEncounterDefinition->VictoryCurrencyReward;
 
-	for (const FEncounterEnemySpawn& SpawnEntry : EncounterDefinition->EnemySpawns)
+	for (const FEncounterEnemySpawn& SpawnEntry : SelectedEncounterDefinition->EnemySpawns)
 	{
 		if (SpawnEntry.IsValid())
 		{
@@ -192,6 +194,30 @@ void AExplorationEnemyCharacter::StartEncounterForPlayer(AActor* TriggeringActor
 	);
 
 	UGameplayStatics::OpenLevel(this, PendingEncounter.CombatMapName);
+}
+
+UEncounterDefinition* AExplorationEnemyCharacter::ResolveEncounterDefinitionToStart() const
+{
+	TArray<UEncounterDefinition*> ValidEncounterDefinitions;
+	ValidEncounterDefinitions.Reserve(EncounterDefinitionPool.Num());
+
+	for (UEncounterDefinition* CandidateDefinition : EncounterDefinitionPool)
+	{
+		if (IsValid(CandidateDefinition) && CandidateDefinition->IsValidDefinition())
+		{
+			ValidEncounterDefinitions.Add(CandidateDefinition);
+		}
+	}
+
+	if (ValidEncounterDefinitions.Num() > 0)
+	{
+		const int32 RandomIndex = FMath::RandRange(0, ValidEncounterDefinitions.Num() - 1);
+		return ValidEncounterDefinitions[RandomIndex];
+	}
+
+	return (IsValid(EncounterDefinition) && EncounterDefinition->IsValidDefinition())
+		? EncounterDefinition
+		: nullptr;
 }
 
 void AExplorationEnemyCharacter::UpdateSimplePacing(float DeltaSeconds)

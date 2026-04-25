@@ -6,6 +6,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Grid/BattleTileEffect.h"
+#include "Grid/GridBoard.h"
 #include "Materials/MaterialInterface.h"
 
 AGridTile::AGridTile()
@@ -42,7 +43,7 @@ void AGridTile::BeginPlay()
 	RefreshVisualState();
 }
 
-void AGridTile::SetCoord(const FIntPoint& InCoord)
+void AGridTile::SetCoord(const FHexCoord& InCoord)
 {
 	Coord = InCoord;
 }
@@ -102,6 +103,11 @@ void AGridTile::SetHighlightState(ETileHighlightState NewState)
 FVector AGridTile::GetUnitStandLocation() const
 {
 	return GetActorLocation() + FVector(0.f, 0.f, UnitStandZOffset);
+}
+
+AGridBoard* AGridTile::GetOwningGridBoard() const
+{
+	return Cast<AGridBoard>(GetOwner());
 }
 
 void AGridTile::AddTileEffect(ABattleTileEffect* TileEffect)

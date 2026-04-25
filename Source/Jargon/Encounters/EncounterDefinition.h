@@ -19,6 +19,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Encounter")
 	TArray<FEncounterEnemySpawn> EnemySpawns;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Encounter|Rewards")
+	FJargonCurrencyAmount VictoryCurrencyReward;
+
 	bool IsValidDefinition() const
 	{
 		return !CombatMapName.IsNone() && EnemySpawns.Num() > 0;

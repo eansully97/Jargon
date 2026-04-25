@@ -3,6 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/JargonTypes.h"
+#include "Core/JargonRunStateTypes.h"
 #include "Units/BattleUnit.h"
 #include "EncounterTypes.generated.h"
 
@@ -16,7 +18,7 @@ public:
 	TSubclassOf<ABattleUnit> UnitClass = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Encounter")
-	FIntPoint SpawnCoord = FIntPoint::ZeroValue;
+	FHexCoord SpawnCoord;
 
 	bool IsValid() const
 	{
@@ -39,6 +41,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Encounter")
 	TArray<FEncounterEnemySpawn> EnemySpawns;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Encounter|Rewards")
+	FJargonCurrencyAmount VictoryCurrencyReward;
+
 	bool HasAnyEncounter() const
 	{
 		return !EncounterId.IsNone();
@@ -54,5 +59,6 @@ public:
 		EncounterId = NAME_None;
 		CombatMapName = NAME_None;
 		EnemySpawns.Reset();
+		VictoryCurrencyReward = FJargonCurrencyAmount();
 	}
 };
