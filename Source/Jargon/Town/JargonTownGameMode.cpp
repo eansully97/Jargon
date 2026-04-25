@@ -13,26 +13,37 @@ void AJargonTownGameMode::BeginPlay()
 		return;
 	}
 
-	JargonGI->SetTownMapName(TEXT("L_TownMap"));
+	JargonGI->SetTownMapName(TownMapName);
 
-	if (JargonGI->HasActiveRun())
+	TArray<UCardPackDefinition*> PackOffers;
+	for (UCardPackDefinition* PackOffer : TownShopPackOffers)
 	{
-		return;
-	}
-
-	TArray<UCardDefinition*> InitialDeck;
-	for (UCardDefinition* Card : StarterDeckDefinitions)
-	{
-		if (Card)
+		if (PackOffer)
 		{
-			InitialDeck.Add(Card);
+			PackOffers.Add(PackOffer);
 		}
 	}
 
-	FJargonCurrencyAmount StartingCurrency;
-	StartingCurrency.Gold = StartingGold;
-	StartingCurrency.Silver = StartingSilver;
-	StartingCurrency.Copper = StartingCopper;
+	JargonGI->SetAvailableCardPackOffers(PackOffers);
 
-	JargonGI->StartNewRun(InitialDeck, StartingCurrency);
+	if (!JargonGI->HasActiveRun())
+	{
+		TArray<UCardDefinition*> InitialDeck;
+		for (UCardDefinition* Card : StarterDeckDefinitions)
+		{
+			if (Card)
+			{
+				InitialDeck.Add(Card);
+			}
+		}
+
+		FJargonCurrencyAmount StartingCurrency;
+		StartingCurrency.Gold = StartingGold;
+		StartingCurrency.Silver = StartingSilver;
+		StartingCurrency.Copper = StartingCopper;
+
+		JargonGI->StartNewRun(InitialDeck, StartingCurrency);
+	}
+
+	JargonGI->CompletePostCombatReturn();
 }

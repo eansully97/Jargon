@@ -5,6 +5,8 @@
 #include "GameFramework/GameModeBase.h"
 #include "JargonTownGameMode.generated.h"
 
+class UCardPackDefinition;
+
 UCLASS()
 class JARGON_API AJargonTownGameMode : public AGameModeBase
 {
@@ -21,6 +23,12 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Run Setup")
 	int32 StartingCopper = 0;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Town")
+	FName TownMapName = TEXT("L_TownMap");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Shop")
+	TArray<TObjectPtr<UCardPackDefinition>> TownShopPackOffers;
 
 protected:
 	virtual void BeginPlay() override;

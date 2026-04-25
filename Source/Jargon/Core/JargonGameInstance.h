@@ -201,7 +201,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> RunReserveCards;
 
-	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Shop")
+	UPROPERTY(EditAnywhere, Category = "Jargon|Run|Shop")
 	TArray<TObjectPtr<UCardPackDefinition>> AvailableCardPackOffers;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Economy")
