@@ -26,6 +26,9 @@ public:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 
+	UFUNCTION(BlueprintCallable, Category = "Cards")
+	void ShuffleDrawPile();
+
 	void InitializeCombatUI();
 	void InitializeStartingDeck();
 	void DrawCards(int32 Count);

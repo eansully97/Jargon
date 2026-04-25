@@ -19,7 +19,6 @@ void AJargonTownPlayerController::BeginPlay()
 
 	CreateTownHUD();
 	RefreshAllTownUI();
-	SetTownInputModeGameOnly();
 }
 
 void AJargonTownPlayerController::SetupInputComponent()
@@ -134,6 +133,8 @@ void AJargonTownPlayerController::OpenCardShop()
 		CardShopWidget->AddToViewport(20);
 	}
 
+	SetWorldClickMovementEnabled(false);
+	
 	UJargonGameInstance* JargonGI = GetGameInstance<UJargonGameInstance>();
 	CardShopWidget->RefreshFromRunState(JargonGI);
 
@@ -152,6 +153,7 @@ void AJargonTownPlayerController::CloseCardShop()
 	{
 		ActiveModalWidget = nullptr;
 		SetTownInputModeGameOnly();
+		SetWorldClickMovementEnabled(true);
 	}
 }
 
@@ -174,6 +176,8 @@ void AJargonTownPlayerController::OpenDeckEdit()
 		DeckEditWidget->AddToViewport(20);
 	}
 
+	SetWorldClickMovementEnabled(false);
+
 	UJargonGameInstance* JargonGI = GetGameInstance<UJargonGameInstance>();
 	DeckEditWidget->RefreshFromRunState(JargonGI);
 
@@ -192,6 +196,7 @@ void AJargonTownPlayerController::CloseDeckEdit()
 	{
 		ActiveModalWidget = nullptr;
 		SetTownInputModeGameOnly();
+		SetWorldClickMovementEnabled(true);
 	}
 }
 
@@ -200,12 +205,20 @@ void AJargonTownPlayerController::CloseActiveTownPanel()
 	if (ActiveModalWidget == CardShopWidget)
 	{
 		CloseCardShop();
+		if (!ActiveModalWidget)
+		{
+			SetWorldClickMovementEnabled(true);
+		}
 		return;
 	}
 
 	if (ActiveModalWidget == DeckEditWidget)
 	{
 		CloseDeckEdit();
+		if (!ActiveModalWidget)
+		{
+			SetWorldClickMovementEnabled(true);
+		}
 		return;
 	}
 }

@@ -127,10 +127,15 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 
 		if (GameInstance->HasActiveRun())
 		{
-			for (UCardDefinition* Card : GameInstance->GetRunDeckCardsRef())
+			const TArray<UCardDefinition*> RunDeckCards = GameInstance->GetRunDeckCards();
+
+			UE_LOG(LogTemp, Warning, TEXT("Combat loading persistent run deck. Count: %d"), RunDeckCards.Num());
+
+			for (UCardDefinition* Card : RunDeckCards)
 			{
 				if (Card)
 				{
+					UE_LOG(LogTemp, Warning, TEXT("Run deck card loaded: %s"), *GetNameSafe(Card));
 					DrawPile.Add(Card);
 				}
 			}
@@ -141,6 +146,8 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 
 	if (!bLoadedPersistentRunDeck)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Combat loading fallback starting deck."));
+
 		for (UCardDefinition* Card : CombatGameMode->GetStartingDeckDefinitions())
 		{
 			if (Card)
@@ -151,9 +158,21 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 	}
 
 	bStartingDeckInitialized = true;
+	ShuffleDrawPile();
 	DrawCards(CombatGameMode->GetStartingHandSize());
 	RefreshHUD();
 	BroadcastCardCounts();
+}
+
+void AJargonCombatPlayerController::ShuffleDrawPile()
+{
+	const int32 LastIndex = DrawPile.Num() - 1;
+
+	for (int32 Index = LastIndex; Index > 0; --Index)
+	{
+		const int32 SwapIndex = FMath::RandRange(0, Index);
+		DrawPile.Swap(Index, SwapIndex);
+	}
 }
 
 void AJargonCombatPlayerController::DrawCards(int32 Count)

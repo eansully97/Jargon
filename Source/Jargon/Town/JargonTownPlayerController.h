@@ -1,7 +1,7 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/PlayerController.h"
+#include "Exploration/JargonExplorationPlayerController.h"
 #include "JargonTownPlayerController.generated.h"
 
 class UTownHUDWidget;
@@ -10,7 +10,7 @@ class UDeckEditWidget;
 class UUserWidget;
 
 UCLASS()
-class JARGON_API AJargonTownPlayerController : public APlayerController
+class JARGON_API AJargonTownPlayerController : public AJargonExplorationPlayerController
 {
 	GENERATED_BODY()
 

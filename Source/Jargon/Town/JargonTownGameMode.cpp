@@ -1,7 +1,35 @@
-﻿#include "Town/JargonTownGameMode.h"
+#include "Town/JargonTownGameMode.h"
 
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
+#include "GameFramework/Pawn.h"
+#include "Town/JargonTownPlayerController.h"
+#include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+UClass* ResolvePreferredWorldPawnClass()
+{
+	static ConstructorHelpers::FClassFinder<APawn> ThirdPersonPawnBPClass(TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"));
+	if (ThirdPersonPawnBPClass.Class)
+	{
+		return ThirdPersonPawnBPClass.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<APawn> TopDownPawnBPClass(TEXT("/Game/TopDown/Blueprints/BP_TopDownCharacter"));
+	return TopDownPawnBPClass.Class;
+}
+}
+
+AJargonTownGameMode::AJargonTownGameMode()
+{
+	PlayerControllerClass = AJargonTownPlayerController::StaticClass();
+
+	if (UClass* PreferredWorldPawnClass = ResolvePreferredWorldPawnClass())
+	{
+		DefaultPawnClass = PreferredWorldPawnClass;
+	}
+}
 
 void AJargonTownGameMode::BeginPlay()
 {

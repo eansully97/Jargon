@@ -3,17 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/GameModeBase.h"
+#include "Exploration/JargonExplorationGameMode.h"
 #include "JargonGameMode.generated.h"
 
 UCLASS(minimalapi)
-class AJargonGameMode : public AGameModeBase
+class AJargonGameMode : public AJargonExplorationGameMode
 {
 	GENERATED_BODY()
-
-public:
-	AJargonGameMode();
-
-protected:
-	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 };

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Data/CardDefinition.h"
@@ -11,7 +11,10 @@ UCLASS()
 class JARGON_API AJargonTownGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
+
 public:
+	AJargonTownGameMode();
+
 	UPROPERTY(EditDefaultsOnly, Category = "Run Setup")
 	TArray<TObjectPtr<UCardDefinition>> StarterDeckDefinitions;
 
