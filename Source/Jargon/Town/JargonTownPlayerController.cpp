@@ -2,8 +2,10 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Core/JargonGameInstance.h"
+#include "Jargon.h"
 #include "Town/UI/CardShopWidget.h"
 #include "Town/UI/DeckEditWidget.h"
+#include "Town/UI/PostMatchReportWidget.h"
 #include "Town/UI/TownHUDWidget.h"
 
 AJargonTownPlayerController::AJargonTownPlayerController()
@@ -19,6 +21,13 @@ void AJargonTownPlayerController::BeginPlay()
 
 	CreateTownHUD();
 	RefreshAllTownUI();
+
+	TryOpenPendingPostCombatReport();
+
+	if (!HasBlockingModalOpen())
+	{
+		ApplyTownModalInputState();
+	}
 }
 
 void AJargonTownPlayerController::SetupInputComponent()
@@ -65,11 +74,36 @@ void AJargonTownPlayerController::RefreshTownHUD()
 	TownHUDWidget->RefreshFromRunState(JargonGI);
 }
 
+void AJargonTownPlayerController::RestoreTownWorldInputNextTick()
+{
+	SetWorldClickMovementEnabled(false);
+	FlushPressedKeys();
+	SetTownInputModeGameOnly();
+
+	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		if (HasBlockingModalOpen())
+		{
+			SetWorldClickMovementEnabled(false);
+			FlushPressedKeys();
+			return;
+		}
+
+		SetWorldClickMovementEnabled(true);
+		FlushPressedKeys();
+	}));
+}
+
 void AJargonTownPlayerController::SetTownInputModeGameOnly()
 {
-	FInputModeGameOnly InputMode;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetHideCursorDuringCapture(false);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
+
+	FlushPressedKeys();
 }
 
 void AJargonTownPlayerController::SetTownInputModeUI(UUserWidget* FocusWidget)
@@ -85,6 +119,77 @@ void AJargonTownPlayerController::SetTownInputModeUI(UUserWidget* FocusWidget)
 
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
+}
+
+UUserWidget* AJargonTownPlayerController::GetTopmostTownModalWidget() const
+{
+	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
+	{
+		return PostMatchReportWidget;
+	}
+
+	if (DeckEditWidget && DeckEditWidget->IsInViewport())
+	{
+		return DeckEditWidget;
+	}
+
+	if (CardShopWidget && CardShopWidget->IsInViewport())
+	{
+		return CardShopWidget;
+	}
+
+	return nullptr;
+}
+
+void AJargonTownPlayerController::ApplyTownModalInputState(UUserWidget* PreferredFocusWidget)
+{
+	UUserWidget* FocusWidget = PreferredFocusWidget ? PreferredFocusWidget : GetTopmostTownModalWidget();
+
+	if (HasBlockingModalOpen())
+	{
+		ActiveModalWidget = FocusWidget;
+
+		SetWorldClickMovementEnabled(false);
+		FlushPressedKeys();
+		SetTownInputModeUI(FocusWidget);
+		return;
+	}
+
+	ActiveModalWidget = nullptr;
+	RestoreTownWorldInputNextTick();
+}
+
+void AJargonTownPlayerController::HideCardShopWithoutInputUpdate()
+{
+	if (CardShopWidget && CardShopWidget->IsInViewport())
+	{
+		CardShopWidget->RemoveFromParent();
+	}
+}
+
+void AJargonTownPlayerController::HideDeckEditWithoutInputUpdate()
+{
+	if (DeckEditWidget && DeckEditWidget->IsInViewport())
+	{
+		DeckEditWidget->RemoveFromParent();
+	}
+}
+
+void AJargonTownPlayerController::HidePostMatchReportWithoutInputUpdate()
+{
+	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
+	{
+		PostMatchReportWidget->RemoveFromParent();
+	}
+}
+
+bool AJargonTownPlayerController::HasBlockingModalOpen() const
+{
+	const bool bShopOpen = CardShopWidget && CardShopWidget->IsInViewport();
+	const bool bDeckEditOpen = DeckEditWidget && DeckEditWidget->IsInViewport();
+	const bool bPostMatchReportOpen = PostMatchReportWidget && PostMatchReportWidget->IsInViewport();
+
+	return bShopOpen || bDeckEditOpen || bPostMatchReportOpen;
 }
 
 void AJargonTownPlayerController::HandleOpenShopPressed()
@@ -116,6 +221,9 @@ void AJargonTownPlayerController::HandleCloseTownPanelPressed()
 
 void AJargonTownPlayerController::OpenCardShop()
 {
+	SetWorldClickMovementEnabled(false);
+	FlushPressedKeys();
+
 	if (!CardShopWidget && CardShopWidgetClass)
 	{
 		CardShopWidget = CreateWidget<UCardShopWidget>(this, CardShopWidgetClass);
@@ -123,42 +231,42 @@ void AJargonTownPlayerController::OpenCardShop()
 
 	if (!CardShopWidget)
 	{
+		UE_LOG(LogJargon, Warning, TEXT("OpenCardShop failed because CardShopWidgetClass is not assigned."));
+		ApplyTownModalInputState();
 		return;
 	}
 
-	CloseDeckEdit();
+	HideDeckEditWithoutInputUpdate();
+	HidePostMatchReportWithoutInputUpdate();
 
 	if (!CardShopWidget->IsInViewport())
 	{
 		CardShopWidget->AddToViewport(20);
 	}
 
-	SetWorldClickMovementEnabled(false);
-	
 	UJargonGameInstance* JargonGI = GetGameInstance<UJargonGameInstance>();
 	CardShopWidget->RefreshFromRunState(JargonGI);
 
-	ActiveModalWidget = CardShopWidget;
-	SetTownInputModeUI(CardShopWidget);
+	ApplyTownModalInputState(CardShopWidget);
 }
 
 void AJargonTownPlayerController::CloseCardShop()
 {
-	if (CardShopWidget && CardShopWidget->IsInViewport())
-	{
-		CardShopWidget->RemoveFromParent();
-	}
+	HideCardShopWithoutInputUpdate();
 
 	if (ActiveModalWidget == CardShopWidget)
 	{
 		ActiveModalWidget = nullptr;
-		SetTownInputModeGameOnly();
-		SetWorldClickMovementEnabled(true);
 	}
+
+	ApplyTownModalInputState();
 }
 
 void AJargonTownPlayerController::OpenDeckEdit()
 {
+	SetWorldClickMovementEnabled(false);
+	FlushPressedKeys();
+
 	if (!DeckEditWidget && DeckEditWidgetClass)
 	{
 		DeckEditWidget = CreateWidget<UDeckEditWidget>(this, DeckEditWidgetClass);
@@ -166,60 +274,118 @@ void AJargonTownPlayerController::OpenDeckEdit()
 
 	if (!DeckEditWidget)
 	{
+		UE_LOG(LogJargon, Warning, TEXT("OpenDeckEdit failed because DeckEditWidgetClass is not assigned."));
+		ApplyTownModalInputState();
 		return;
 	}
 
-	CloseCardShop();
+	HideCardShopWithoutInputUpdate();
+	HidePostMatchReportWithoutInputUpdate();
 
 	if (!DeckEditWidget->IsInViewport())
 	{
 		DeckEditWidget->AddToViewport(20);
 	}
 
-	SetWorldClickMovementEnabled(false);
-
 	UJargonGameInstance* JargonGI = GetGameInstance<UJargonGameInstance>();
 	DeckEditWidget->RefreshFromRunState(JargonGI);
 
-	ActiveModalWidget = DeckEditWidget;
-	SetTownInputModeUI(DeckEditWidget);
+	ApplyTownModalInputState(DeckEditWidget);
 }
 
 void AJargonTownPlayerController::CloseDeckEdit()
 {
-	if (DeckEditWidget && DeckEditWidget->IsInViewport())
-	{
-		DeckEditWidget->RemoveFromParent();
-	}
+	HideDeckEditWithoutInputUpdate();
 
 	if (ActiveModalWidget == DeckEditWidget)
 	{
 		ActiveModalWidget = nullptr;
-		SetTownInputModeGameOnly();
-		SetWorldClickMovementEnabled(true);
 	}
+
+	ApplyTownModalInputState();
+}
+
+void AJargonTownPlayerController::OpenPostMatchReport(const FJargonPostCombatReportData& ReportData)
+{
+	SetWorldClickMovementEnabled(false);
+	FlushPressedKeys();
+
+	if (!PostMatchReportWidget && PostMatchReportWidgetClass)
+	{
+		PostMatchReportWidget = CreateWidget<UPostMatchReportWidget>(this, PostMatchReportWidgetClass);
+	}
+
+	if (!PostMatchReportWidget)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("OpenPostMatchReport failed because PostMatchReportWidgetClass is not assigned."));
+		ApplyTownModalInputState();
+		return;
+	}
+
+	HideCardShopWithoutInputUpdate();
+	HideDeckEditWithoutInputUpdate();
+
+	if (!PostMatchReportWidget->IsInViewport())
+	{
+		PostMatchReportWidget->AddToViewport(30);
+	}
+
+	PostMatchReportWidget->RefreshFromReportData(ReportData);
+
+	ApplyTownModalInputState(PostMatchReportWidget);
+}
+
+void AJargonTownPlayerController::ClosePostMatchReport()
+{
+	HidePostMatchReportWithoutInputUpdate();
+
+	if (ActiveModalWidget == PostMatchReportWidget)
+	{
+		ActiveModalWidget = nullptr;
+	}
+
+	ApplyTownModalInputState();
 }
 
 void AJargonTownPlayerController::CloseActiveTownPanel()
 {
-	if (ActiveModalWidget == CardShopWidget)
+	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
 	{
-		CloseCardShop();
-		if (!ActiveModalWidget)
-		{
-			SetWorldClickMovementEnabled(true);
-		}
+		HidePostMatchReportWithoutInputUpdate();
+	}
+	else if (DeckEditWidget && DeckEditWidget->IsInViewport())
+	{
+		HideDeckEditWithoutInputUpdate();
+	}
+	else if (CardShopWidget && CardShopWidget->IsInViewport())
+	{
+		HideCardShopWithoutInputUpdate();
+	}
+
+	ActiveModalWidget = nullptr;
+	ApplyTownModalInputState();
+}
+
+void AJargonTownPlayerController::TryOpenPendingPostCombatReport()
+{
+	UJargonGameInstance* JargonGI = GetGameInstance<UJargonGameInstance>();
+	if (!JargonGI || !JargonGI->HasPendingPostCombatReport())
+	{
 		return;
 	}
 
-	if (ActiveModalWidget == DeckEditWidget)
+	if (!PostMatchReportWidgetClass)
 	{
-		CloseDeckEdit();
-		if (!ActiveModalWidget)
-		{
-			SetWorldClickMovementEnabled(true);
-		}
+		UE_LOG(LogJargon, Warning, TEXT("Pending post-combat report was available, but PostMatchReportWidgetClass is not assigned."));
 		return;
+	}
+
+	const FJargonPostCombatReportData ReportData = JargonGI->GetPendingPostCombatReport();
+	OpenPostMatchReport(ReportData);
+
+	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
+	{
+		JargonGI->ClearPendingPostCombatReport();
 	}
 }
 

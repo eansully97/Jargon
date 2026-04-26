@@ -30,9 +30,9 @@ void ASpikeTrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGa
 		return;
 	}
 
-	const UCardDefinition* EffectSourceCard = GetSourceCard();
-	const int32 TrapDamage = EffectSourceCard
-		? FMath::Max(0, EffectSourceCard->Value)
+	const int32 AuthoredTrapDamage = GetEffectValue();
+	const int32 TrapDamage = AuthoredTrapDamage > 0
+		? AuthoredTrapDamage
 		: FMath::Max(0, DefaultTrapDamage);
 
 	if (TrapDamage <= 0)

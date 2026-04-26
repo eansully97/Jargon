@@ -3,12 +3,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/CardDefinition.h"
 #include "CardResolver.generated.h"
 
 class AJargonCombatGameMode;
 class ABattleUnit;
 class AGridTile;
-class UCardDefinition;
 
 USTRUCT(BlueprintType)
 struct JARGON_API FCardResolveContext
@@ -44,6 +44,9 @@ struct JARGON_API FCardResolveResult
 
 	UPROPERTY()
 	bool bContinuesAsynchronously = false;
+
+	UPROPERTY()
+	int32 EnergyGainAfterCost = 0;
 };
 
 class JARGON_API FCardResolver
@@ -56,56 +59,78 @@ public:
 	);
 
 private:
-	static bool ResolveSpellCard(
+	static bool ResolveEffectSpecCard(
 		const UCardDefinition* Card,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolvePersistentTileCard(
+	static bool ResolveEffectSpec(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolveSummonCard(
+	static bool ResolveDealDamageEffect(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolveDamage(
+	static bool ResolveHealEffect(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolveHeal(
+	static bool ResolveApplyShieldEffect(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolveAOEDamage(
+	static bool ResolveMoveSelfEffect(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolvePush(
+	static bool ResolvePushTargetEffect(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolveMoveSelf(
+	static bool ResolveSummonUnitEffect(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);
 
-	static bool ResolveGuard(
+	static bool ResolvePlaceTileEffect(
 		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult
+	);
+
+	static bool ResolveDrawCardsEffect(
+		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult
+	);
+
+	static bool ResolveGainEnergyEffect(
+		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
 	);

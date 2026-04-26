@@ -1,7 +1,17 @@
 #include "Core/JargonGameInstance.h"
 
 #include "Data/CardDefinition.h"
+#include "Jargon.h"
 #include "Progression/CardPackDefinition.h"
+#include "Town/JargonTownGameMode.h"
+
+namespace
+{
+FJargonCurrencyAmount CombineCurrencyAmounts(const FJargonCurrencyAmount& First, const FJargonCurrencyAmount& Second)
+{
+	return FJargonCurrencyAmount::FromTotalCopper(First.GetTotalCopperValue() + Second.GetTotalCopperValue());
+}
+}
 
 UJargonGameInstance::UJargonGameInstance()
 {
@@ -13,6 +23,8 @@ UJargonGameInstance::UJargonGameInstance()
 	bHasActiveRun = false;
 	TownMapName = NAME_None;
 	RunCurrencies = FJargonCurrencyAmount();
+	bHasPendingPostCombatReport = false;
+	PendingPostCombatReport.Reset();
 }
 
 void UJargonGameInstance::StartEncounter(
@@ -65,6 +77,14 @@ void UJargonGameInstance::StartNewRun(const TArray<UCardDefinition*>& InitialDec
 	RunCurrencies = StartingCurrency;
 	NormalizeRunCurrencies();
 	bHasActiveRun = true;
+
+	UE_LOG(
+		LogJargon,
+		Log,
+		TEXT("StartNewRun initialized active deck with %d cards and reserve with %d cards."),
+		ActiveRunDeck.Num(),
+		RunReserveCards.Num()
+	);
 }
 
 void UJargonGameInstance::EnsureRunInitializedFromSeedDeck(const TArray<TObjectPtr<UCardDefinition>>& SeedDeck)
@@ -106,6 +126,7 @@ void UJargonGameInstance::ResetRunState()
 	ReturnMapName = NAME_None;
 	ReturnTransform = FTransform::Identity;
 	ClearedEncounterIds.Reset();
+	ClearPendingPostCombatReport();
 }
 
 TArray<UCardDefinition*> UJargonGameInstance::GetRunDeckCards() const
@@ -152,15 +173,18 @@ bool UJargonGameInstance::MoveCardFromReserveToDeck(UCardDefinition* Card)
 {
 	if (!bHasActiveRun || !Card)
 	{
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromReserveToDeck rejected. ActiveRun=%s Card=%s"), bHasActiveRun ? TEXT("true") : TEXT("false"), *GetNameSafe(Card));
 		return false;
 	}
 
 	if (!RemoveCardFromCollection(RunReserveCards, Card))
 	{
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromReserveToDeck could not find card '%s' in reserve."), *GetNameSafe(Card));
 		return false;
 	}
 
 	ActiveRunDeck.Add(Card);
+	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from reserve to deck. Deck=%d Reserve=%d"), *GetNameSafe(Card), ActiveRunDeck.Num(), RunReserveCards.Num());
 	return true;
 }
 
@@ -168,15 +192,24 @@ bool UJargonGameInstance::MoveCardFromDeckToReserve(UCardDefinition* Card)
 {
 	if (!bHasActiveRun || !Card)
 	{
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve rejected. ActiveRun=%s Card=%s"), bHasActiveRun ? TEXT("true") : TEXT("false"), *GetNameSafe(Card));
+		return false;
+	}
+
+	if (ActiveRunDeck.Num() <= 1)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve rejected for '%s' because the active run deck cannot be emptied."), *GetNameSafe(Card));
 		return false;
 	}
 
 	if (!RemoveCardFromCollection(ActiveRunDeck, Card))
 	{
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve could not find card '%s' in active deck."), *GetNameSafe(Card));
 		return false;
 	}
 
 	RunReserveCards.Add(Card);
+	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from deck to reserve. Deck=%d Reserve=%d"), *GetNameSafe(Card), ActiveRunDeck.Num(), RunReserveCards.Num());
 	return true;
 }
 
@@ -185,25 +218,21 @@ void UJargonGameInstance::SetTownMapName(const FName& InTownMapName)
 	TownMapName = InTownMapName;
 }
 
-void UJargonGameInstance::SetAvailableCardPackOffers(const TArray<UCardPackDefinition*>& InPackOffers)
-{
-	AvailableCardPackOffers.Reset();
-
-	for (UCardPackDefinition* PackOffer : InPackOffers)
-	{
-		if (PackOffer)
-		{
-			AvailableCardPackOffers.Add(PackOffer);
-		}
-	}
-}
-
 TArray<UCardPackDefinition*> UJargonGameInstance::GetAvailableCardPackOffers() const
 {
 	TArray<UCardPackDefinition*> PackOffers;
-	PackOffers.Reserve(AvailableCardPackOffers.Num());
 
-	for (UCardPackDefinition* PackOffer : AvailableCardPackOffers)
+	const UWorld* World = GetWorld();
+	const AJargonTownGameMode* TownGameMode = World ? World->GetAuthGameMode<AJargonTownGameMode>() : nullptr;
+	if (!TownGameMode)
+	{
+		return PackOffers;
+	}
+
+	const TArray<TObjectPtr<UCardPackDefinition>>& TownPackOffers = TownGameMode->GetTownShopPackOffers();
+	PackOffers.Reserve(TownPackOffers.Num());
+
+	for (UCardPackDefinition* PackOffer : TownPackOffers)
 	{
 		if (PackOffer)
 		{
@@ -261,6 +290,8 @@ bool UJargonGameInstance::PurchaseCardPack(
 		}
 	}
 
+	UE_LOG(LogJargon, Log, TEXT("Purchased pack '%s'. Granted=%d Deck=%d Reserve=%d"), *GetNameSafe(PackDefinition), OutGrantedCards.Num(), ActiveRunDeck.Num(), RunReserveCards.Num());
+
 	return true;
 }
 
@@ -296,13 +327,38 @@ void UJargonGameInstance::PrepareReturnToTownAfterCombat()
 
 void UJargonGameInstance::HandleCombatVictory()
 {
-	AddCurrency(PendingEncounterData.VictoryCurrencyReward);
-	PrepareReturnToTownAfterCombat();
+	HandleCombatVictory(FJargonCurrencyAmount(), 0);
 }
 
 void UJargonGameInstance::HandleCombatDefeat()
 {
+	HandleCombatDefeat(FJargonCurrencyAmount(), 0);
+}
+
+void UJargonGameInstance::HandleCombatVictory(const FJargonCurrencyAmount& EnemyKillCurrency, int32 EnemiesDefeated)
+{
+	const FJargonCurrencyAmount VictoryBonusCurrency = PendingEncounterData.VictoryCurrencyReward;
+	const FJargonCurrencyAmount TotalCurrencyEarned = CombineCurrencyAmounts(EnemyKillCurrency, VictoryBonusCurrency);
+
+	AddCurrency(TotalCurrencyEarned);
+	StorePostCombatReport(EJargonPostCombatResult::Victory, EnemyKillCurrency, VictoryBonusCurrency, EnemiesDefeated);
 	PrepareReturnToTownAfterCombat();
+}
+
+void UJargonGameInstance::HandleCombatDefeat(const FJargonCurrencyAmount& EnemyKillCurrency, int32 EnemiesDefeated)
+{
+	const FJargonCurrencyAmount VictoryBonusCurrency = FJargonCurrencyAmount();
+	const FJargonCurrencyAmount TotalCurrencyEarned = EnemyKillCurrency;
+
+	AddCurrency(TotalCurrencyEarned);
+	StorePostCombatReport(EJargonPostCombatResult::Defeat, EnemyKillCurrency, VictoryBonusCurrency, EnemiesDefeated);
+	PrepareReturnToTownAfterCombat();
+}
+
+void UJargonGameInstance::ClearPendingPostCombatReport()
+{
+	bHasPendingPostCombatReport = false;
+	PendingPostCombatReport.Reset();
 }
 
 void UJargonGameInstance::CompleteReturnToExploration()
@@ -374,4 +430,26 @@ void UJargonGameInstance::SetRunDeckInternal(const TArray<UCardDefinition*>& Ini
 void UJargonGameInstance::NormalizeRunCurrencies()
 {
 	RunCurrencies.Normalize();
+}
+
+void UJargonGameInstance::StorePostCombatReport(
+	EJargonPostCombatResult Result,
+	const FJargonCurrencyAmount& EnemyKillCurrency,
+	const FJargonCurrencyAmount& VictoryBonusCurrency,
+	int32 EnemiesDefeated
+)
+{
+	PendingPostCombatReport.Reset();
+	PendingPostCombatReport.Result = Result;
+	PendingPostCombatReport.EncounterId = PendingEncounterData.EncounterId;
+	PendingPostCombatReport.EnemiesDefeated = FMath::Max(0, EnemiesDefeated);
+	PendingPostCombatReport.EnemyKillCurrency = EnemyKillCurrency;
+	PendingPostCombatReport.EnemyKillCurrency.Normalize();
+	PendingPostCombatReport.VictoryBonusCurrency = VictoryBonusCurrency;
+	PendingPostCombatReport.VictoryBonusCurrency.Normalize();
+	PendingPostCombatReport.TotalCurrencyEarned = CombineCurrencyAmounts(
+		PendingPostCombatReport.EnemyKillCurrency,
+		PendingPostCombatReport.VictoryBonusCurrency
+	);
+	bHasPendingPostCombatReport = (Result != EJargonPostCombatResult::None);
 }

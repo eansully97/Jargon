@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/JargonRunStateTypes.h"
 #include "Units/BattleUnit.h"
 #include "EnemyBattleUnit.generated.h"
 
@@ -13,4 +14,14 @@ class JARGON_API AEnemyBattleUnit : public ABattleUnit
 
 public:
 	AEnemyBattleUnit();
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Rewards")
+	FJargonCurrencyAmount GetKillCurrencyReward() const
+	{
+		return KillCurrencyReward;
+	}
+
+protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Rewards")
+	FJargonCurrencyAmount KillCurrencyReward;
 };

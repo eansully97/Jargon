@@ -15,6 +15,11 @@ class JARGON_API AJargonTownGameMode : public AGameModeBase
 public:
 	AJargonTownGameMode();
 
+	const TArray<TObjectPtr<UCardPackDefinition>>& GetTownShopPackOffers() const
+	{
+		return TownShopPackOffers;
+	}
+
 	UPROPERTY(EditDefaultsOnly, Category = "Run Setup")
 	TArray<TObjectPtr<UCardDefinition>> StarterDeckDefinitions;
 

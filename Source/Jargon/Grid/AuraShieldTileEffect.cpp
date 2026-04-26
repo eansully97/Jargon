@@ -14,9 +14,9 @@ void AAuraShieldTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatG
 		return;
 	}
 
-	const UCardDefinition* EffectSourceCard = GetSourceCard();
-	const int32 ShieldAmount = EffectSourceCard
-		? FMath::Max(0, EffectSourceCard->Value)
+	const int32 AuthoredShieldAmount = GetEffectValue();
+	const int32 ShieldAmount = AuthoredShieldAmount > 0
+		? AuthoredShieldAmount
 		: FMath::Max(0, DefaultShieldAmount);
 
 	if (ShieldAmount <= 0)

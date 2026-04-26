@@ -10,4 +10,5 @@ AEnemyBattleUnit::AEnemyBattleUnit()
 	MoveRange = 2;
 	AttackRange = 1;
 	AttackDamage = 1;
+	KillCurrencyReward.Copper = 2;
 }

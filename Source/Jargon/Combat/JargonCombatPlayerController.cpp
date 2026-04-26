@@ -131,16 +131,23 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 
 			UE_LOG(LogTemp, Warning, TEXT("Combat loading persistent run deck. Count: %d"), RunDeckCards.Num());
 
-			for (UCardDefinition* Card : RunDeckCards)
+			if (RunDeckCards.Num() > 0)
 			{
-				if (Card)
+				for (UCardDefinition* Card : RunDeckCards)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("Run deck card loaded: %s"), *GetNameSafe(Card));
-					DrawPile.Add(Card);
+					if (Card)
+					{
+						UE_LOG(LogTemp, Warning, TEXT("Run deck card loaded: %s"), *GetNameSafe(Card));
+						DrawPile.Add(Card);
+					}
 				}
-			}
 
-			bLoadedPersistentRunDeck = true;
+				bLoadedPersistentRunDeck = true;
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Active run deck was empty at combat start. Falling back to CombatGameMode starter deck."));
+			}
 		}
 	}
 

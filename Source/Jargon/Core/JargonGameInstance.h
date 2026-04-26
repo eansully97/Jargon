@@ -87,9 +87,6 @@ public:
 		return TownMapName;
 	}
 
-	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Shop")
-	void SetAvailableCardPackOffers(const TArray<UCardPackDefinition*>& InPackOffers);
-
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Shop")
 	TArray<UCardPackDefinition*> GetAvailableCardPackOffers() const;
 
@@ -116,6 +113,23 @@ public:
 
 	void HandleCombatVictory();
 	void HandleCombatDefeat();
+	void HandleCombatVictory(const FJargonCurrencyAmount& EnemyKillCurrency, int32 EnemiesDefeated);
+	void HandleCombatDefeat(const FJargonCurrencyAmount& EnemyKillCurrency, int32 EnemiesDefeated);
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Post Combat")
+	bool HasPendingPostCombatReport() const
+	{
+		return bHasPendingPostCombatReport;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Post Combat")
+	FJargonPostCombatReportData GetPendingPostCombatReport() const
+	{
+		return PendingPostCombatReport;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Post Combat")
+	void ClearPendingPostCombatReport();
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
 	void ClearPendingEncounter();
@@ -168,6 +182,12 @@ protected:
 	static bool RemoveCardFromCollection(TArray<TObjectPtr<UCardDefinition>>& CardCollection, UCardDefinition* Card);
 	void SetRunDeckInternal(const TArray<UCardDefinition*>& InitialDeck);
 	void NormalizeRunCurrencies();
+	void StorePostCombatReport(
+		EJargonPostCombatResult Result,
+		const FJargonCurrencyAmount& EnemyKillCurrency,
+		const FJargonCurrencyAmount& VictoryBonusCurrency,
+		int32 EnemiesDefeated
+	);
 
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
@@ -201,9 +221,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> RunReserveCards;
 
-	UPROPERTY(EditAnywhere, Category = "Jargon|Run|Shop")
-	TArray<TObjectPtr<UCardPackDefinition>> AvailableCardPackOffers;
-
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Economy")
 	FJargonCurrencyAmount RunCurrencies;
+
+	UPROPERTY(VisibleAnywhere, Category = "Jargon|Post Combat")
+	bool bHasPendingPostCombatReport = false;
+
+	UPROPERTY(VisibleAnywhere, Category = "Jargon|Post Combat")
+	FJargonPostCombatReportData PendingPostCombatReport;
 };

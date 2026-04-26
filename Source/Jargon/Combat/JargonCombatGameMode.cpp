@@ -28,6 +28,8 @@ AJargonCombatGameMode::AJargonCombatGameMode()
 	CurrentEnergy = 0;
 	CurrentMaxEnergy = 0;
 	CurrentActingEnemy = nullptr;
+	DefeatedEnemyCount = 0;
+	AccumulatedEnemyKillCurrency = FJargonCurrencyAmount();
 	EnergyPerTurn = 1;
 	MaxEnergyIncreasePerRound = 1;
 	MaxEnergyCap = 3;
@@ -48,6 +50,7 @@ void AJargonCombatGameMode::InitializeCombat()
 {
 	SetCombatPhase(ECombatPhase::BattleStart);
 	SetCurrentEnergy(0);
+	ResetCombatRewardState();
 
 	UE_LOG(LogTemp, Log, TEXT("Combat GameMode initialized for world '%s'."), *GetNameSafe(GetWorld()));
 
@@ -123,6 +126,16 @@ void AJargonCombatGameMode::SetCurrentEnergy(int32 NewEnergy)
 
 	CurrentEnergy = NewEnergy;
 	OnEnergyChanged.Broadcast(CurrentEnergy);
+}
+
+void AJargonCombatGameMode::AddCurrentEnergy(int32 Amount)
+{
+	if (Amount <= 0)
+	{
+		return;
+	}
+
+	SetCurrentEnergy(FMath::Min(CurrentEnergy + Amount, CurrentMaxEnergy));
 }
 
 void AJargonCombatGameMode::SetCurrentActingEnemy(ABattleUnit* NewActingEnemy)
@@ -689,6 +702,39 @@ bool AJargonCombatGameMode::AreAllEnemiesDefeated() const
 	return true;
 }
 
+void AJargonCombatGameMode::ResetCombatRewardState()
+{
+	DefeatedEnemyCount = 0;
+	AccumulatedEnemyKillCurrency = FJargonCurrencyAmount();
+}
+
+void AJargonCombatGameMode::AccumulateEnemyKillReward(ABattleUnit* DeadEnemy)
+{
+	if (!DeadEnemy)
+	{
+		return;
+	}
+
+	DefeatedEnemyCount++;
+
+	const FJargonCurrencyAmount KillReward = GetEnemyKillCurrencyReward(DeadEnemy);
+	AccumulatedEnemyKillCurrency = FJargonCurrencyAmount::FromTotalCopper(
+		AccumulatedEnemyKillCurrency.GetTotalCopperValue() + KillReward.GetTotalCopperValue()
+	);
+}
+
+FJargonCurrencyAmount AJargonCombatGameMode::GetEnemyKillCurrencyReward(const ABattleUnit* DeadEnemy) const
+{
+	if (const AEnemyBattleUnit* EnemyUnit = Cast<AEnemyBattleUnit>(DeadEnemy))
+	{
+		return EnemyUnit->GetKillCurrencyReward();
+	}
+
+	FJargonCurrencyAmount FallbackReward;
+	FallbackReward.Copper = 1;
+	return FallbackReward;
+}
+
 void AJargonCombatGameMode::StartBattleFlow()
 {
 	if (!PlayerUnit)
@@ -1130,6 +1176,24 @@ AJargonCombatPlayerController* AJargonCombatGameMode::GetCombatPlayerController(
 	return Cast<AJargonCombatPlayerController>(UGameplayStatics::GetPlayerController(this, 0));
 }
 
+bool AJargonCombatGameMode::DrawCardsForPlayer(int32 Count)
+{
+	if (Count <= 0)
+	{
+		return false;
+	}
+
+	AJargonCombatPlayerController* CombatPC = GetCombatPlayerController();
+	if (!CombatPC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AJargonCombatGameMode::DrawCardsForPlayer failed because no combat player controller was found."));
+		return false;
+	}
+
+	CombatPC->DrawCards(Count);
+	return true;
+}
+
 int32 AJargonCombatGameMode::CalculateMaxEnergyForRound(int32 RoundNumber) const
 {
 	const int32 RoundIndex = FMath::Max(0, RoundNumber - 1);
@@ -1191,12 +1255,16 @@ ABattleUnit* AJargonCombatGameMode::FindPreferredEnemyTarget(ABattleUnit* EnemyU
 	return BestTarget;
 }
 
-ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffect(
+ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClass(
+	TSubclassOf<ABattleTileEffect> TileEffectClass,
 	const UCardDefinition* Card,
 	const ABattleUnit* SourceUnit,
-	AGridTile* TargetTile)
+	AGridTile* TargetTile,
+	ECardCategory EffectCategory,
+	int32 EffectValue,
+	int32 EffectRadius)
 {
-	if (!Card || !SourceUnit || !TargetTile || !Card->PersistentTileEffectClass)
+	if (!Card || !SourceUnit || !TargetTile || !TileEffectClass)
 	{
 		return nullptr;
 	}
@@ -1208,7 +1276,7 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffect(
 	}
 
 	ABattleTileEffect* SpawnedEffect = World->SpawnActor<ABattleTileEffect>(
-		Card->PersistentTileEffectClass,
+		TileEffectClass,
 		TargetTile->GetActorLocation(),
 		FRotator::ZeroRotator
 	);
@@ -1218,18 +1286,24 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffect(
 		return nullptr;
 	}
 
-	SpawnedEffect->InitializeFromCard(const_cast<UCardDefinition*>(Card), SourceUnit->GetTeam(), Card->Category);
+	SpawnedEffect->InitializeFromCard(
+		const_cast<UCardDefinition*>(Card),
+		SourceUnit->GetTeam(),
+		EffectCategory,
+		EffectValue,
+		EffectRadius);
 	SpawnedEffect->PlaceOnTile(TargetTile);
 	ActiveTileEffects.Add(SpawnedEffect);
 	return SpawnedEffect;
 }
 
-ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromCard(
-	const UCardDefinition* Card,
+ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromClass(
+	TSubclassOf<ABattleUnit> UnitClass,
 	const ABattleUnit* SourceUnit,
-	AGridTile* TargetTile)
+	AGridTile* TargetTile,
+	bool bAttackExhaustedOnSpawn)
 {
-	if (!Card || !SourceUnit || !TargetTile || !Card->SummonedUnitClass)
+	if (!SourceUnit || !TargetTile || !UnitClass)
 	{
 		return nullptr;
 	}
@@ -1246,7 +1320,7 @@ ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromCard(
 	}
 
 	ABattleUnit* SpawnedUnit = World->SpawnActor<ABattleUnit>(
-		Card->SummonedUnitClass,
+		UnitClass,
 		TargetTile->GetUnitStandLocation(),
 		FRotator::ZeroRotator
 	);
@@ -1263,7 +1337,7 @@ ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromCard(
 	{
 		FriendlyUnits.AddUnique(SpawnedUnit);
 
-		if (Card->bSummonEntersWithAttackExhausted)
+		if (bAttackExhaustedOnSpawn)
 		{
 			SpawnedUnit->ConsumeAttackAction();
 		}
@@ -1405,6 +1479,11 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 	if (ResolveResult.bConsumeEnergy)
 	{
 		SetCurrentEnergy(CurrentEnergy - Card->Cost);
+	}
+
+	if (ResolveResult.EnergyGainAfterCost > 0)
+	{
+		AddCurrentEnergy(ResolveResult.EnergyGainAfterCost);
 	}
 
 	if (ResolveResult.bConsumePlayerMove)
@@ -1764,10 +1843,15 @@ void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit)
 	}
 
 	const int32 RemovedCount = EnemyUnits.RemoveSingleSwap(DeadUnit);
-	if (RemovedCount > 0 && AreAllEnemiesDefeated())
+	if (RemovedCount > 0)
 	{
-		HandleVictory();
-		return;
+		AccumulateEnemyKillReward(DeadUnit);
+
+		if (AreAllEnemiesDefeated())
+		{
+			HandleVictory();
+			return;
+		}
 	}
 
 	if (bWasSelectedFriendlyUnit)
@@ -1802,7 +1886,7 @@ void AJargonCombatGameMode::HandleVictory()
 		GameInstance->MarkEncounterCleared(PendingEncounterId);
 	}
 
-	GameInstance->HandleCombatVictory();
+	GameInstance->HandleCombatVictory(AccumulatedEnemyKillCurrency, DefeatedEnemyCount);
 	ReturnToExploration();
 }
 
@@ -1826,7 +1910,7 @@ void AJargonCombatGameMode::HandleDefeat()
 		return;
 	}
 
-	GameInstance->HandleCombatDefeat();
+	GameInstance->HandleCombatDefeat(AccumulatedEnemyKillCurrency, DefeatedEnemyCount);
 	ReturnToExploration();
 }
 

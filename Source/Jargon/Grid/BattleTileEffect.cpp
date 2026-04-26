@@ -20,6 +20,7 @@ ABattleTileEffect::ABattleTileEffect()
 	SourceTeam = ETeam::Player;
 	CardCategory = ECardCategory::Spell;
 	EffectRadius = 0;
+	EffectValue = 0;
 	TileEffectZOffset = 15.f;
 }
 
@@ -37,12 +38,15 @@ void ABattleTileEffect::Destroyed()
 void ABattleTileEffect::InitializeFromCard(
 	UCardDefinition* InSourceCard,
 	ETeam InSourceTeam,
-	ECardCategory InCardCategory)
+	ECardCategory InCardCategory,
+	int32 InEffectValue,
+	int32 InEffectRadius)
 {
 	SourceCard = InSourceCard;
 	SourceTeam = InSourceTeam;
 	CardCategory = InCardCategory;
-	EffectRadius = InSourceCard ? InSourceCard->GetConfiguredAreaRadius() : 0;
+	EffectValue = FMath::Max(0, InEffectValue);
+	EffectRadius = FMath::Max(0, InEffectRadius);
 }
 
 void ABattleTileEffect::PlaceOnTile(AGridTile* Tile)

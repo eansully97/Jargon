@@ -54,6 +54,49 @@ public:
 	}
 };
 
+UENUM(BlueprintType)
+enum class EJargonPostCombatResult : uint8
+{
+	None UMETA(DisplayName = "None"),
+	Victory UMETA(DisplayName = "Victory"),
+	Defeat UMETA(DisplayName = "Defeat")
+};
+
+USTRUCT(BlueprintType)
+struct JARGON_API FJargonPostCombatReportData
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat")
+	EJargonPostCombatResult Result = EJargonPostCombatResult::None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat")
+	FName EncounterId = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat", meta = (ClampMin = "0"))
+	int32 EnemiesDefeated = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat|Rewards")
+	FJargonCurrencyAmount EnemyKillCurrency;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat|Rewards")
+	FJargonCurrencyAmount VictoryBonusCurrency;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat|Rewards")
+	FJargonCurrencyAmount TotalCurrencyEarned;
+
+	void Reset()
+	{
+		Result = EJargonPostCombatResult::None;
+		EncounterId = NAME_None;
+		EnemiesDefeated = 0;
+		EnemyKillCurrency = FJargonCurrencyAmount();
+		VictoryBonusCurrency = FJargonCurrencyAmount();
+		TotalCurrencyEarned = FJargonCurrencyAmount();
+	}
+};
+
 USTRUCT(BlueprintType)
 struct JARGON_API FWeightedCardPackEntry
 {

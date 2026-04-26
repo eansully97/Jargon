@@ -19,26 +19,65 @@ bool FCardResolver::ResolveCard(
 		return false;
 	}
 
-	switch (Card->Category)
+	if (!Card->UsesEffectSpecs())
 	{
-	case ECardCategory::Spell:
-		return ResolveSpellCard(Card, Context, OutResult);
-
-	case ECardCategory::Trap:
-	case ECardCategory::Aura:
-		return ResolvePersistentTileCard(Card, Context, OutResult);
-
-	case ECardCategory::Summon:
-		return ResolveSummonCard(Card, Context, OutResult);
-
-	default:
-		UE_LOG(LogTemp, Warning, TEXT("FCardResolver::ResolveCard encountered unsupported card category."));
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has no Effects authored. Cards now resolve through Effects[] only."),
+			*Card->DisplayName.ToString());
 		return false;
 	}
+
+	return ResolveEffectSpecCard(Card, Context, OutResult);
 }
 
-bool FCardResolver::ResolveSpellCard(
+bool FCardResolver::ResolveEffectSpecCard(
 	const UCardDefinition* Card,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Card->UsesEffectSpecs())
+	{
+		return false;
+	}
+
+	bool bResolvedAnyEffect = false;
+
+	for (int32 EffectIndex = 0; EffectIndex < Card->Effects.Num(); ++EffectIndex)
+	{
+		const FCardEffectSpec& EffectSpec = Card->Effects[EffectIndex];
+		FCardResolveResult EffectResult;
+
+		if (!ResolveEffectSpec(Card, EffectSpec, Context, EffectResult))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Card '%s' failed to resolve effect spec at index %d."),
+				*Card->DisplayName.ToString(), EffectIndex);
+			continue;
+		}
+
+		bResolvedAnyEffect = true;
+		OutResult.bConsumeEnergy &= EffectResult.bConsumeEnergy;
+		OutResult.bConsumeCard &= EffectResult.bConsumeCard;
+		OutResult.bConsumePlayerMove |= EffectResult.bConsumePlayerMove;
+		OutResult.bContinuesAsynchronously |= EffectResult.bContinuesAsynchronously;
+		OutResult.EnergyGainAfterCost += EffectResult.EnergyGainAfterCost;
+
+		if (EffectResult.bContinuesAsynchronously)
+		{
+			if (EffectIndex < Card->Effects.Num() - 1)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Card '%s' started an async effect before later effect specs. Later effects are not resolved in this pass."),
+					*Card->DisplayName.ToString());
+			}
+
+			break;
+		}
+	}
+
+	return bResolvedAnyEffect;
+}
+
+bool FCardResolver::ResolveEffectSpec(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
 	const FCardResolveContext& Context,
 	FCardResolveResult& OutResult)
 {
@@ -47,98 +86,114 @@ bool FCardResolver::ResolveSpellCard(
 		return false;
 	}
 
-	switch (Card->EffectType)
+	switch (EffectSpec.Operation)
 	{
-	case ECardEffectType::Damage:
-		return ResolveDamage(Card, Context, OutResult);
+	case ECardEffectOperation::DealDamage:
+		return ResolveDealDamageEffect(Card, EffectSpec, Context, OutResult);
 
-	case ECardEffectType::Heal:
-		return ResolveHeal(Card, Context, OutResult);
+	case ECardEffectOperation::Heal:
+		return ResolveHealEffect(Card, EffectSpec, Context, OutResult);
 
-	case ECardEffectType::AOE_Damage:
-		return ResolveAOEDamage(Card, Context, OutResult);
+	case ECardEffectOperation::ApplyShield:
+		return ResolveApplyShieldEffect(Card, EffectSpec, Context, OutResult);
 
-	case ECardEffectType::Push:
-		return ResolvePush(Card, Context, OutResult);
+	case ECardEffectOperation::MoveSelf:
+		return ResolveMoveSelfEffect(Card, EffectSpec, Context, OutResult);
 
-	case ECardEffectType::MoveSelf:
-		return ResolveMoveSelf(Card, Context, OutResult);
+	case ECardEffectOperation::PushTarget:
+		return ResolvePushTargetEffect(Card, EffectSpec, Context, OutResult);
 
-	case ECardEffectType::Guard:
-		return ResolveGuard(Card, Context, OutResult);
-
-	case ECardEffectType::None:
-		UE_LOG(LogTemp, Warning, TEXT("Spell card '%s' has no immediate EffectType assigned."),
+	case ECardEffectOperation::PullTarget:
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' uses PullTarget, but PullTarget is intentionally deferred in this pass."),
 			*Card->DisplayName.ToString());
 		return false;
 
+	case ECardEffectOperation::SummonUnit:
+		return ResolveSummonUnitEffect(Card, EffectSpec, Context, OutResult);
+
+	case ECardEffectOperation::PlaceTileEffect:
+		return ResolvePlaceTileEffect(Card, EffectSpec, Context, OutResult);
+
+	case ECardEffectOperation::DrawCards:
+		return ResolveDrawCardsEffect(Card, EffectSpec, Context, OutResult);
+
+	case ECardEffectOperation::GainEnergy:
+		return ResolveGainEnergyEffect(Card, EffectSpec, Context, OutResult);
+
+	case ECardEffectOperation::None:
 	default:
-		UE_LOG(LogTemp, Warning, TEXT("FCardResolver::ResolveCard encountered unsupported card effect."));
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has an unsupported or empty effect operation."),
+			*Card->DisplayName.ToString());
 		return false;
 	}
 }
 
-bool FCardResolver::ResolvePersistentTileCard(
+bool FCardResolver::ResolveDealDamageEffect(
 	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
 	const FCardResolveContext& Context,
 	FCardResolveResult& OutResult)
 {
-	if (!Card || !Context.GameMode || !Context.SourceUnit)
+	if (!Card || !Context.SourceUnit || !Context.GameMode)
 	{
 		return false;
 	}
 
-	AGridTile* TargetTile = GetResolvedTargetTile(Context);
-	if (!TargetTile)
+	const int32 DamageAmount = Card->GetConfiguredValueForEffect(EffectSpec);
+	if (DamageAmount <= 0)
 	{
-		return false;
-	}
-
-	if (!Card->PersistentTileEffectClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Persistent tile card '%s' has no PersistentTileEffectClass assigned."),
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has a DealDamage effect with no positive damage value."),
 			*Card->DisplayName.ToString());
 		return false;
 	}
 
-	return Context.GameMode->SpawnPersistentTileEffect(Card, Context.SourceUnit, TargetTile) != nullptr;
-}
-
-bool FCardResolver::ResolveSummonCard(
-	const UCardDefinition* Card,
-	const FCardResolveContext& Context,
-	FCardResolveResult& OutResult)
-{
-	if (!Card || !Context.GameMode || !Context.SourceUnit)
+	const int32 EffectRadius = Card->GetConfiguredRadiusForEffect(EffectSpec);
+	if (EffectRadius > 0)
 	{
-		return false;
-	}
+		AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+		AGridTile* CenterTile = GetResolvedTargetTile(Context);
+		if (!GridBoard || !CenterTile)
+		{
+			return false;
+		}
 
-	AGridTile* TargetTile = GetResolvedTargetTile(Context);
-	if (!TargetTile)
-	{
-		return false;
-	}
+		TArray<TWeakObjectPtr<ABattleUnit>> TargetsToDamage;
+		const TArray<TObjectPtr<ABattleUnit>>& EnemyUnits = Context.GameMode->GetEnemyUnits();
+		TargetsToDamage.Reserve(EnemyUnits.Num());
 
-	if (!Card->SummonedUnitClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Summon card '%s' has no SummonedUnitClass assigned."),
-			*Card->DisplayName.ToString());
-		return false;
-	}
+		for (const TObjectPtr<ABattleUnit>& EnemyUnit : EnemyUnits)
+		{
+			if (!IsValid(EnemyUnit) || EnemyUnit->IsDead() || EnemyUnit->GetTeam() == Context.SourceUnit->GetTeam())
+			{
+				continue;
+			}
 
-	return Context.GameMode->SpawnSummonedUnitFromCard(Card, Context.SourceUnit, TargetTile) != nullptr;
-}
+			if (EnemyUnit->GetCurrentTile() &&
+				GridBoard->AreTilesWithinRange(EnemyUnit->GetCurrentTile(), CenterTile, EffectRadius))
+			{
+				TargetsToDamage.Add(EnemyUnit);
+			}
+		}
 
-bool FCardResolver::ResolveDamage(
-	const UCardDefinition* Card,
-	const FCardResolveContext& Context,
-	FCardResolveResult& OutResult
-)
-{
-	if (!Card || !Context.SourceUnit)
-	{
-		return false;
+		for (const TWeakObjectPtr<ABattleUnit>& TargetPtr : TargetsToDamage)
+		{
+			ABattleUnit* TargetUnit = TargetPtr.Get();
+			if (!IsValid(TargetUnit) || TargetUnit->IsDead())
+			{
+				continue;
+			}
+
+			TargetUnit->ApplyDamage(DamageAmount);
+
+			if (!IsValid(Context.GameMode) ||
+				Context.GameMode->GetCurrentCombatPhase() == ECombatPhase::Victory ||
+				Context.GameMode->GetCurrentCombatPhase() == ECombatPhase::Defeat)
+			{
+				break;
+			}
+		}
+
+		return true;
 	}
 
 	ABattleUnit* TargetUnit = GetResolvedTargetUnit(Context);
@@ -152,34 +207,60 @@ bool FCardResolver::ResolveDamage(
 		return false;
 	}
 
-	TargetUnit->ApplyDamage(Card->Value);
+	TargetUnit->ApplyDamage(DamageAmount);
 	return true;
 }
 
-bool FCardResolver::ResolveGuard(
+bool FCardResolver::ResolveHealEffect(
 	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
 	const FCardResolveContext& Context,
-	FCardResolveResult& OutResult
-)
+	FCardResolveResult& OutResult)
 {
-	if (!Card || !Context.SourceUnit)
+	if (!Card || !Context.SourceUnit || !Context.GameMode)
 	{
 		return false;
 	}
 
-	Context.SourceUnit->AddTemporaryShield(Card->Value);
-	return true;
-}
-
-bool FCardResolver::ResolveHeal(
-	const UCardDefinition* Card,
-	const FCardResolveContext& Context,
-	FCardResolveResult& OutResult
-)
-{
-	if (!Card || !Context.SourceUnit)
+	const int32 HealAmount = Card->GetConfiguredValueForEffect(EffectSpec);
+	if (HealAmount <= 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has a Heal effect with no positive heal value."),
+			*Card->DisplayName.ToString());
 		return false;
+	}
+
+	const int32 EffectRadius = Card->GetConfiguredRadiusForEffect(EffectSpec);
+	if (EffectRadius > 0)
+	{
+		AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+		AGridTile* CenterTile = GetResolvedTargetTile(Context);
+		if (!CenterTile)
+		{
+			CenterTile = Context.SourceUnit->GetCurrentTile();
+		}
+
+		if (!GridBoard || !CenterTile)
+		{
+			return false;
+		}
+
+		const TArray<TObjectPtr<ABattleUnit>>& FriendlyUnits = Context.GameMode->GetFriendlyUnits();
+		for (const TObjectPtr<ABattleUnit>& FriendlyUnit : FriendlyUnits)
+		{
+			if (!IsValid(FriendlyUnit) || FriendlyUnit->IsDead() || FriendlyUnit->GetTeam() != Context.SourceUnit->GetTeam())
+			{
+				continue;
+			}
+
+			if (FriendlyUnit->GetCurrentTile() &&
+				GridBoard->AreTilesWithinRange(FriendlyUnit->GetCurrentTile(), CenterTile, EffectRadius))
+			{
+				FriendlyUnit->ApplyHeal(HealAmount);
+			}
+		}
+
+		return true;
 	}
 
 	ABattleUnit* ActualTarget = GetResolvedTargetUnit(Context);
@@ -188,94 +269,129 @@ bool FCardResolver::ResolveHeal(
 		ActualTarget = Context.SourceUnit.Get();
 	}
 
-	if (!ActualTarget || ActualTarget->IsDead())
+	if (!ActualTarget || ActualTarget->IsDead() || ActualTarget->GetTeam() != Context.SourceUnit->GetTeam())
 	{
 		return false;
 	}
 
-	if (ActualTarget->GetTeam() != Context.SourceUnit->GetTeam())
-	{
-		return false;
-	}
-
-	ActualTarget->ApplyHeal(Card->Value);
+	ActualTarget->ApplyHeal(HealAmount);
 	return true;
 }
 
-bool FCardResolver::ResolveAOEDamage(
+bool FCardResolver::ResolveApplyShieldEffect(
 	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
 	const FCardResolveContext& Context,
-	FCardResolveResult& OutResult
-)
+	FCardResolveResult& OutResult)
 {
 	if (!Card || !Context.SourceUnit || !Context.GameMode)
 	{
 		return false;
 	}
 
-	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
-	AGridTile* CenterTile = GetResolvedTargetTile(Context);
-	if (!GridBoard || !CenterTile)
+	const int32 ShieldAmount = Card->GetConfiguredValueForEffect(EffectSpec);
+	if (ShieldAmount <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has an ApplyShield effect with no positive shield value."),
+			*Card->DisplayName.ToString());
+		return false;
+	}
+
+	const int32 EffectRadius = Card->GetConfiguredRadiusForEffect(EffectSpec);
+	if (EffectRadius > 0)
+	{
+		AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+		AGridTile* CenterTile = GetResolvedTargetTile(Context);
+		if (!CenterTile)
+		{
+			CenterTile = Context.SourceUnit->GetCurrentTile();
+		}
+
+		if (!GridBoard || !CenterTile)
+		{
+			return false;
+		}
+
+		const TArray<TObjectPtr<ABattleUnit>>& FriendlyUnits = Context.GameMode->GetFriendlyUnits();
+		for (const TObjectPtr<ABattleUnit>& FriendlyUnit : FriendlyUnits)
+		{
+			if (!IsValid(FriendlyUnit) || FriendlyUnit->IsDead() || FriendlyUnit->GetTeam() != Context.SourceUnit->GetTeam())
+			{
+				continue;
+			}
+
+			if (FriendlyUnit->GetCurrentTile() &&
+				GridBoard->AreTilesWithinRange(FriendlyUnit->GetCurrentTile(), CenterTile, EffectRadius))
+			{
+				FriendlyUnit->AddTemporaryShield(ShieldAmount);
+			}
+		}
+
+		return true;
+	}
+
+	ABattleUnit* ActualTarget = GetResolvedTargetUnit(Context);
+	if (!ActualTarget)
+	{
+		ActualTarget = Context.SourceUnit.Get();
+	}
+
+	if (!ActualTarget || ActualTarget->IsDead() || ActualTarget->GetTeam() != Context.SourceUnit->GetTeam())
 	{
 		return false;
 	}
 
-	const int32 EffectRadius = (Card->Radius > 0) ? Card->Radius : Card->Range;
-
-	TArray<TWeakObjectPtr<ABattleUnit>> TargetsToDamage;
-
-	const TArray<TObjectPtr<ABattleUnit>>& EnemyUnits = Context.GameMode->GetEnemyUnits();
-	TargetsToDamage.Reserve(EnemyUnits.Num());
-
-	for (const TObjectPtr<ABattleUnit>& EnemyUnit : EnemyUnits)
-	{
-		if (!IsValid(EnemyUnit) || EnemyUnit->IsDead())
-		{
-			continue;
-		}
-
-		if (EnemyUnit->GetTeam() == Context.SourceUnit->GetTeam())
-		{
-			continue;
-		}
-
-		if (!EnemyUnit->GetCurrentTile())
-		{
-			continue;
-		}
-
-		if (GridBoard->AreTilesWithinRange(EnemyUnit->GetCurrentTile(), CenterTile, EffectRadius))
-		{
-			TargetsToDamage.Add(EnemyUnit);
-		}
-	}
-
-	for (const TWeakObjectPtr<ABattleUnit>& TargetPtr : TargetsToDamage)
-	{
-		ABattleUnit* TargetUnit = TargetPtr.Get();
-		if (!IsValid(TargetUnit) || TargetUnit->IsDead())
-		{
-			continue;
-		}
-
-		TargetUnit->ApplyDamage(Card->Value);
-
-		if (!IsValid(Context.GameMode) ||
-			Context.GameMode->GetCurrentCombatPhase() == ECombatPhase::Victory ||
-			Context.GameMode->GetCurrentCombatPhase() == ECombatPhase::Defeat)
-		{
-			break;
-		}
-	}
-
+	ActualTarget->AddTemporaryShield(ShieldAmount);
 	return true;
 }
 
-bool FCardResolver::ResolvePush(
+bool FCardResolver::ResolveMoveSelfEffect(
 	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
 	const FCardResolveContext& Context,
-	FCardResolveResult& OutResult
-)
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Context.GameMode || !Context.SourceUnit || !Context.TileTarget)
+	{
+		return false;
+	}
+
+	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+	AGridTile* StartTile = Context.SourceUnit->GetCurrentTile();
+	AGridTile* DestinationTile = Context.TileTarget.Get();
+
+	if (!GridBoard || !StartTile || !DestinationTile || DestinationTile == StartTile || !DestinationTile->IsWalkable())
+	{
+		return false;
+	}
+
+	const TArray<AGridTile*> Path = GridBoard->BuildPath(StartTile, DestinationTile);
+	if (Path.Num() < 2)
+	{
+		return false;
+	}
+
+	const int32 StepsRequired = Path.Num() - 1;
+	const int32 MaxSteps = Card->GetConfiguredRangeForEffect(EffectSpec);
+	if (StepsRequired > MaxSteps)
+	{
+		return false;
+	}
+
+	if (!Context.GameMode->StartPlayerControlledMoveSequence(Context.SourceUnit, Path, false))
+	{
+		return false;
+	}
+
+	OutResult.bContinuesAsynchronously = true;
+	return true;
+}
+
+bool FCardResolver::ResolvePushTargetEffect(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
 {
 	if (!Card || !Context.SourceUnit || !Context.GameMode)
 	{
@@ -283,12 +399,7 @@ bool FCardResolver::ResolvePush(
 	}
 
 	ABattleUnit* TargetUnit = GetResolvedTargetUnit(Context);
-	if (!TargetUnit || TargetUnit->IsDead())
-	{
-		return false;
-	}
-
-	if (TargetUnit->GetTeam() == Context.SourceUnit->GetTeam())
+	if (!TargetUnit || TargetUnit->IsDead() || TargetUnit->GetTeam() == Context.SourceUnit->GetTeam())
 	{
 		return false;
 	}
@@ -302,8 +413,8 @@ bool FCardResolver::ResolvePush(
 		return false;
 	}
 
-	const int32 PushDistance = FMath::Max(1, Card->Value);
-	const int32 CollisionDamage = Card->GetConfiguredPushCollisionDamage();
+	const int32 PushDistance = FMath::Max(1, Card->GetConfiguredPushDistanceForEffect(EffectSpec));
+	const int32 CollisionDamage = Card->GetConfiguredCollisionDamageForEffect(EffectSpec);
 
 	AGridTile* BestDestination = nullptr;
 	bool bCollidedWithObstruction = false;
@@ -311,13 +422,7 @@ bool FCardResolver::ResolvePush(
 	for (int32 Step = 1; Step <= PushDistance; ++Step)
 	{
 		AGridTile* CandidateTile = GridBoard->GetTileInPushDirection(SourceTile, TargetTile, Step);
-		if (!CandidateTile)
-		{
-			bCollidedWithObstruction = true;
-			break;
-		}
-
-		if (!CandidateTile->IsWalkable())
+		if (!CandidateTile || !CandidateTile->IsWalkable())
 		{
 			bCollidedWithObstruction = true;
 			break;
@@ -343,54 +448,119 @@ bool FCardResolver::ResolvePush(
 	return bResolvedAnyPushEffect;
 }
 
-bool FCardResolver::ResolveMoveSelf(
+bool FCardResolver::ResolveSummonUnitEffect(
 	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
 	const FCardResolveContext& Context,
-	FCardResolveResult& OutResult
-)
+	FCardResolveResult& OutResult)
 {
-	if (!Card || !Context.GameMode || !Context.SourceUnit || !Context.TileTarget)
+	if (!Card || !Context.GameMode || !Context.SourceUnit)
 	{
 		return false;
 	}
 
-	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
-	AGridTile* StartTile = Context.SourceUnit->GetCurrentTile();
-	AGridTile* DestinationTile = Context.TileTarget.Get();
-
-	if (!GridBoard || !StartTile || !DestinationTile)
+	AGridTile* TargetTile = GetResolvedTargetTile(Context);
+	if (!TargetTile)
 	{
 		return false;
 	}
 
-	if (DestinationTile == StartTile)
+	if (!EffectSpec.UnitClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has a SummonUnit effect with no UnitClass."),
+			*Card->DisplayName.ToString());
+		return false;
+	}
+
+	return Context.GameMode->SpawnSummonedUnitFromClass(
+		EffectSpec.UnitClass,
+		Context.SourceUnit,
+		TargetTile,
+		EffectSpec.bSummonEntersWithAttackExhausted) != nullptr;
+}
+
+bool FCardResolver::ResolvePlaceTileEffect(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Context.GameMode || !Context.SourceUnit)
 	{
 		return false;
 	}
 
-	if (!DestinationTile->IsWalkable())
+	AGridTile* TargetTile = GetResolvedTargetTile(Context);
+	if (!TargetTile)
 	{
 		return false;
 	}
 
-	const TArray<AGridTile*> Path = GridBoard->BuildPath(StartTile, DestinationTile);
-	if (Path.Num() < 2)
+	if (!EffectSpec.TileEffectClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has a PlaceTileEffect effect with no TileEffectClass."),
+			*Card->DisplayName.ToString());
+		return false;
+	}
+
+	if (Card->Category != ECardCategory::Trap && Card->Category != ECardCategory::Aura)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' places a tile effect but its Category is not Trap or Aura. The effect will use the card category as authored."),
+			*Card->DisplayName.ToString());
+	}
+
+	return Context.GameMode->SpawnPersistentTileEffectFromClass(
+		EffectSpec.TileEffectClass,
+		Card,
+		Context.SourceUnit,
+		TargetTile,
+		Card->Category,
+		Card->GetConfiguredValueForEffect(EffectSpec),
+		Card->GetConfiguredRadiusForEffect(EffectSpec)) != nullptr;
+}
+
+bool FCardResolver::ResolveDrawCardsEffect(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Context.GameMode)
 	{
 		return false;
 	}
 
-	const int32 StepsRequired = Path.Num() - 1;
-	if (StepsRequired > Card->Range)
+	const int32 CardCount = Card->GetConfiguredValueForEffect(EffectSpec);
+	if (CardCount <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has a DrawCards effect with no positive card count."),
+			*Card->DisplayName.ToString());
+		return false;
+	}
+
+	return Context.GameMode->DrawCardsForPlayer(CardCount);
+}
+
+bool FCardResolver::ResolveGainEnergyEffect(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Context.GameMode)
 	{
 		return false;
 	}
 
-	if (!Context.GameMode->StartPlayerControlledMoveSequence(Context.SourceUnit, Path, false))
+	const int32 EnergyAmount = Card->GetConfiguredValueForEffect(EffectSpec);
+	if (EnergyAmount <= 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has a GainEnergy effect with no positive energy amount."),
+			*Card->DisplayName.ToString());
 		return false;
 	}
 
-	OutResult.bContinuesAsynchronously = true;
+	OutResult.EnergyGainAfterCost += EnergyAmount;
 	return true;
 }
 

@@ -24,7 +24,12 @@ public:
 	virtual void Destroyed() override;
 
 	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
-	void InitializeFromCard(UCardDefinition* InSourceCard, ETeam InSourceTeam, ECardCategory InCardCategory);
+	void InitializeFromCard(
+		UCardDefinition* InSourceCard,
+		ETeam InSourceTeam,
+		ECardCategory InCardCategory,
+		int32 InEffectValue,
+		int32 InEffectRadius);
 
 	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	void PlaceOnTile(AGridTile* Tile);
@@ -62,6 +67,12 @@ public:
 		return EffectRadius;
 	}
 
+	UFUNCTION(BlueprintPure, Category = "Tile Effect")
+	int32 GetEffectValue() const
+	{
+		return EffectValue;
+	}
+
 protected:
 	TArray<AGridTile*> GetTilesInEffectRadius(const AJargonCombatGameMode* CombatGameMode) const;
 
@@ -83,6 +94,9 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect|Area")
 	int32 EffectRadius = 0;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect")
+	int32 EffectValue = 0;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Tile Effect", meta = (ClampMin = "0.0"))
 	float TileEffectZOffset = 15.f;

@@ -89,18 +89,6 @@ enum class ETileHighlightState : uint8
 };
 
 UENUM(BlueprintType)
-enum class ECardEffectType : uint8
-{
-	Damage      UMETA(DisplayName = "Damage"),
-	Heal        UMETA(DisplayName = "Heal"),
-	AOE_Damage  UMETA(DisplayName = "AOE Damage"),
-	Push        UMETA(DisplayName = "Push"),
-	MoveSelf    UMETA(DisplayName = "Move Self"),
-	Guard       UMETA(DisplayName = "Guard"),
-	None        UMETA(DisplayName = "None")
-};
-
-UENUM(BlueprintType)
 enum class ECardCategory : uint8
 {
 	Spell  UMETA(DisplayName = "Spell"),

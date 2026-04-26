@@ -10,6 +10,8 @@ namespace
 {
 UClass* ResolvePreferredWorldPawnClass()
 {
+	// Intentional prototype bridge: Jargon-owned modes/controllers drive flow,
+	// while the working template pawn keeps movement/camera/animation stable.
 	static ConstructorHelpers::FClassFinder<APawn> ThirdPersonPawnBPClass(TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"));
 	if (ThirdPersonPawnBPClass.Class)
 	{
@@ -42,17 +44,6 @@ void AJargonTownGameMode::BeginPlay()
 	}
 
 	JargonGI->SetTownMapName(TownMapName);
-
-	TArray<UCardPackDefinition*> PackOffers;
-	for (UCardPackDefinition* PackOffer : TownShopPackOffers)
-	{
-		if (PackOffer)
-		{
-			PackOffers.Add(PackOffer);
-		}
-	}
-
-	JargonGI->SetAvailableCardPackOffers(PackOffers);
 
 	if (!JargonGI->HasActiveRun())
 	{

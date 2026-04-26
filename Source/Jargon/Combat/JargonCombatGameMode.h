@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/JargonRunStateTypes.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/GameModeBase.h"
 #include "TimerManager.h"
@@ -44,8 +45,19 @@ public:
 	bool TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget);
 	bool TryPlayCardOnSelf(UCardDefinition* Card);
 	bool StartPlayerControlledMoveSequence(ABattleUnit* MovingUnit, const TArray<AGridTile*>& Path, bool bConsumeMoveAction);
-	ABattleTileEffect* SpawnPersistentTileEffect(const UCardDefinition* Card, const ABattleUnit* SourceUnit, AGridTile* TargetTile);
-	ABattleUnit* SpawnSummonedUnitFromCard(const UCardDefinition* Card, const ABattleUnit* SourceUnit, AGridTile* TargetTile);
+	ABattleTileEffect* SpawnPersistentTileEffectFromClass(
+		TSubclassOf<ABattleTileEffect> TileEffectClass,
+		const UCardDefinition* Card,
+		const ABattleUnit* SourceUnit,
+		AGridTile* TargetTile,
+		ECardCategory EffectCategory,
+		int32 EffectValue,
+		int32 EffectRadius);
+	ABattleUnit* SpawnSummonedUnitFromClass(
+		TSubclassOf<ABattleUnit> UnitClass,
+		const ABattleUnit* SourceUnit,
+		AGridTile* TargetTile,
+		bool bAttackExhaustedOnSpawn);
 	void NotifyTileEffectsUnitEntered(ABattleUnit* EnteringUnit, AGridTile* EnteredTile);
 	
 	void RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card);
@@ -66,6 +78,11 @@ public:
 	const TArray<TObjectPtr<ABattleUnit>>& GetEnemyUnits() const
 	{
 		return EnemyUnits;
+	}
+
+	const TArray<TObjectPtr<ABattleUnit>>& GetFriendlyUnits() const
+	{
+		return FriendlyUnits;
 	}
 
 	UFUNCTION(BlueprintPure, Category = "Combat")
@@ -125,6 +142,11 @@ public:
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "Combat")
+	void AddCurrentEnergy(int32 Amount);
+
+	bool DrawCardsForPlayer(int32 Count);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat")
 	bool HasPlayerMoveRemaining() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Combat")
@@ -152,6 +174,9 @@ protected:
 	ABattleUnit* SpawnEnemyUnitAtTile(TSubclassOf<ABattleUnit> UnitClass, AGridTile* SpawnTile);
 	bool AreAllEnemiesDefeated() const;
 	void RegisterBattleUnitCallbacks(ABattleUnit* Unit);
+	void ResetCombatRewardState();
+	void AccumulateEnemyKillReward(ABattleUnit* DeadEnemy);
+	FJargonCurrencyAmount GetEnemyKillCurrencyReward(const ABattleUnit* DeadEnemy) const;
 
 	void StartBattleFlow();
 	void StartPlayerTurn();
@@ -216,6 +241,12 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TArray<TObjectPtr<ABattleUnit>> EnemyUnits;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Rewards")
+	int32 DefeatedEnemyCount = 0;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Rewards")
+	FJargonCurrencyAmount AccumulatedEnemyKillCurrency;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<ABattleUnit> CurrentActingEnemy = nullptr;
