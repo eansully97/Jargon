@@ -2,35 +2,15 @@
 
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
-#include "GameFramework/Pawn.h"
 #include "Town/JargonTownPlayerController.h"
-#include "UObject/ConstructorHelpers.h"
-
-namespace
-{
-UClass* ResolvePreferredWorldPawnClass()
-{
-	// Intentional prototype bridge: Jargon-owned modes/controllers drive flow,
-	// while the working template pawn keeps movement/camera/animation stable.
-	static ConstructorHelpers::FClassFinder<APawn> ThirdPersonPawnBPClass(TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"));
-	if (ThirdPersonPawnBPClass.Class)
-	{
-		return ThirdPersonPawnBPClass.Class;
-	}
-
-	static ConstructorHelpers::FClassFinder<APawn> TopDownPawnBPClass(TEXT("/Game/TopDown/Blueprints/BP_TopDownCharacter"));
-	return TopDownPawnBPClass.Class;
-}
-}
 
 AJargonTownGameMode::AJargonTownGameMode()
 {
 	PlayerControllerClass = AJargonTownPlayerController::StaticClass();
 
-	if (UClass* PreferredWorldPawnClass = ResolvePreferredWorldPawnClass())
-	{
-		DefaultPawnClass = PreferredWorldPawnClass;
-	}
+	// DefaultPawnClass is intentionally left for BP_TownGameMode to configure.
+	// This avoids hard references to template pawn assets while we transition
+	// toward a Jargon-owned exploration/town character.
 }
 
 void AJargonTownGameMode::BeginPlay()

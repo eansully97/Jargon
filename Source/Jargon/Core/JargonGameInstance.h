@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Encounters/EncounterTypes.h"
+#include "Exploration/Encounters/EncounterTypes.h"
 #include "Engine/GameInstance.h"
 #include "JargonGameInstance.generated.h"
 
@@ -189,6 +189,8 @@ protected:
 		int32 EnemiesDefeated
 	);
 
+	int32 CountCardCopiesInCollection(const TArray<TObjectPtr<UCardDefinition>>& Collection, const UCardDefinition* Card) const;
+
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	FName ReturnMapName = NAME_None;
@@ -214,6 +216,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Town")
 	FName TownMapName = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "1"))
+	int32 MaxCopiesPerDeckCard = 3;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> ActiveRunDeck;

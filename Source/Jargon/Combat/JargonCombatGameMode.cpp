@@ -7,11 +7,11 @@
 #include "Combat/TacticsCameraPawn.h"
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
-#include "Encounters/EncounterTypes.h"
+#include "Exploration/Encounters/EncounterTypes.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
-#include "Grid/BattleTileEffect.h"
+#include "Grid/Effects/BattleTileEffect.h"
 #include "Grid/GridBoard.h"
 #include "Grid/GridTile.h"
 #include "Kismet/GameplayStatics.h"
@@ -920,6 +920,15 @@ void AJargonCombatGameMode::StartPlayerTurn()
 
 		FriendlyUnit->ClearTemporaryShield();
 		FriendlyUnit->ResetTurnActions();
+
+		if (FriendlyUnit->ConsumeStunTurn())
+		{
+			UE_LOG(LogTemp, Log, TEXT("Friendly unit '%s' is stunned and loses its actions this turn."),
+				*GetNameSafe(FriendlyUnit));
+
+			FriendlyUnit->ConsumeMoveAction();
+			FriendlyUnit->ConsumeAttackAction();
+		}
 	}
 
 	SetCurrentActingEnemy(nullptr);
@@ -1045,6 +1054,14 @@ bool AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
 {
 	if (!EnemyUnit || EnemyUnit->IsDead())
 	{
+		return false;
+	}
+
+	if (EnemyUnit->ConsumeStunTurn())
+	{
+		UE_LOG(LogTemp, Log, TEXT("Enemy '%s' is stunned and skips its action."),
+			*GetNameSafe(EnemyUnit));
+
 		return false;
 	}
 

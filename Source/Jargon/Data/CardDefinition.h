@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Core/JargonTypes.h"
 #include "Engine/DataAsset.h"
-#include "Grid/BattleTileEffect.h"
+#include "Combat/Grid/Effects/BattleTileEffect.h"
 #include "CardDefinition.generated.h"
 
 class ABattleUnit;
@@ -17,13 +17,17 @@ enum class ECardEffectOperation : uint8
 	DealDamage UMETA(DisplayName = "Deal Damage"),
 	Heal UMETA(DisplayName = "Heal"),
 	ApplyShield UMETA(DisplayName = "Apply Shield"),
+	ApplyStun UMETA(DisplayName = "Apply Stun"),
 	MoveSelf UMETA(DisplayName = "Move Self"),
 	PushTarget UMETA(DisplayName = "Push Target"),
 	PullTarget UMETA(DisplayName = "Pull Target"),
 	SummonUnit UMETA(DisplayName = "Summon Unit"),
 	PlaceTileEffect UMETA(DisplayName = "Place Tile Effect"),
 	DrawCards UMETA(DisplayName = "Draw Cards"),
-	GainEnergy UMETA(DisplayName = "Gain Energy")
+	GainEnergy UMETA(DisplayName = "Gain Energy"),
+	ChainDamage UMETA(DisplayName = "Chain Damage"),
+	ChainHeal UMETA(DisplayName = "Chain Heal"),
+	ChainStun UMETA(DisplayName = "Chain Stun")
 };
 
 /**
@@ -34,7 +38,7 @@ enum class ECardEffectOperation : uint8
  * - Shield Bash: DealDamage, then PushTarget.
  * - Dash: MoveSelf.
  * - Orc Summon: SummonUnit with UnitClass.
- * - Spike Trap / Area of Aegis: PlaceTileEffect with TileEffectClass, Value, and RadiusOverride if needed.
+ * - // Spike Trap / Area of Aegis: PlaceTileEffect with TileEffectClass, Value, and EffectRadius if needed.
  */
 USTRUCT(BlueprintType)
 struct JARGON_API FCardEffectSpec
@@ -44,14 +48,17 @@ struct JARGON_API FCardEffectSpec
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ToolTip = "The keyword-style operation this effect performs."))
 	ECardEffectOperation Operation = ECardEffectOperation::None;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0", ToolTip = "Primary numeric amount. DealDamage = damage, Heal = healing, ApplyShield = shield, DrawCards = cards, GainEnergy = energy. PlaceTileEffect uses this as an optional tile-effect payload, such as trap damage or aura shield amount.", EditCondition = "Operation == ECardEffectOperation::DealDamage || Operation == ECardEffectOperation::Heal || Operation == ECardEffectOperation::ApplyShield || Operation == ECardEffectOperation::PlaceTileEffect || Operation == ECardEffectOperation::DrawCards || Operation == ECardEffectOperation::GainEnergy", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0", ToolTip = "Primary numeric amount. DealDamage = damage, Heal = healing, ApplyShield = shield, DrawCards = cards, GainEnergy = energy. PlaceTileEffect uses this as an optional tile-effect payload, such as trap damage or aura shield amount.", EditCondition = "Operation == ECardEffectOperation::DealDamage || Operation == ECardEffectOperation::Heal || Operation == ECardEffectOperation::ApplyShield || Operation == ECardEffectOperation::PlaceTileEffect || Operation == ECardEffectOperation::DrawCards || Operation == ECardEffectOperation::GainEnergy || Operation == ECardEffectOperation::ApplyStun || Operation == ECardEffectOperation::ChainDamage || Operation == ECardEffectOperation::ChainHeal || Operation == ECardEffectOperation::ChainStun", EditConditionHides))
 	int32 Value = 1;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "-1", ToolTip = "Optional resolver-side range override for MoveSelf. -1 uses the card's Range. Card-level targeting still controls UI/legal target selection.", EditCondition = "Operation == ECardEffectOperation::MoveSelf", EditConditionHides))
-	int32 RangeOverride = -1;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0", ToolTip = "How many tiles this MoveSelf effect can move the caster.", EditCondition = "Operation == ECardEffectOperation::MoveSelf", EditConditionHides))
+	int32 MoveDistance = 0;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "-1", ToolTip = "Optional area radius override. -1 uses the card's Radius. 0 means single-tile/single-target where supported.", EditCondition = "Operation == ECardEffectOperation::DealDamage || Operation == ECardEffectOperation::Heal || Operation == ECardEffectOperation::ApplyShield || Operation == ECardEffectOperation::PlaceTileEffect", EditConditionHides))
-	int32 RadiusOverride = -1;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0", ToolTip = "Area radius around the chosen target for AoE effects. For Chain effects, this is the jump/search radius from the previous chained unit. 0 means target only for normal effects.", EditCondition = "Operation == ECardEffectOperation::DealDamage || Operation == ECardEffectOperation::Heal || Operation == ECardEffectOperation::ApplyShield || Operation == ECardEffectOperation::ApplyStun  || Operation == ECardEffectOperation::PlaceTileEffect || Operation == ECardEffectOperation::ChainDamage || Operation == ECardEffectOperation::ChainHeal || Operation == ECardEffectOperation::ChainStun", EditConditionHides))
+	int32 EffectRadius = 0;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chain", meta = (ClampMin = "1", ToolTip = "Maximum number of units this chain effect can affect, including the initial target.", EditCondition = "Operation == ECardEffectOperation::ChainDamage || Operation == ECardEffectOperation::ChainHeal || Operation == ECardEffectOperation::ChainStun", EditConditionHides))
+	int32 ChainCount = 3;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "1", ToolTip = "Push distance for PushTarget.", EditCondition = "Operation == ECardEffectOperation::PushTarget", EditConditionHides))
 	int32 PushDistance = 1;
@@ -87,23 +94,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card")
 	int32 Cost = 1;
 
-	/** Current cast/targeting range from the source unit. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card")
-	int32 Range = 3;
-
-	/** Primary card behavior. Add effect specs in the order they should resolve. Cards with no Effects will not resolve. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Effects", meta = (ToolTip = "Primary card behavior. Add keyword-style effects in resolve order. Cards with no Effects log a warning and do not resolve."))
-	TArray<FCardEffectSpec> Effects;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card")
 	ECardCategory Category = ECardCategory::Spell;
 
-	/** Card-level area radius for targeting/highlighting and effect specs that leave RadiusOverride at -1. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card")
-	int32 Radius = 0;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card")
 	ECardTargetType TargetType = ECardTargetType::Unit;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card")
+	int32 Range = 3;
+
+	/** Primary card behavior.||| Add effect specs in the order they should resolve |||. Cards with no Effects will not resolve. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Effects", meta = (ToolTip = "Primary card behavior. Add keyword-style effects in resolve order. Cards with no Effects log a warning and do not resolve."))
+	TArray<FCardEffectSpec> Effects;
 
 	UFUNCTION(BlueprintPure, Category = "Card")
 	bool UsesBoardTileTargeting() const
@@ -126,23 +128,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Card")
 	bool RequiresEmptyTargetTile() const
 	{
-		return HasEffectOperation(ECardEffectOperation::SummonUnit) || Category == ECardCategory::Trap;
-	}
-
-	UFUNCTION(BlueprintPure, Category = "Card")
-	bool UsesRadiusField() const
-	{
-		return Radius > 0 ||
-			HasEffectOperation(ECardEffectOperation::DealDamage) ||
-			HasEffectOperation(ECardEffectOperation::Heal) ||
-			HasEffectOperation(ECardEffectOperation::ApplyShield) ||
-			HasEffectOperation(ECardEffectOperation::PlaceTileEffect);
-	}
-
-	UFUNCTION(BlueprintPure, Category = "Card")
-	int32 GetConfiguredAreaRadius() const
-	{
-		return FMath::Max(0, Radius);
+		return HasEffectOperation(ECardEffectOperation::SummonUnit)
+			|| HasEffectOperation(ECardEffectOperation::PlaceTileEffect);
 	}
 
 	UFUNCTION(BlueprintPure, Category = "Card|Effects")

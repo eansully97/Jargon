@@ -3,10 +3,10 @@
 #include "Blueprint/UserWidget.h"
 #include "Core/JargonGameInstance.h"
 #include "Jargon.h"
-#include "Town/UI/CardShopWidget.h"
-#include "Town/UI/DeckEditWidget.h"
-#include "Town/UI/PostMatchReportWidget.h"
-#include "Town/UI/TownHUDWidget.h"
+#include "Town/Widgets/CardShopWidget.h"
+#include "Town/Widgets/DeckEditWidget.h"
+#include "Town/Widgets/PostMatchReportWidget.h"
+#include "Town/Widgets/TownHUDWidget.h"
 
 AJargonTownPlayerController::AJargonTownPlayerController()
 {

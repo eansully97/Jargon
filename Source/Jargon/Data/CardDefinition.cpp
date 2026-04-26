@@ -23,12 +23,17 @@ ECardEffectOperation UCardDefinition::GetPrimaryEffectOperation() const
 
 int32 UCardDefinition::GetConfiguredRangeForEffect(const FCardEffectSpec& EffectSpec) const
 {
-	return EffectSpec.RangeOverride >= 0 ? EffectSpec.RangeOverride : FMath::Max(0, Range);
+	if (EffectSpec.Operation == ECardEffectOperation::MoveSelf)
+	{
+		return FMath::Max(0, EffectSpec.MoveDistance);
+	}
+
+	return FMath::Max(0, Range);
 }
 
 int32 UCardDefinition::GetConfiguredRadiusForEffect(const FCardEffectSpec& EffectSpec) const
 {
-	return EffectSpec.RadiusOverride >= 0 ? EffectSpec.RadiusOverride : GetConfiguredAreaRadius();
+	return FMath::Max(0, EffectSpec.EffectRadius);
 }
 
 int32 UCardDefinition::GetConfiguredValueForEffect(const FCardEffectSpec& EffectSpec) const

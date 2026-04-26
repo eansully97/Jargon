@@ -2,7 +2,7 @@
 
 #include "Data/CardDefinition.h"
 #include "Jargon.h"
-#include "Progression/CardPackDefinition.h"
+#include "Data/CardPackDefinition.h"
 #include "Town/JargonTownGameMode.h"
 
 namespace
@@ -173,18 +173,38 @@ bool UJargonGameInstance::MoveCardFromReserveToDeck(UCardDefinition* Card)
 {
 	if (!bHasActiveRun || !Card)
 	{
-		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromReserveToDeck rejected. ActiveRun=%s Card=%s"), bHasActiveRun ? TEXT("true") : TEXT("false"), *GetNameSafe(Card));
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromReserveToDeck rejected. ActiveRun=%s Card=%s"),
+			bHasActiveRun ? TEXT("true") : TEXT("false"),
+			*GetNameSafe(Card));
+		return false;
+	}
+
+	constexpr int32 MaxCopiesPerCard = 3;
+	const int32 CurrentDeckCopies = CountCardCopiesInCollection(ActiveRunDeck, Card);
+
+	if (CurrentDeckCopies >= MaxCopiesPerCard)
+	{
+		UE_LOG(LogJargon, Log, TEXT("MoveCardFromReserveToDeck rejected. Deck already has %d copies of '%s'. Max=%d"),
+			CurrentDeckCopies,
+			*GetNameSafe(Card),
+			MaxCopiesPerCard);
 		return false;
 	}
 
 	if (!RemoveCardFromCollection(RunReserveCards, Card))
 	{
-		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromReserveToDeck could not find card '%s' in reserve."), *GetNameSafe(Card));
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromReserveToDeck could not find card '%s' in reserve."),
+			*GetNameSafe(Card));
 		return false;
 	}
 
 	ActiveRunDeck.Add(Card);
-	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from reserve to deck. Deck=%d Reserve=%d"), *GetNameSafe(Card), ActiveRunDeck.Num(), RunReserveCards.Num());
+
+	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from reserve to deck. Deck=%d Reserve=%d"),
+		*GetNameSafe(Card),
+		ActiveRunDeck.Num(),
+		RunReserveCards.Num());
+
 	return true;
 }
 
@@ -192,24 +212,26 @@ bool UJargonGameInstance::MoveCardFromDeckToReserve(UCardDefinition* Card)
 {
 	if (!bHasActiveRun || !Card)
 	{
-		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve rejected. ActiveRun=%s Card=%s"), bHasActiveRun ? TEXT("true") : TEXT("false"), *GetNameSafe(Card));
-		return false;
-	}
-
-	if (ActiveRunDeck.Num() <= 1)
-	{
-		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve rejected for '%s' because the active run deck cannot be emptied."), *GetNameSafe(Card));
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve rejected. ActiveRun=%s Card=%s"),
+			bHasActiveRun ? TEXT("true") : TEXT("false"),
+			*GetNameSafe(Card));
 		return false;
 	}
 
 	if (!RemoveCardFromCollection(ActiveRunDeck, Card))
 	{
-		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve could not find card '%s' in active deck."), *GetNameSafe(Card));
+		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromDeckToReserve could not find card '%s' in active deck."),
+			*GetNameSafe(Card));
 		return false;
 	}
 
 	RunReserveCards.Add(Card);
-	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from deck to reserve. Deck=%d Reserve=%d"), *GetNameSafe(Card), ActiveRunDeck.Num(), RunReserveCards.Num());
+
+	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from deck to reserve. Deck=%d Reserve=%d"),
+		*GetNameSafe(Card),
+		ActiveRunDeck.Num(),
+		RunReserveCards.Num());
+
 	return true;
 }
 
@@ -452,4 +474,26 @@ void UJargonGameInstance::StorePostCombatReport(
 		PendingPostCombatReport.VictoryBonusCurrency
 	);
 	bHasPendingPostCombatReport = (Result != EJargonPostCombatResult::None);
+}
+
+int32 UJargonGameInstance::CountCardCopiesInCollection(
+	const TArray<TObjectPtr<UCardDefinition>>& Collection,
+	const UCardDefinition* Card) const
+{
+	if (!Card)
+	{
+		return 0;
+	}
+
+	int32 Count = 0;
+
+	for (const TObjectPtr<UCardDefinition>& CardDefinition : Collection)
+	{
+		if (CardDefinition == Card)
+		{
+			Count++;
+		}
+	}
+
+	return Count;
 }

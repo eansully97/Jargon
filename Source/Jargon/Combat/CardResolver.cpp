@@ -8,6 +8,38 @@
 #include "Grid/GridTile.h"
 #include "Units/BattleUnit.h"
 
+namespace
+{
+	void AppendValidUnitsFromArray(
+		const TArray<TObjectPtr<ABattleUnit>>& SourceArray,
+		TArray<ABattleUnit*>& OutUnits)
+	{
+		for (const TObjectPtr<ABattleUnit>& UnitPtr : SourceArray)
+		{
+			ABattleUnit* Unit = UnitPtr.Get();
+			if (IsValid(Unit) && !Unit->IsDead())
+			{
+				OutUnits.Add(Unit);
+			}
+		}
+	}
+
+	TArray<ABattleUnit*> GetAllLivingCombatUnits(const AJargonCombatGameMode* GameMode)
+	{
+		TArray<ABattleUnit*> Units;
+
+		if (!GameMode)
+		{
+			return Units;
+		}
+
+		AppendValidUnitsFromArray(GameMode->GetFriendlyUnits(), Units);
+		AppendValidUnitsFromArray(GameMode->GetEnemyUnits(), Units);
+
+		return Units;
+	}
+}
+
 bool FCardResolver::ResolveCard(
 	const UCardDefinition* Card,
 	const FCardResolveContext& Context,
@@ -119,6 +151,18 @@ bool FCardResolver::ResolveEffectSpec(
 
 	case ECardEffectOperation::GainEnergy:
 		return ResolveGainEnergyEffect(Card, EffectSpec, Context, OutResult);
+
+	case ECardEffectOperation::ApplyStun:
+		return ResolveApplyStunEffect(Card, EffectSpec, Context, OutResult);
+
+	case ECardEffectOperation::ChainDamage:
+		return ResolveChainEffect(Card, EffectSpec, Context, OutResult);
+		
+	case ECardEffectOperation::ChainHeal:
+		return ResolveChainEffect(Card, EffectSpec, Context, OutResult);
+		
+	case ECardEffectOperation::ChainStun:
+		return ResolveChainEffect(Card, EffectSpec, Context, OutResult);
 
 	case ECardEffectOperation::None:
 	default:
@@ -345,6 +389,80 @@ bool FCardResolver::ResolveApplyShieldEffect(
 	return true;
 }
 
+bool FCardResolver::ResolveApplyStunEffect(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Context.SourceUnit || !Context.GameMode)
+	{
+		return false;
+	}
+
+	const int32 StunTurns = Card->GetConfiguredValueForEffect(EffectSpec);
+	if (StunTurns <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has an ApplyStun effect with no positive stun duration."),
+			*Card->DisplayName.ToString());
+		return false;
+	}
+
+	const int32 EffectRadius = Card->GetConfiguredRadiusForEffect(EffectSpec);
+
+	if (EffectRadius > 0)
+	{
+		AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+		AGridTile* CenterTile = GetResolvedTargetTile(Context);
+
+		if (!GridBoard || !CenterTile)
+		{
+			return false;
+		}
+
+		bool bAppliedAnyStun = false;
+		const TArray<ABattleUnit*> AllUnits = GetAllLivingCombatUnits(Context.GameMode);
+
+		for (ABattleUnit* CandidateUnit : AllUnits)
+		{
+			if (!IsValid(CandidateUnit) || CandidateUnit->IsDead())
+			{
+				continue;
+			}
+
+			// Stun is treated as a hostile effect for now.
+			if (CandidateUnit->GetTeam() == Context.SourceUnit->GetTeam())
+			{
+				continue;
+			}
+
+			if (CandidateUnit->GetCurrentTile() &&
+				GridBoard->AreTilesWithinRange(CandidateUnit->GetCurrentTile(), CenterTile, EffectRadius))
+			{
+				CandidateUnit->ApplyStun(StunTurns);
+				bAppliedAnyStun = true;
+			}
+		}
+
+		return bAppliedAnyStun;
+	}
+
+	ABattleUnit* TargetUnit = GetResolvedTargetUnit(Context);
+	if (!TargetUnit || TargetUnit->IsDead())
+	{
+		return false;
+	}
+
+	// Stun is treated as a hostile effect for now.
+	if (TargetUnit->GetTeam() == Context.SourceUnit->GetTeam())
+	{
+		return false;
+	}
+
+	TargetUnit->ApplyStun(StunTurns);
+	return true;
+}
+
 bool FCardResolver::ResolveMoveSelfEffect(
 	const UCardDefinition* Card,
 	const FCardEffectSpec& EffectSpec,
@@ -562,6 +680,179 @@ bool FCardResolver::ResolveGainEnergyEffect(
 
 	OutResult.EnergyGainAfterCost += EnergyAmount;
 	return true;
+}
+
+bool FCardResolver::ResolveChainEffect(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Context.GameMode || !Context.SourceUnit)
+	{
+		return false;
+	}
+
+	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+	if (!GridBoard)
+	{
+		return false;
+	}
+
+	ABattleUnit* CurrentTarget = GetResolvedTargetUnit(Context);
+	if (!CurrentTarget && EffectSpec.Operation == ECardEffectOperation::ChainHeal)
+	{
+		CurrentTarget = Context.SourceUnit.Get();
+	}
+
+	if (!CurrentTarget || CurrentTarget->IsDead())
+	{
+		return false;
+	}
+
+	const int32 EffectValue = Card->GetConfiguredValueForEffect(EffectSpec);
+	const int32 ChainCount = FMath::Max(1, EffectSpec.ChainCount);
+	const int32 ChainSearchRadius = FMath::Max(1, Card->GetConfiguredRadiusForEffect(EffectSpec));
+
+	if (EffectValue <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has a chain effect with no positive value."),
+			*Card->DisplayName.ToString());
+		return false;
+	}
+
+	auto IsValidChainTarget = [&](ABattleUnit* CandidateUnit) -> bool
+	{
+		if (!IsValid(CandidateUnit) || CandidateUnit->IsDead())
+		{
+			return false;
+		}
+
+		switch (EffectSpec.Operation)
+		{
+		case ECardEffectOperation::ChainDamage:
+		case ECardEffectOperation::ChainStun:
+			return CandidateUnit->GetTeam() != Context.SourceUnit->GetTeam();
+
+		case ECardEffectOperation::ChainHeal:
+			return CandidateUnit->GetTeam() == Context.SourceUnit->GetTeam();
+
+		default:
+			return false;
+		}
+	};
+
+	auto ApplyChainPayload = [&](ABattleUnit* TargetUnit)
+	{
+		if (!IsValid(TargetUnit) || TargetUnit->IsDead())
+		{
+			return;
+		}
+
+		switch (EffectSpec.Operation)
+		{
+		case ECardEffectOperation::ChainDamage:
+			TargetUnit->ApplyDamage(EffectValue);
+			break;
+
+		case ECardEffectOperation::ChainHeal:
+			TargetUnit->ApplyHeal(EffectValue);
+			break;
+
+		case ECardEffectOperation::ChainStun:
+			TargetUnit->ApplyStun(EffectValue);
+			break;
+
+		default:
+			break;
+		}
+	};
+
+	auto AppendChainCandidates = [&](
+		const TArray<TObjectPtr<ABattleUnit>>& Units,
+		AGridTile* OriginTile,
+		const TArray<ABattleUnit*>& AlreadyHitUnits,
+		TArray<ABattleUnit*>& OutCandidates)
+	{
+		if (!OriginTile)
+		{
+			return;
+		}
+
+		for (const TObjectPtr<ABattleUnit>& UnitPtr : Units)
+		{
+			ABattleUnit* CandidateUnit = UnitPtr.Get();
+			if (!IsValidChainTarget(CandidateUnit))
+			{
+				continue;
+			}
+
+			if (AlreadyHitUnits.Contains(CandidateUnit))
+			{
+				continue;
+			}
+
+			AGridTile* CandidateTile = CandidateUnit->GetCurrentTile();
+			if (!CandidateTile)
+			{
+				continue;
+			}
+
+			if (GridBoard->AreTilesWithinRange(OriginTile, CandidateTile, ChainSearchRadius))
+			{
+				OutCandidates.Add(CandidateUnit);
+			}
+		}
+	};
+
+	if (!IsValidChainTarget(CurrentTarget))
+	{
+		return false;
+	}
+
+	TArray<ABattleUnit*> HitUnits;
+	HitUnits.Reserve(ChainCount);
+
+	bool bResolvedAnyEffect = false;
+
+	for (int32 ChainIndex = 0; ChainIndex < ChainCount; ++ChainIndex)
+	{
+		if (!IsValidChainTarget(CurrentTarget))
+		{
+			break;
+		}
+
+		// Capture this before applying damage, because death may clear/alter occupancy.
+		AGridTile* ChainOriginTile = CurrentTarget->GetCurrentTile();
+		if (!ChainOriginTile)
+		{
+			break;
+		}
+
+		ApplyChainPayload(CurrentTarget);
+		HitUnits.Add(CurrentTarget);
+		bResolvedAnyEffect = true;
+
+		if (!IsValid(Context.GameMode) ||
+			Context.GameMode->GetCurrentCombatPhase() == ECombatPhase::Victory ||
+			Context.GameMode->GetCurrentCombatPhase() == ECombatPhase::Defeat)
+		{
+			break;
+		}
+
+		TArray<ABattleUnit*> CandidateUnits;
+		AppendChainCandidates(Context.GameMode->GetFriendlyUnits(), ChainOriginTile, HitUnits, CandidateUnits);
+		AppendChainCandidates(Context.GameMode->GetEnemyUnits(), ChainOriginTile, HitUnits, CandidateUnits);
+
+		if (CandidateUnits.Num() == 0)
+		{
+			break;
+		}
+
+		CurrentTarget = CandidateUnits[FMath::RandRange(0, CandidateUnits.Num() - 1)];
+	}
+
+	return bResolvedAnyEffect;
 }
 
 AGridTile* FCardResolver::GetResolvedTargetTile(const FCardResolveContext& Context)

@@ -93,6 +93,13 @@ private:
 		FCardResolveResult& OutResult
 	);
 
+	static bool ResolveApplyStunEffect(
+		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult
+	);
+
 	static bool ResolveMoveSelfEffect(
 		const UCardDefinition* Card,
 		const FCardEffectSpec& EffectSpec,
@@ -129,6 +136,13 @@ private:
 	);
 
 	static bool ResolveGainEnergyEffect(
+		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult
+	);
+
+	static bool ResolveChainEffect(
 		const UCardDefinition* Card,
 		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,
