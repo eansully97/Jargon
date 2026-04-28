@@ -71,7 +71,6 @@ void UCombatHUDWidget::RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& Ha
 		}
 
 		CardWidget->InitializeFromCard(Card);
-		CardWidget->OnCardClicked().AddUObject(this, &UCombatHUDWidget::HandleCardEntryClicked);
 
 		SpawnedCardWidgets.Add(CardWidget);
 		HandContainer->AddChild(CardWidget);

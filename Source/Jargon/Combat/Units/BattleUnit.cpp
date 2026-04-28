@@ -439,6 +439,28 @@ void ABattleUnit::ApplyHeal(int32 Amount)
 	RefreshStatusWidget();
 }
 
+void ABattleUnit::IncreaseAttack(int32 Amount)
+{
+	if (bIsDead || Amount <= 0)
+	{
+		return;
+	}
+
+	AttackDamage += Amount;
+	RefreshStatusWidget();
+}
+
+void ABattleUnit::IncreaseMaxHealth(int32 Amount)
+{
+	if (bIsDead || Amount <= 0)
+	{
+		return;
+	}
+
+	MaxHP += Amount;
+	RefreshStatusWidget();
+}
+
 bool ABattleUnit::CanAttackTarget(const ABattleUnit* Target) const
 {
 	if (!Target || bIsDead || Target->IsDead())

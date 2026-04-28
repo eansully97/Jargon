@@ -128,6 +128,13 @@ private:
 		FCardResolveResult& OutResult
 	);
 
+	static bool ResolveDestroyTileEffect(
+		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult
+	);
+
 	static bool ResolveDrawCardsEffect(
 		const UCardDefinition* Card,
 		const FCardEffectSpec& EffectSpec,

@@ -2,9 +2,11 @@
 
 #include "Combat/JargonCombatGameMode.h"
 #include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Combat/Grid/GridBoard.h"
 #include "Combat/Grid/GridTile.h"
 #include "Combat/Units/BattleUnit.h"
+#include "Engine/World.h"
 
 ABattleTileEffect::ABattleTileEffect()
 {
@@ -13,12 +15,20 @@ ABattleTileEffect::ABattleTileEffect()
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 
+	EffectMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("EffectMesh"));
+	EffectMesh->SetupAttachment(SceneRoot);
+	EffectMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	EffectMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+	EffectMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	EffectMesh->SetGenerateOverlapEvents(false);
+
 	CurrentTile = nullptr;
 	SourceCard = nullptr;
 	SourceTeam = ETeam::Player;
 	CardCategory = ECardCategory::Spell;
 	EffectRadius = 0;
 	EffectValue = 0;
+	RemainingDuration = 0;
 	TileEffectZOffset = 15.f;
 }
 
@@ -38,13 +48,17 @@ void ABattleTileEffect::InitializeFromCard(
 	ETeam InSourceTeam,
 	ECardCategory InCardCategory,
 	int32 InEffectValue,
-	int32 InEffectRadius)
+	int32 InEffectRadius,
+	int32 InDuration)
 {
 	SourceCard = InSourceCard;
 	SourceTeam = InSourceTeam;
 	CardCategory = InCardCategory;
 	EffectValue = FMath::Max(0, InEffectValue);
 	EffectRadius = FMath::Max(0, InEffectRadius);
+	RemainingDuration = FMath::Max(0, InDuration);
+
+	BP_OnInitializedFromCard();
 }
 
 void ABattleTileEffect::PlaceOnTile(AGridTile* Tile)
@@ -57,6 +71,7 @@ void ABattleTileEffect::PlaceOnTile(AGridTile* Tile)
 	if (CurrentTile == Tile)
 	{
 		SetActorLocation(Tile->GetActorLocation() + FVector(0.f, 0.f, TileEffectZOffset));
+		BP_OnPlacedOnTile(Tile);
 		return;
 	}
 
@@ -68,14 +83,148 @@ void ABattleTileEffect::PlaceOnTile(AGridTile* Tile)
 	CurrentTile = Tile;
 	CurrentTile->AddTileEffect(this);
 	SetActorLocation(Tile->GetActorLocation() + FVector(0.f, 0.f, TileEffectZOffset));
+
+	BP_OnPlacedOnTile(Tile);
 }
 
 void ABattleTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMode)
 {
+	BP_OnPlayerTurnStart(CombatGameMode);
 }
 
 void ABattleTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMode, ABattleUnit* EnteringUnit)
 {
+}
+
+void ABattleTileEffect::SetRemainingDuration(int32 NewDuration)
+{
+	RemainingDuration = FMath::Max(0, NewDuration);
+}
+
+void ABattleTileEffect::ConsumeDurationTick()
+{
+	if (RemainingDuration <= 0)
+	{
+		// 0 means infinite.
+		return;
+	}
+
+	RemainingDuration = FMath::Max(0, RemainingDuration - 1);
+
+	if (RemainingDuration <= 0)
+	{
+		Destroy();
+	}
+}
+
+ABattleTileEffect* ABattleTileEffect::SpawnTileEffectOnTile(
+	TSubclassOf<ABattleTileEffect> TileEffectClass,
+	AGridTile* TargetTile,
+	int32 InEffectValue,
+	int32 InEffectRadius,
+	int32 InDuration)
+{
+	if (!TileEffectClass || !TargetTile)
+	{
+		return nullptr;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	if (!TargetTile->IsWalkable())
+	{
+		return nullptr;
+	}
+
+	ABattleTileEffect* SpawnedEffect = World->SpawnActor<ABattleTileEffect>(
+		TileEffectClass,
+		TargetTile->GetActorLocation(),
+		FRotator::ZeroRotator
+	);
+
+	if (!SpawnedEffect)
+	{
+		return nullptr;
+	}
+
+	SpawnedEffect->InitializeFromCard(
+		SourceCard,
+		SourceTeam,
+		CardCategory,
+		InEffectValue,
+		InEffectRadius,
+		InDuration);
+
+	SpawnedEffect->PlaceOnTile(TargetTile);
+
+	return SpawnedEffect;
+}
+
+ABattleTileEffect* ABattleTileEffect::SpawnCopyOnTile(AGridTile* TargetTile)
+{
+	return SpawnTileEffectOnTile(
+		GetClass(),
+		TargetTile,
+		EffectValue,
+		EffectRadius,
+		RemainingDuration);
+}
+
+TArray<AGridTile*> ABattleTileEffect::GetCandidateTilesInRadius(AJargonCombatGameMode* CombatGameMode, int32 Radius) const
+{
+	TArray<AGridTile*> CandidateTiles;
+
+	if (!CurrentTile)
+	{
+		return CandidateTiles;
+	}
+
+	if (!CombatGameMode)
+	{
+		CandidateTiles.Add(CurrentTile);
+		return CandidateTiles;
+	}
+
+	AGridBoard* GridBoard = CombatGameMode->GetGridBoard();
+	if (!GridBoard)
+	{
+		CandidateTiles.Add(CurrentTile);
+		return CandidateTiles;
+	}
+
+	return GridBoard->GetTilesWithinRadius(CurrentTile, FMath::Max(0, Radius));
+}
+
+TArray<AGridTile*> ABattleTileEffect::GetEmptyWalkableTilesInRadius(AJargonCombatGameMode* CombatGameMode, int32 Radius) const
+{
+	TArray<AGridTile*> EmptyWalkableTiles;
+
+	const TArray<AGridTile*> CandidateTiles = GetCandidateTilesInRadius(CombatGameMode, Radius);
+	for (AGridTile* Tile : CandidateTiles)
+	{
+		if (!Tile || Tile == CurrentTile)
+		{
+			continue;
+		}
+
+		if (!Tile->IsWalkable())
+		{
+			continue;
+		}
+
+		if (Tile->GetTileEffects().Num() > 0)
+		{
+			continue;
+		}
+
+		EmptyWalkableTiles.Add(Tile);
+	}
+
+	return EmptyWalkableTiles;
 }
 
 TArray<AGridTile*> ABattleTileEffect::GetTilesInEffectRadius(const AJargonCombatGameMode* CombatGameMode) const
@@ -84,6 +233,12 @@ TArray<AGridTile*> ABattleTileEffect::GetTilesInEffectRadius(const AJargonCombat
 
 	if (!CurrentTile)
 	{
+		return TilesInRadius;
+	}
+
+	if (EffectRadius <= 0)
+	{
+		TilesInRadius.Add(CurrentTile);
 		return TilesInRadius;
 	}
 
@@ -185,8 +340,50 @@ bool ABattleTileEffect::ApplyConfiguredOperationToUnit(
 		TargetUnit->ApplyStun(Amount);
 		return true;
 
+	case EJargonTileEffectOperation::IncreaseAttack:
+		TargetUnit->IncreaseAttack(Amount);
+		return true;
+
+	case EJargonTileEffectOperation::IncreaseMaxHealth:
+		TargetUnit->IncreaseMaxHealth(Amount);
+		return true;
+
 	case EJargonTileEffectOperation::None:
 	default:
 		return false;
 	}
+}
+
+void ABattleTileEffect::ShowAffectedTiles()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	AJargonCombatGameMode* CombatGameMode = World->GetAuthGameMode<AJargonCombatGameMode>();
+	if (!CombatGameMode)
+	{
+		return;
+	}
+
+	AGridBoard* GridBoard = CombatGameMode->GetGridBoard();
+	if (!GridBoard || !CurrentTile)
+	{
+		return;
+	}
+
+	GridBoard->ClearHighlights();
+
+	const TArray<AGridTile*> TilesInRadius = GetTilesInEffectRadius(CombatGameMode);
+	for (AGridTile* Tile : TilesInRadius)
+	{
+		if (Tile)
+		{
+			Tile->SetHighlightState(ETileHighlightState::Reachable);
+		}
+	}
+
+	CurrentTile->SetHighlightState(ETileHighlightState::Selected);
 }

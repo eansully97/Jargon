@@ -1132,7 +1132,17 @@ void AJargonCombatGameMode::NotifyPlayerTurnStartTileEffects()
 		}
 
 		TileEffect->HandlePlayerTurnStart(this);
+
+		if (IsValid(TileEffect))
+		{
+			TileEffect->ConsumeDurationTick();
+		}
 	}
+
+	ActiveTileEffects.RemoveAllSwap([](const TObjectPtr<ABattleTileEffect>& TileEffect)
+	{
+		return !IsValid(TileEffect);
+	});
 }
 
 void AJargonCombatGameMode::RefreshPlayerMovementHighlights()
@@ -1157,6 +1167,26 @@ void AJargonCombatGameMode::RefreshPlayerMovementHighlights()
 	{
 		SelectedFriendlyUnit->GetCurrentTile()->SetHighlightState(ETileHighlightState::Selected);
 	}
+}
+
+void AJargonCombatGameMode::PreviewUnitMovementRange(ABattleUnit* UnitToPreview)
+{
+	if (!GridBoard)
+	{
+		return;
+	}
+
+	GridBoard->ClearHighlights();
+
+	if (!UnitToPreview || UnitToPreview->IsDead() || !UnitToPreview->GetCurrentTile())
+	{
+		return;
+	}
+
+	GridBoard->HighlightReachableTilesFrom(
+		UnitToPreview->GetCurrentTile(),
+		UnitToPreview->GetMoveRange()
+	);
 }
 
 void AJargonCombatGameMode::RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card)
@@ -1279,7 +1309,8 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClass(
 	AGridTile* TargetTile,
 	ECardCategory EffectCategory,
 	int32 EffectValue,
-	int32 EffectRadius)
+	int32 EffectRadius,
+	int32 EffectDuration)
 {
 	if (!Card || !SourceUnit || !TargetTile || !TileEffectClass)
 	{
@@ -1308,8 +1339,10 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClass(
 		SourceUnit->GetTeam(),
 		EffectCategory,
 		EffectValue,
-		EffectRadius);
-	SpawnedEffect->PlaceOnTile(TargetTile);
+		EffectRadius,
+		EffectDuration);
+		SpawnedEffect->PlaceOnTile(TargetTile);
+	
 	ActiveTileEffects.Add(SpawnedEffect);
 	return SpawnedEffect;
 }
@@ -1489,10 +1522,14 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 		if (CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
 		{
 			SetCombatPhase(ECombatPhase::PlayerTurn);
+			RefreshCardTargetHighlights(PlayerUnit, Card);
+			BroadcastPlayerActionAvailabilityChanged();
 		}
+
 		return false;
 	}
 
+	// Only after this point should the card be paid for.
 	if (ResolveResult.bConsumeEnergy)
 	{
 		SetCurrentEnergy(CurrentEnergy - Card->Cost);
@@ -1503,19 +1540,21 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 		AddCurrentEnergy(ResolveResult.EnergyGainAfterCost);
 	}
 
-	if (ResolveResult.bConsumePlayerMove)
+	if (ResolveResult.bConsumePlayerMove && PlayerUnit)
 	{
 		PlayerUnit->ConsumeMoveAction();
 	}
 
-	if (!ResolveResult.bContinuesAsynchronously &&
-		CombatPhase != ECombatPhase::Victory &&
-		CombatPhase != ECombatPhase::Defeat)
+	if (!ResolveResult.bContinuesAsynchronously)
 	{
-		SetCombatPhase(ECombatPhase::PlayerTurn);
+		if (CombatPhase != ECombatPhase::Victory && CombatPhase != ECombatPhase::Defeat)
+		{
+			SetCombatPhase(ECombatPhase::PlayerTurn);
+			RefreshPlayerMovementHighlights();
+			BroadcastPlayerActionAvailabilityChanged();
+		}
 	}
 
-	RefreshPlayerMovementHighlights();
 	return true;
 }
 

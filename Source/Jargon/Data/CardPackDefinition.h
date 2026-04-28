@@ -23,11 +23,8 @@ public:
 	FJargonCurrencyAmount Price;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pack", meta = (ClampMin = "1"))
-	int32 MinCardsGranted = 3;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pack", meta = (ClampMin = "1"))
-	int32 MaxCardsGranted = 3;
-
+	int32 AmountToGrant = 5;
+	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pack")
 	bool bAllowDuplicateCardsPerPurchase = true;
 

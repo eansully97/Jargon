@@ -1,14 +1,12 @@
-﻿// CardEntryWidget.h
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "CardEntryWidget.generated.h"
 
 class UButton;
-class UTextBlock;
 class UCardDefinition;
+class UCardDisplayWidget;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCardEntryClicked, UCardDefinition*);
 
@@ -18,41 +16,37 @@ class JARGON_API UCardEntryWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	virtual void NativeConstruct() override;
+	FOnCardEntryClicked OnCardEntryClicked;
 
+	UFUNCTION(BlueprintCallable, Category = "Card Entry")
 	void InitializeFromCard(UCardDefinition* InCard);
 
+	UFUNCTION(BlueprintPure, Category = "Card Entry")
 	UCardDefinition* GetCardDefinition() const
 	{
 		return CardDefinition;
 	}
 
-	FOnCardEntryClicked& OnCardClicked()
-	{
-		return CardClickedDelegate;
-	}
-
 protected:
+	virtual void NativeOnInitialized() override;
+	virtual void NativePreConstruct() override;
+
 	UFUNCTION()
 	void HandleCardButtonClicked();
 
-	void RefreshDisplay();
+	UFUNCTION(BlueprintImplementableEvent, Category = "Card Entry")
+	void BP_OnCardInitialized();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Card Entry")
+	void BP_OnCardClicked();
 
 protected:
-	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
-	TObjectPtr<UButton> CardButton = nullptr;
-
-	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
-	TObjectPtr<UTextBlock> CardNameText = nullptr;
-
-	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
-	TObjectPtr<UTextBlock> CostText = nullptr;
-
-	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
-	TObjectPtr<UTextBlock> DescriptionText = nullptr;
-
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Card")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card", meta = (ExposeOnSpawn = "true"))
 	TObjectPtr<UCardDefinition> CardDefinition = nullptr;
 
-	FOnCardEntryClicked CardClickedDelegate;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> CardButton = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCardDisplayWidget> CardDisplay = nullptr;
 };

@@ -27,7 +27,8 @@ enum class ECardEffectOperation : uint8
 	GainEnergy UMETA(DisplayName = "Gain Energy"),
 	ChainDamage UMETA(DisplayName = "Chain Damage"),
 	ChainHeal UMETA(DisplayName = "Chain Heal"),
-	ChainStun UMETA(DisplayName = "Chain Stun")
+	ChainStun UMETA(DisplayName = "Chain Stun"),
+	DestroyTileEffect UMETA(DisplayName = "Destroy Tile Effect")
 };
 
 /**
@@ -54,7 +55,7 @@ struct JARGON_API FCardEffectSpec
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0", ToolTip = "How many tiles this MoveSelf effect can move the caster.", EditCondition = "Operation == ECardEffectOperation::MoveSelf", EditConditionHides))
 	int32 MoveDistance = 0;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0", ToolTip = "Area radius around the chosen target for AoE effects. For Chain effects, this is the jump/search radius from the previous chained unit. 0 means target only for normal effects.", EditCondition = "Operation == ECardEffectOperation::DealDamage || Operation == ECardEffectOperation::Heal || Operation == ECardEffectOperation::ApplyShield || Operation == ECardEffectOperation::ApplyStun  || Operation == ECardEffectOperation::PlaceTileEffect || Operation == ECardEffectOperation::ChainDamage || Operation == ECardEffectOperation::ChainHeal || Operation == ECardEffectOperation::ChainStun", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0", ToolTip = "Area radius around the chosen target for AoE effects. For Chain effects, this is the jump/search radius from the previous chained unit. 0 means target only for normal effects.", EditCondition = "Operation == ECardEffectOperation::DestroyTileEffect || Operation == ECardEffectOperation::DealDamage || Operation == ECardEffectOperation::Heal || Operation == ECardEffectOperation::ApplyShield || Operation == ECardEffectOperation::ApplyStun  || Operation == ECardEffectOperation::PlaceTileEffect || Operation == ECardEffectOperation::ChainDamage || Operation == ECardEffectOperation::ChainHeal || Operation == ECardEffectOperation::ChainStun", EditConditionHides))
 	int32 EffectRadius = 0;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chain", meta = (ClampMin = "1", ToolTip = "Maximum number of units this chain effect can affect, including the initial target.", EditCondition = "Operation == ECardEffectOperation::ChainDamage || Operation == ECardEffectOperation::ChainHeal || Operation == ECardEffectOperation::ChainStun", EditConditionHides))
@@ -77,6 +78,13 @@ struct JARGON_API FCardEffectSpec
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect", meta = (ToolTip = "Tile effect actor class used by PlaceTileEffect.", EditCondition = "Operation == ECardEffectOperation::PlaceTileEffect", EditConditionHides))
 	TSubclassOf<ABattleTileEffect> TileEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect", meta = (
+	ClampMin = "0",
+	ToolTip = "How many player turn starts this placed tile effect lasts. 0 means infinite.",
+	EditCondition = "Operation == ECardEffectOperation::PlaceTileEffect",
+	EditConditionHides))
+	int32 TileEffectDuration = 0;
 };
 
 UCLASS(BlueprintType)
@@ -107,6 +115,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card|Effects", meta = (ToolTip = "Primary card behavior. Add keyword-style effects in resolve order. Cards with no Effects log a warning and do not resolve."))
 	TArray<FCardEffectSpec> Effects;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual")
+	TObjectPtr<UTexture2D> CardArt = nullptr;
+
 	UFUNCTION(BlueprintPure, Category = "Card")
 	bool UsesBoardTileTargeting() const
 	{
@@ -129,7 +140,8 @@ public:
 	bool RequiresEmptyTargetTile() const
 	{
 		return HasEffectOperation(ECardEffectOperation::SummonUnit)
-			|| HasEffectOperation(ECardEffectOperation::PlaceTileEffect);
+			|| HasEffectOperation(ECardEffectOperation::PlaceTileEffect)
+			|| HasEffectOperation(ECardEffectOperation::MoveSelf);
 	}
 
 	UFUNCTION(BlueprintPure, Category = "Card|Effects")
@@ -140,6 +152,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Card|Effects")
 	bool HasEffectOperation(ECardEffectOperation Operation) const;
+
+	UFUNCTION(BlueprintPure, Category = "Card")
+	bool IsValidDefinition() const;
 
 	UFUNCTION(BlueprintPure, Category = "Card|Effects")
 	ECardEffectOperation GetPrimaryEffectOperation() const;

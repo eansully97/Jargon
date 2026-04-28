@@ -10,6 +10,7 @@ class AGridTile;
 class UCardDefinition;
 class AJargonCombatGameMode;
 class ABattleUnit;
+class UStaticMeshComponent;
 
 UENUM(BlueprintType)
 enum class EJargonTileEffectTargetFilter : uint8
@@ -26,6 +27,8 @@ enum class EJargonTileEffectOperation : uint8
 	DealDamage UMETA(DisplayName = "Deal Damage"),
 	Heal UMETA(DisplayName = "Heal"),
 	ApplyShield UMETA(DisplayName = "Apply Shield"),
+	IncreaseAttack UMETA(DisplayName = "Increase Attack"),
+	IncreaseMaxHealth UMETA(DisplayName = "Increase Max Health"),
 	ApplyStun UMETA(DisplayName = "Apply Stun")
 };
 
@@ -45,13 +48,52 @@ public:
 		ETeam InSourceTeam,
 		ECardCategory InCardCategory,
 		int32 InEffectValue,
-		int32 InEffectRadius);
+		int32 InEffectRadius,
+		int32 InDuration = 0);
 
 	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	void PlaceOnTile(AGridTile* Tile);
 
 	virtual void HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMode);
 	virtual void HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMode, ABattleUnit* EnteringUnit);
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
+	void ShowAffectedTiles();
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Duration")
+	void SetRemainingDuration(int32 NewDuration);
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Duration")
+	void ConsumeDurationTick();
+
+	UFUNCTION(BlueprintPure, Category = "Tile Effect|Duration")
+	bool HasFiniteDuration() const
+	{
+		return RemainingDuration > 0;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Tile Effect|Duration")
+	int32 GetRemainingDuration() const
+	{
+		return RemainingDuration;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Spawning")
+	ABattleTileEffect* SpawnTileEffectOnTile(
+		TSubclassOf<ABattleTileEffect> TileEffectClass,
+		AGridTile* TargetTile,
+		int32 InEffectValue,
+		int32 InEffectRadius,
+		int32 InDuration);
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Spawning")
+	ABattleTileEffect* SpawnCopyOnTile(AGridTile* TargetTile);
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Area")
+	TArray<AGridTile*> GetCandidateTilesInRadius(AJargonCombatGameMode* CombatGameMode, int32 Radius) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Area")
+	TArray<AGridTile*> GetEmptyWalkableTilesInRadius(AJargonCombatGameMode* CombatGameMode, int32 Radius) const;
 
 	UFUNCTION(BlueprintPure, Category = "Tile Effect")
 	AGridTile* GetCurrentTile() const
@@ -90,34 +132,61 @@ public:
 	}
 
 protected:
+	UFUNCTION(BlueprintImplementableEvent, Category = "Tile Effect")
+	void BP_OnPlayerTurnStart(AJargonCombatGameMode* CombatGameMode);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Tile Effect")
+	void BP_OnInitializedFromCard();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Tile Effect")
+	void BP_OnPlacedOnTile(AGridTile* Tile);
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	TArray<AGridTile*> GetTilesInEffectRadius(const AJargonCombatGameMode* CombatGameMode) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	TArray<ABattleUnit*> GetLivingUnitsInEffectRadius(const AJargonCombatGameMode* CombatGameMode) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	bool DoesUnitPassTargetFilter(const ABattleUnit* Unit, EJargonTileEffectTargetFilter TargetFilter) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	int32 ResolveEffectAmount(int32 DefaultEffectValue) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	bool ApplyConfiguredOperationToUnit(ABattleUnit* TargetUnit, EJargonTileEffectOperation Operation, int32 Amount) const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<USceneComponent> SceneRoot = nullptr;
 
-	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> EffectMesh = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
 	TObjectPtr<AGridTile> CurrentTile = nullptr;
 
-	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
 	TObjectPtr<UCardDefinition> SourceCard = nullptr;
 
-	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
 	ETeam SourceTeam = ETeam::Player;
 
-	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
 	ECardCategory CardCategory = ECardCategory::Spell;
 
-	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect|Area")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect|Area")
 	int32 EffectRadius = 0;
 
-	UPROPERTY(VisibleInstanceOnly, Category = "Tile Effect")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
 	int32 EffectValue = 0;
+
+	/**
+	 * Runtime duration in player-turn ticks.
+	 * 0 means infinite.
+	 */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect|Duration")
+	int32 RemainingDuration = 0;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Tile Effect", meta = (ClampMin = "0.0"))
 	float TileEffectZOffset = 15.f;

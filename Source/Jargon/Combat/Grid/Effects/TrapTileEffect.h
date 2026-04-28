@@ -15,6 +15,6 @@ public:
 	virtual void HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMode, ABattleUnit* EnteringUnit) override;
 
 protected:
-	UPROPERTY(EditDefaultsOnly, Category = "Trap", meta = (ClampMin = "0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trap", meta = (ClampMin = "0"))
 	int32 DefaultTrapDamage = 1;
 };

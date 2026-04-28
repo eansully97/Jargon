@@ -142,6 +142,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void ApplyHeal(int32 Amount);
 
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
+	void IncreaseAttack(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
+	void IncreaseMaxHealth(int32 Amount);
+
 	UFUNCTION(BlueprintPure, Category = "Battle Unit")
 	bool CanAttackTarget(const ABattleUnit* Target) const;
 
@@ -197,7 +203,6 @@ public:
 	{
 		return MovementCompletedDelegate;
 	}
-	
 
 protected:
 	virtual void BeginPlay() override;

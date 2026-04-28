@@ -314,15 +314,19 @@ void AJargonCombatPlayerController::RequestMoveToTile(AGridTile* Tile)
 	CombatGameMode->TryMovePlayerUnitToTile(Tile);
 }
 
-void AJargonCombatPlayerController::RequestBasicAttackOnUnit(ABattleUnit* Unit)
+bool AJargonCombatPlayerController::RequestBasicAttackOnUnit(ABattleUnit* Unit)
 {
 	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
 	if (!CombatGameMode || !Unit)
 	{
-		return;
+		return false;
 	}
 
-	CombatGameMode->TryBasicAttackWithPlayerUnit(Unit);
+	if (CombatGameMode->TryBasicAttackWithPlayerUnit(Unit))
+	{
+		return true;
+	}
+	return false;
 }
 
 void AJargonCombatPlayerController::RequestPlayCardOnUnit(ABattleUnit* Unit)
@@ -341,25 +345,40 @@ void AJargonCombatPlayerController::RequestPlayCardOnUnit(ABattleUnit* Unit)
 	RequestPlayCardOnTile(TargetTile);
 }
 
-void AJargonCombatPlayerController::RequestPlayCardOnTile(AGridTile* Tile)
+void AJargonCombatPlayerController::RequestPlayCardOnTile(AGridTile* TileTarget)
 {
-	if (!SelectedCard || !Tile)
+	if (!SelectedCard || !TileTarget)
 	{
 		return;
 	}
 
-	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	AJargonCombatGameMode* CombatGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>()
+		: nullptr;
+
 	if (!CombatGameMode)
 	{
 		return;
 	}
 
-	const bool bPlayedSuccessfully = CombatGameMode->TryPlayCardOnTile(SelectedCard, Tile);
-	if (bPlayedSuccessfully)
+	UCardDefinition* CardToPlay = SelectedCard;
+
+	const bool bPlayedCard = CombatGameMode->TryPlayCardOnTile(CardToPlay, TileTarget);
+	if (!bPlayedCard)
 	{
-		RemoveCardFromHand(SelectedCard);
-		ClearSelectedCard();
+		// Keep the card selected so the player can pick another target.
+		RefreshHUD();
+		return;
 	}
+
+	// Only now consume/remove/discard the card.
+	RemoveCardFromHand(CardToPlay);
+	DiscardPile.Add(CardToPlay);
+	SelectedCard = nullptr;
+	bCardTargetingMode = false;
+
+	RefreshHUD();
+	BroadcastCardCounts();
 }
 
 void AJargonCombatPlayerController::RequestEndTurn()
@@ -388,8 +407,29 @@ void AJargonCombatPlayerController::HandleLeftClick()
 		return;
 	}
 
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
+	{
+		return;
+	}
+
 	ABattleUnit* HitUnit = Cast<ABattleUnit>(HitActor);
 	AGridTile* HitTile = Cast<AGridTile>(HitActor);
+	ABattleTileEffect* HitTileEffect = Cast<ABattleTileEffect>(HitActor);
+
+	if (HitTileEffect)
+	{
+		if (!SelectedCard)
+		{
+			HitTileEffect->ShowAffectedTiles();
+			return;
+		}
+
+		if (!HitTile && HitTileEffect->GetCurrentTile())
+		{
+			HitTile = HitTileEffect->GetCurrentTile();
+		}
+	}
 
 	if (SelectedCard)
 	{
@@ -424,10 +464,17 @@ void AJargonCombatPlayerController::HandleLeftClick()
 		}
 		else
 		{
-			RequestBasicAttackOnUnit(HitUnit);
+			if (RequestBasicAttackOnUnit(HitUnit))
+			{
+				return;
+			}
+
+			CombatGameMode->PreviewUnitMovementRange(HitUnit);
 		}
+
 		return;
 	}
+	
 
 	if (HitTile)
 	{

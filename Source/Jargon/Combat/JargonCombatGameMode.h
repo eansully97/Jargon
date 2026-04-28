@@ -52,8 +52,9 @@ public:
 		AGridTile* TargetTile,
 		ECardCategory EffectCategory,
 		int32 EffectValue,
-		int32 EffectRadius);
-	ABattleUnit* SpawnSummonedUnitFromClass(
+		int32 EffectRadius,
+		int32 EffectDuration);
+		ABattleUnit* SpawnSummonedUnitFromClass(
 		TSubclassOf<ABattleUnit> UnitClass,
 		const ABattleUnit* SourceUnit,
 		AGridTile* TargetTile,
@@ -62,6 +63,9 @@ public:
 	
 	void RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card);
 	void RefreshPlayerMovementHighlights();
+	
+	UFUNCTION(BlueprintCallable, Category = "Combat|Preview")
+	void PreviewUnitMovementRange(ABattleUnit* UnitToPreview);
 
 	void HandleUnitDied(ABattleUnit* DeadUnit);
 	void HandleVictory();

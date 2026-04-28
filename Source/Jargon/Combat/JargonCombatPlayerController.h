@@ -29,15 +29,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cards")
 	void ShuffleDrawPile();
 
+	UFUNCTION(BlueprintCallable, Category = "Cards")
+	void SelectCard(UCardDefinition* Card);
+
 	void InitializeCombatUI();
 	void InitializeStartingDeck();
 	void DrawCards(int32 Count);
-	void SelectCard(UCardDefinition* Card);
+
 	void ClearSelectedCard();
 	void RemoveCardFromHand(UCardDefinition* Card);
 	void RequestSelectFriendlyUnit(ABattleUnit* Unit);
 	void RequestMoveToTile(AGridTile* Tile);
-	void RequestBasicAttackOnUnit(ABattleUnit* Unit);
+	bool RequestBasicAttackOnUnit(ABattleUnit* Unit);
 	void RequestPlayCardOnUnit(ABattleUnit* Unit);
 	void RequestPlayCardOnTile(AGridTile* Tile);
 	void RequestEndTurn();

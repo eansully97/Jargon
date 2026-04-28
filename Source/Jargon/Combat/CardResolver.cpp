@@ -78,6 +78,11 @@ bool FCardResolver::ResolveEffectSpecCard(
 		const FCardEffectSpec& EffectSpec = Card->Effects[EffectIndex];
 		FCardResolveResult EffectResult;
 
+		UE_LOG(LogTemp, Warning, TEXT("Resolving card '%s' effect[%d]: %d"),
+		*Card->DisplayName.ToString(),
+		EffectIndex,
+		static_cast<int32>(EffectSpec.Operation));
+		
 		if (!ResolveEffectSpec(Card, EffectSpec, Context, EffectResult))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Card '%s' failed to resolve effect spec at index %d."),
@@ -99,9 +104,14 @@ bool FCardResolver::ResolveEffectSpecCard(
 				UE_LOG(LogTemp, Warning, TEXT("Card '%s' started an async effect before later effect specs. Later effects are not resolved in this pass."),
 					*Card->DisplayName.ToString());
 			}
-
 			break;
 		}
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' effect[%d] result: %s Async=%s EnergyGain=%d"),
+	*Card->DisplayName.ToString(),
+	EffectIndex,
+	bResolvedAnyEffect ? TEXT("Success") : TEXT("Fail"),
+	EffectResult.bContinuesAsynchronously ? TEXT("true") : TEXT("false"),
+	EffectResult.EnergyGainAfterCost);
 	}
 
 	return bResolvedAnyEffect;
@@ -146,6 +156,9 @@ bool FCardResolver::ResolveEffectSpec(
 	case ECardEffectOperation::PlaceTileEffect:
 		return ResolvePlaceTileEffect(Card, EffectSpec, Context, OutResult);
 
+	case ECardEffectOperation::DestroyTileEffect:
+		return ResolveDestroyTileEffect(Card, EffectSpec, Context, OutResult);
+
 	case ECardEffectOperation::DrawCards:
 		return ResolveDrawCardsEffect(Card, EffectSpec, Context, OutResult);
 
@@ -170,6 +183,7 @@ bool FCardResolver::ResolveEffectSpec(
 			*Card->DisplayName.ToString());
 		return false;
 	}
+	
 }
 
 bool FCardResolver::ResolveDealDamageEffect(
@@ -628,13 +642,77 @@ bool FCardResolver::ResolvePlaceTileEffect(
 	}
 
 	return Context.GameMode->SpawnPersistentTileEffectFromClass(
-		EffectSpec.TileEffectClass,
-		Card,
-		Context.SourceUnit,
-		TargetTile,
-		Card->Category,
-		Card->GetConfiguredValueForEffect(EffectSpec),
-		Card->GetConfiguredRadiusForEffect(EffectSpec)) != nullptr;
+	EffectSpec.TileEffectClass,
+	Card,
+	Context.SourceUnit,
+	TargetTile,
+	Card->Category,
+	Card->GetConfiguredValueForEffect(EffectSpec),
+	Card->GetConfiguredRadiusForEffect(EffectSpec),
+	EffectSpec.TileEffectDuration) != nullptr;
+}
+
+bool FCardResolver::ResolveDestroyTileEffect(
+	const UCardDefinition* Card,
+	const FCardEffectSpec& EffectSpec,
+	const FCardResolveContext& Context,
+	FCardResolveResult& OutResult)
+{
+	if (!Card || !Context.GameMode || !Context.SourceUnit)
+	{
+		return false;
+	}
+
+	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+	AGridTile* CenterTile = GetResolvedTargetTile(Context);
+	if (!GridBoard || !CenterTile)
+	{
+		return false;
+	}
+
+	const int32 EffectRadius = Card->GetConfiguredRadiusForEffect(EffectSpec);
+
+	TArray<AGridTile*> TargetTiles;
+	if (EffectRadius > 0)
+	{
+		TargetTiles = GridBoard->GetTilesWithinRadius(CenterTile, EffectRadius);
+	}
+	else
+	{
+		TargetTiles.Add(CenterTile);
+	}
+
+	bool bDestroyedAny = false;
+
+	for (AGridTile* Tile : TargetTiles)
+	{
+		if (!Tile)
+		{
+			continue;
+		}
+
+		TArray<TObjectPtr<ABattleTileEffect>> TileEffects = Tile->GetTileEffects();
+
+		for (const TObjectPtr<ABattleTileEffect>& TileEffectPtr : TileEffects)
+		{
+			ABattleTileEffect* TileEffect = TileEffectPtr.Get();
+			if (!IsValid(TileEffect))
+			{
+				continue;
+			}
+
+			// First version: destroy opposing tile effects only.
+			if (TileEffect->GetSourceTeam() == Context.SourceUnit->GetTeam())
+			{
+				continue;
+			}
+
+			TileEffect->Destroy();
+			bDestroyedAny = true;
+		}
+	}
+
+	return bDestroyedAny;
 }
 
 bool FCardResolver::ResolveDrawCardsEffect(

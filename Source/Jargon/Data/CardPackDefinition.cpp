@@ -41,20 +41,77 @@ namespace
 
 bool UCardPackDefinition::IsValidDefinition() const
 {
-	if (MinCardsGranted <= 0 || MaxCardsGranted < MinCardsGranted)
+	if (Price.GetTotalCopperValue() < 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' invalid: negative price."), *GetNameSafe(this));
 		return false;
 	}
 
-	for (const FWeightedCardPackEntry& Entry : CardPool)
+	if (AmountToGrant <= 0)
 	{
-		if (Entry.IsValid())
-		{
-			return true;
-		}
+		UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' invalid: AmountToGrant must be greater than 0."), *GetNameSafe(this));
+		return false;
 	}
 
-	return false;
+	if (CardPool.Num() <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' invalid: no possible cards."), *GetNameSafe(this));
+		return false;
+	}
+
+	int32 ValidEntryCount = 0;
+	int32 TotalValidWeight = 0;
+
+	for (int32 Index = 0; Index < CardPool.Num(); ++Index)
+	{
+		const FWeightedCardPackEntry& Entry = CardPool[Index];
+
+		if (!Entry.CardDefinition)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' warning: entry %d has null CardDefinition and will be skipped."),
+				*GetNameSafe(this),
+				Index);
+			continue;
+		}
+
+		if (Entry.Weight <= 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' warning: entry %d card '%s' has invalid weight %d and will be skipped."),
+				*GetNameSafe(this),
+				Index,
+				*GetNameSafe(Entry.CardDefinition),
+				Entry.Weight);
+			continue;
+		}
+
+		if (!Entry.CardDefinition->IsValidDefinition())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' warning: entry %d card '%s' failed CardDefinition validation and will be skipped."),
+				*GetNameSafe(this),
+				Index,
+				*GetNameSafe(Entry.CardDefinition));
+			continue;
+		}
+
+		ValidEntryCount++;
+		TotalValidWeight += Entry.Weight;
+	}
+
+	if (ValidEntryCount <= 0 || TotalValidWeight <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' invalid: no valid rollable card entries."), *GetNameSafe(this));
+		return false;
+	}
+
+	if (!bAllowDuplicateCardsPerPurchase && AmountToGrant > ValidEntryCount)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardPack '%s' warning: AmountToGrant=%d but only %d valid unique cards are available. Purchase may grant fewer cards."),
+			*GetNameSafe(this),
+			AmountToGrant,
+			ValidEntryCount);
+	}
+
+	return true;
 }
 
 bool UCardPackDefinition::RollGrantedCards(TArray<UCardDefinition*>& OutGrantedCards) const
@@ -69,7 +126,7 @@ bool UCardPackDefinition::RollGrantedCards(TArray<UCardDefinition*>& OutGrantedC
 	TArray<FWeightedCardPackEntry> AvailableEntries;
 	for (const FWeightedCardPackEntry& Entry : CardPool)
 	{
-		if (Entry.IsValid())
+		if (Entry.CardDefinition && Entry.Weight > 0 && Entry.CardDefinition->IsValidDefinition())
 		{
 			AvailableEntries.Add(Entry);
 		}
@@ -80,12 +137,7 @@ bool UCardPackDefinition::RollGrantedCards(TArray<UCardDefinition*>& OutGrantedC
 		return false;
 	}
 
-	const int32 CardsToGrant = FMath::Clamp(
-		FMath::RandRange(MinCardsGranted, MaxCardsGranted),
-		1,
-		bAllowDuplicateCardsPerPurchase ? MaxCardsGranted : AvailableEntries.Num());
-
-	for (int32 CardIndex = 0; CardIndex < CardsToGrant; ++CardIndex)
+	for (int32 CardIndex = 0; CardIndex < AmountToGrant; ++CardIndex)
 	{
 		UCardDefinition* GrantedCard = RollSingleWeightedCard(AvailableEntries);
 		if (!GrantedCard)
