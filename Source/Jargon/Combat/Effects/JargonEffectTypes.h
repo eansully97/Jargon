@@ -57,7 +57,9 @@ enum class EJargonEffectTrigger : uint8
 	OnEnterTile UMETA(DisplayName = "On Enter Tile"),
 	OnTurnStart UMETA(DisplayName = "On Turn Start"),
 	Activated UMETA(DisplayName = "Activated"),
-	OnDeath UMETA(DisplayName = "On Death")
+	OnDeath UMETA(DisplayName = "On Death"),
+	OnCombatStart UMETA(DisplayName = "On Combat Start"),
+	OnEnemyDeath UMETA(DisplayName = "On Enemy Death")
 };
 
 /**
@@ -195,6 +197,9 @@ struct JARGON_API FJargonEffectContext
 
 	UPROPERTY()
 	TObjectPtr<UCardDefinition> SourceCard = nullptr;
+
+	UPROPERTY()
+	EJargonEffectTrigger Trigger = EJargonEffectTrigger::OnPlayed;
 };
 
 USTRUCT(BlueprintType)

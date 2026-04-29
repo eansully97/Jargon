@@ -66,6 +66,7 @@ void AJargonInteractableActor::HandleInteractionBoxBeginOverlap(
 
 	InteractingController->NotifyInteractableEnteredRange(this);
 	BP_OnPlayerEnteredRange(InteractingController);
+	HandlePlayerEnteredRange(InteractingController);
 }
 
 void AJargonInteractableActor::HandleInteractionBoxEndOverlap(
@@ -90,10 +91,19 @@ void AJargonInteractableActor::HandleInteractionBoxEndOverlap(
 
 	InteractingController->NotifyInteractableExitedRange(this);
 	BP_OnPlayerExitedRange(InteractingController);
+	HandlePlayerExitedRange(InteractingController);
 }
 
 AJargonExplorationPlayerController* AJargonInteractableActor::ResolveInteractingController(AActor* OtherActor) const
 {
 	const APawn* OtherPawn = Cast<APawn>(OtherActor);
 	return OtherPawn ? Cast<AJargonExplorationPlayerController>(OtherPawn->GetController()) : nullptr;
+}
+
+void AJargonInteractableActor::HandlePlayerEnteredRange(AJargonExplorationPlayerController* InteractingController)
+{
+}
+
+void AJargonInteractableActor::HandlePlayerExitedRange(AJargonExplorationPlayerController* InteractingController)
+{
 }

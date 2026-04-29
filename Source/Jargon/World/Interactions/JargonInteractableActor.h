@@ -73,6 +73,9 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
 	void BP_OnInteractionPromptHidden(AJargonExplorationPlayerController* InteractingController);
 
+	virtual void HandlePlayerEnteredRange(AJargonExplorationPlayerController* InteractingController);
+	virtual void HandlePlayerExitedRange(AJargonExplorationPlayerController* InteractingController);
+
 private:
 	UFUNCTION()
 	void HandleInteractionBoxBeginOverlap(

@@ -26,6 +26,8 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 
 	if (TriggeredEffects.Num() > 0)
 	{
+		EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered, EnteringUnit);
+
 		FJargonEffectResult EffectResult;
 		const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode, EnteringUnit);
 		const bool bResolved = FJargonEffectResolver::ResolveEffects(TriggeredEffects, EffectContext, EffectResult);
@@ -49,6 +51,8 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 	{
 		return;
 	}
+
+	EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered, EnteringUnit);
 
 	const int32 AuthoredTrapDamage = GetEffectValue();
 	const int32 TrapDamage = AuthoredTrapDamage > 0

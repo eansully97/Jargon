@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/Presentation/JargonCombatCueTypes.h"
 #include "Core/JargonRunStateTypes.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/GameModeBase.h"
@@ -19,6 +20,9 @@ class ATacticsCameraPawn;
 class UCardDefinition;
 class UCombatHUDWidget;
 class AJargonCombatPlayerController;
+class UJargonRelicDefinition;
+class AJargonCombatPresentationManager;
+class UJargonCombatPresentationSettings;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatPhaseChangedSignature, ECombatPhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatEnergyChangedSignature, int32, NewEnergy);
@@ -55,7 +59,16 @@ public:
 		int32 EffectValue,
 		int32 EffectRadius,
 		int32 EffectDuration);
-		ABattleUnit* SpawnSummonedUnitFromClass(
+	ABattleTileEffect* SpawnPersistentTileEffectFromClassForTeam(
+		TSubclassOf<ABattleTileEffect> TileEffectClass,
+		const UCardDefinition* Card,
+		ETeam SourceTeam,
+		AGridTile* TargetTile,
+		ECardCategory EffectCategory,
+		int32 EffectValue,
+		int32 EffectRadius,
+		int32 EffectDuration);
+	ABattleUnit* SpawnSummonedUnitFromClass(
 		TSubclassOf<ABattleUnit> UnitClass,
 		const ABattleUnit* SourceUnit,
 		AGridTile* TargetTile,
@@ -151,6 +164,9 @@ public:
 
 	bool DrawCardsForPlayer(int32 Count);
 
+	UFUNCTION(BlueprintCallable, Category = "Combat|Presentation")
+	void EmitCombatCue(const FJargonCombatCueEvent& Cue);
+
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	bool HasPlayerMoveRemaining() const;
 
@@ -171,6 +187,7 @@ public:
 
 protected:
 	void InitializeCameraPawn();
+	void InitializePresentationManager();
 	void FindGridBoard();
 	void SpawnCombatants();
 	void SpawnEnemiesFromPendingEncounter();
@@ -191,6 +208,9 @@ protected:
 	void ResolveNextEnemyAction();
 	bool ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
 	void EndEnemyTurn();
+	void ExecuteRunRelicOnCombatStartEffects();
+	void ExecuteRunRelicOnPlayerTurnStartEffects();
+	void ExecuteRunRelicOnEnemyDeathEffects(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
 	void ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit);
 	void ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit);
 	void NotifyPlayerTurnStartTileEffects();
@@ -267,6 +287,9 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<ATacticsCameraPawn> SpawnedCameraPawn = nullptr;
 
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Presentation")
+	TObjectPtr<AJargonCombatPresentationManager> PresentationManager = nullptr;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
 	ECombatPhase CombatPhase = ECombatPhase::BattleStart;
 
@@ -281,6 +304,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|UI")
 	TSubclassOf<UCombatHUDWidget> CombatHUDClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Presentation")
+	TSubclassOf<AJargonCombatPresentationManager> PresentationManagerClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Presentation")
+	TObjectPtr<UJargonCombatPresentationSettings> PresentationSettings = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Cards")
 	TArray<TObjectPtr<UCardDefinition>> StartingDeckDefinitions;

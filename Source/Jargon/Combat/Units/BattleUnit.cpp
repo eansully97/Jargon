@@ -11,6 +11,7 @@
 #include "Combat/Widgets/BattleUnitStatusWidget.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 ABattleUnit::ABattleUnit()
 {
@@ -32,6 +33,13 @@ ABattleUnit::ABattleUnit()
 	StatusWidgetComponent->SetDrawAtDesiredSize(true);
 	StatusWidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, -50.f));
 	StatusWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	static ConstructorHelpers::FClassFinder<UBattleUnitStatusWidget> DefaultStatusWidgetClassFinder(TEXT("/Game/Jargon/Blueprints/Widgets/WBP_BattleUnitStatus"));
+	if (DefaultStatusWidgetClassFinder.Succeeded())
+	{
+		StatusWidgetClass = DefaultStatusWidgetClassFinder.Class;
+		StatusWidgetComponent->SetWidgetClass(StatusWidgetClass);
+	}
 }
 
 void ABattleUnit::Tick(float DeltaSeconds)
@@ -99,6 +107,11 @@ void ABattleUnit::InitializeStatusWidget()
 		return;
 	}
 
+	if (!StatusWidgetClass)
+	{
+		StatusWidgetClass = LoadClass<UBattleUnitStatusWidget>(nullptr, TEXT("/Game/Jargon/Blueprints/Widgets/WBP_BattleUnitStatus.WBP_BattleUnitStatus_C"));
+	}
+
 	if (StatusWidgetClass)
 	{
 		StatusWidgetComponent->SetWidgetClass(StatusWidgetClass);
@@ -125,6 +138,8 @@ void ABattleUnit::RefreshStatusWidget()
 	{
 		StatusWidget->RefreshFromObservedUnit();
 	}
+
+	BP_OnStatusChanged();
 }
 
 void ABattleUnit::InitializeDynamicMaterials()
@@ -387,6 +402,11 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 		if (bShieldChanged)
 		{
 			RefreshStatusWidget();
+			BP_OnShieldChanged(TemporaryShield);
+			if (TemporaryShield <= 0)
+			{
+				EmitUnitCue(EJargonCombatCueType::ShieldBroken, Amount, CurrentTile);
+			}
 		}
 		return;
 	}
@@ -395,6 +415,16 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 	
 	CurrentHP = FMath::Max(0, CurrentHP - RemainingDamage);
 	RefreshStatusWidget();
+	EmitUnitCue(EJargonCombatCueType::Damage, RemainingDamage, CurrentTile);
+
+	if (bShieldChanged)
+	{
+		BP_OnShieldChanged(TemporaryShield);
+		if (TemporaryShield <= 0)
+		{
+			EmitUnitCue(EJargonCombatCueType::ShieldBroken, Amount - RemainingDamage, CurrentTile);
+		}
+	}
 
 	if (CurrentHP > 0)
 	{
@@ -403,6 +433,7 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 
 	bIsDead = true;
 	AGridTile* DeathTile = CurrentTile;
+	EmitUnitCue(EJargonCombatCueType::UnitDied, 0, DeathTile);
 	StopPathMovement();
 	ClearCurrentTileOccupancy();
 	CurrentTile = nullptr;
@@ -436,8 +467,14 @@ void ABattleUnit::ApplyHeal(int32 Amount)
 		return;
 	}
 
+	const int32 OldHP = CurrentHP;
 	CurrentHP = FMath::Clamp(CurrentHP + Amount, 0, MaxHP);
+	const int32 ActualHeal = CurrentHP - OldHP;
 	RefreshStatusWidget();
+	if (ActualHeal > 0)
+	{
+		EmitUnitCue(EJargonCombatCueType::Heal, ActualHeal, CurrentTile);
+	}
 }
 
 void ABattleUnit::IncreaseAttack(int32 Amount)
@@ -598,6 +635,27 @@ void ABattleUnit::PlayDeathPresentation()
 	}
 }
 
+void ABattleUnit::EmitUnitCue(EJargonCombatCueType CueType, int32 Value, AGridTile* CueTile)
+{
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
+	{
+		return;
+	}
+
+	FJargonCombatCueEvent Cue;
+	Cue.CueType = CueType;
+	Cue.TargetUnit = this;
+	Cue.SourceUnit = this;
+	Cue.TargetTile = CueTile ? CueTile : CurrentTile.Get();
+	Cue.SourceTile = CurrentTile;
+	Cue.Value = Value;
+	Cue.WorldLocation = GetActorLocation();
+	Cue.bHasWorldLocation = true;
+
+	CombatGameMode->EmitCombatCue(Cue);
+}
+
 void ABattleUnit::AdvanceMovementSegment()
 {
 	if (!bIsMovingAlongPath)
@@ -730,12 +788,15 @@ void ABattleUnit::AddTemporaryShield(int32 Amount)
 
 	TemporaryShield += Amount;
 	RefreshStatusWidget();
+	BP_OnShieldChanged(TemporaryShield);
+	EmitUnitCue(EJargonCombatCueType::ShieldGained, Amount, CurrentTile);
 }
 
 void ABattleUnit::ClearTemporaryShield()
 {
 	TemporaryShield = 0;
 	RefreshStatusWidget();
+	BP_OnShieldChanged(TemporaryShield);
 }
 
 void ABattleUnit::ApplyStun(int32 Turns)
@@ -752,6 +813,8 @@ void ABattleUnit::ApplyStun(int32 Turns)
 
 	// Optional, but useful if your status widget refreshes from unit state.
 	RefreshStatusWidget();
+	BP_OnStunChanged(StunTurnsRemaining);
+	EmitUnitCue(EJargonCombatCueType::StunApplied, SafeTurns, CurrentTile);
 }
 
 bool ABattleUnit::ConsumeStunTurn()
@@ -765,6 +828,8 @@ bool ABattleUnit::ConsumeStunTurn()
 
 	// Optional, but useful if your status widget refreshes from unit state.
 	RefreshStatusWidget();
+	BP_OnStunChanged(StunTurnsRemaining);
+	EmitUnitCue(EJargonCombatCueType::StunConsumed, 1, CurrentTile);
 
 	return true;
 }

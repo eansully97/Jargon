@@ -3,6 +3,7 @@
 #include "Data/CardDefinition.h"
 #include "Jargon.h"
 #include "Data/CardPackDefinition.h"
+#include "Data/JargonRelicDefinition.h"
 #include "Town/JargonTownGameMode.h"
 
 namespace
@@ -119,6 +120,7 @@ void UJargonGameInstance::ResetRunState()
 	bHasActiveRun = false;
 	ActiveRunDeck.Reset();
 	RunReserveCards.Reset();
+	RunRelics.Reset();
 	RunCurrencies = FJargonCurrencyAmount();
 	PendingEncounterData.Reset();
 	bReturnToTownAfterCombat = false;
@@ -126,6 +128,7 @@ void UJargonGameInstance::ResetRunState()
 	ReturnMapName = NAME_None;
 	ReturnTransform = FTransform::Identity;
 	ClearedEncounterIds.Reset();
+	CompletedExplorationInteractionIds.Reset();
 	ClearPendingPostCombatReport();
 }
 
@@ -155,6 +158,69 @@ void UJargonGameInstance::AddCurrency(const FJargonCurrencyAmount& Amount)
 {
 	RunCurrencies = FJargonCurrencyAmount::FromTotalCopper(
 		RunCurrencies.GetTotalCopperValue() + Amount.GetTotalCopperValue());
+}
+
+TArray<UJargonRelicDefinition*> UJargonGameInstance::GetRunRelics() const
+{
+	TArray<UJargonRelicDefinition*> Relics;
+	Relics.Reserve(RunRelics.Num());
+
+	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
+	{
+		if (RelicDefinition)
+		{
+			Relics.Add(RelicDefinition);
+		}
+	}
+
+	return Relics;
+}
+
+bool UJargonGameInstance::AddRunRelic(UJargonRelicDefinition* RelicDefinition)
+{
+	if (!RelicDefinition)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("AddRunRelic rejected a null relic definition."));
+		return false;
+	}
+
+	if (!bHasActiveRun)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("AddRunRelic accepted '%s' while no active run is marked. It will still be stored until run state resets."),
+			*GetNameSafe(RelicDefinition));
+	}
+
+	if (HasRunRelic(RelicDefinition))
+	{
+		UE_LOG(LogJargon, Log, TEXT("AddRunRelic skipped duplicate relic '%s'."), *GetNameSafe(RelicDefinition));
+		return false;
+	}
+
+	RunRelics.Add(RelicDefinition);
+
+	UE_LOG(LogJargon, Log, TEXT("Added run relic '%s'. Total relics=%d"),
+		*GetNameSafe(RelicDefinition),
+		RunRelics.Num());
+
+	return true;
+}
+
+bool UJargonGameInstance::HasRunRelic(const UJargonRelicDefinition* RelicDefinition) const
+{
+	if (!RelicDefinition)
+	{
+		return false;
+	}
+
+	for (const TObjectPtr<UJargonRelicDefinition>& RunRelic : RunRelics)
+	{
+		if (RunRelic == RelicDefinition)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool UJargonGameInstance::TrySpendCurrency(const FJargonCurrencyAmount& Cost)
@@ -333,6 +399,24 @@ bool UJargonGameInstance::IsEncounterCleared(const FName& EncounterId) const
 	}
 
 	return ClearedEncounterIds.Contains(EncounterId);
+}
+
+void UJargonGameInstance::MarkExplorationInteractionCompleted(const FName& CompletionId)
+{
+	if (!CompletionId.IsNone())
+	{
+		CompletedExplorationInteractionIds.Add(CompletionId);
+	}
+}
+
+bool UJargonGameInstance::IsExplorationInteractionCompleted(const FName& CompletionId) const
+{
+	if (CompletionId.IsNone())
+	{
+		return false;
+	}
+
+	return CompletedExplorationInteractionIds.Contains(CompletionId);
 }
 
 void UJargonGameInstance::PrepareReturnToExploration()

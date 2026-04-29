@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Combat/Effects/JargonEffectTypes.h"
+#include "Combat/Presentation/JargonCombatCueTypes.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/Actor.h"
 #include "BattleUnit.generated.h"
@@ -256,9 +257,19 @@ protected:
 
 	void PlayDeathPresentation();
 	void FinalizeDeathAndDestroy();
+	void EmitUnitCue(EJargonCombatCueType CueType, int32 Value = 0, AGridTile* CueTile = nullptr);
 
 	UFUNCTION()
 	void HandleDeathTimerElapsed();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnStatusChanged();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnShieldChanged(int32 NewShieldValue);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnStunChanged(int32 NewStunTurnsRemaining);
 	
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
@@ -273,7 +284,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<UWidgetComponent> StatusWidgetComponent = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	UPROPERTY(VisibleDefaultsOnly, Category = "UI")
 	TSubclassOf<UBattleUnitStatusWidget> StatusWidgetClass = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")

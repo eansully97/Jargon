@@ -1,5 +1,6 @@
 #include "BattleTileEffect.h"
 
+#include "Combat/Effects/JargonEffectContextBuilder.h"
 #include "Combat/JargonCombatGameMode.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -34,6 +35,8 @@ ABattleTileEffect::ABattleTileEffect()
 
 void ABattleTileEffect::Destroyed()
 {
+	EmitTileEffectCue(EJargonCombatCueType::TileEffectExpired);
+
 	if (CurrentTile)
 	{
 		CurrentTile->RemoveTileEffect(this);
@@ -85,6 +88,7 @@ void ABattleTileEffect::PlaceOnTile(AGridTile* Tile)
 	SetActorLocation(Tile->GetActorLocation() + FVector(0.f, 0.f, TileEffectZOffset));
 
 	BP_OnPlacedOnTile(Tile);
+	EmitTileEffectCue(EJargonCombatCueType::TileEffectPlaced);
 }
 
 void ABattleTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMode)
@@ -98,18 +102,15 @@ void ABattleTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameM
 
 FJargonEffectContext ABattleTileEffect::BuildEffectContext(AJargonCombatGameMode* CombatGameMode, ABattleUnit* TriggeringUnit) const
 {
-	FJargonEffectContext Context;
-	Context.GameMode = CombatGameMode;
-	Context.SourceObject = const_cast<ABattleTileEffect*>(this);
-	Context.SourceUnit = nullptr;
-	Context.SourceTeam = SourceTeam;
-	Context.SourceTile = CurrentTile;
-	Context.PrimaryUnitTarget = TriggeringUnit;
-	Context.PrimaryTileTarget = CurrentTile;
-	Context.TriggeringUnit = TriggeringUnit;
-	Context.OwningTileEffect = const_cast<ABattleTileEffect*>(this);
-	Context.SourceCard = SourceCard;
-	return Context;
+	const EJargonEffectTrigger Trigger = TriggeringUnit
+		? EJargonEffectTrigger::OnEnterTile
+		: EJargonEffectTrigger::OnTurnStart;
+
+	return FJargonEffectContextBuilder::BuildForTileEffect(
+		CombatGameMode,
+		const_cast<ABattleTileEffect*>(this),
+		Trigger,
+		TriggeringUnit);
 }
 
 void ABattleTileEffect::SetRemainingDuration(int32 NewDuration)
@@ -368,6 +369,30 @@ bool ABattleTileEffect::ApplyConfiguredOperationToUnit(
 	default:
 		return false;
 	}
+}
+
+void ABattleTileEffect::EmitTileEffectCue(EJargonCombatCueType CueType, ABattleUnit* TargetUnit) const
+{
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
+	{
+		return;
+	}
+
+	FJargonCombatCueEvent Cue;
+	Cue.CueType = CueType;
+	Cue.SourceObject = const_cast<ABattleTileEffect*>(this);
+	Cue.OwningTileEffect = const_cast<ABattleTileEffect*>(this);
+	Cue.TargetUnit = TargetUnit;
+	Cue.SourceTile = CurrentTile;
+	Cue.TargetTile = CurrentTile;
+	Cue.SourceCard = SourceCard;
+	Cue.Value = EffectValue;
+	Cue.Radius = EffectRadius;
+	Cue.WorldLocation = CurrentTile ? CurrentTile->GetActorLocation() : GetActorLocation();
+	Cue.bHasWorldLocation = true;
+
+	CombatGameMode->EmitCombatCue(Cue);
 }
 
 void ABattleTileEffect::ShowAffectedTiles()

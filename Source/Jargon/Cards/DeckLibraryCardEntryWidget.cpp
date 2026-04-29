@@ -41,8 +41,15 @@ void UDeckLibraryCardEntryWidget::InitializeFromCardLibraryEntry(
 	RefreshVisuals();
 }
 
+bool UDeckLibraryCardEntryWidget::CanAddDisplayedCardToDeck() const
+{
+	return CardDefinition != nullptr && bCanAddToDeck;
+}
+
 void UDeckLibraryCardEntryWidget::RefreshVisuals()
 {
+	const bool bCanAddDisplayedCard = CanAddDisplayedCardToDeck();
+
 	if (CardDisplay)
 	{
 		CardDisplay->SetCardDefinition(CardDefinition);
@@ -65,12 +72,12 @@ void UDeckLibraryCardEntryWidget::RefreshVisuals()
 
 	if (UnavailableOverlay)
 	{
-		UnavailableOverlay->SetVisibility(bCanAddToDeck ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+		UnavailableOverlay->SetVisibility(bCanAddDisplayedCard ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 
 	if (CardButton)
 	{
-		CardButton->SetIsEnabled(CardDefinition != nullptr && bCanAddToDeck);
+		CardButton->SetIsEnabled(bCanAddDisplayedCard);
 	}
 
 	BP_OnLibraryCardEntryRefreshed();
@@ -78,7 +85,7 @@ void UDeckLibraryCardEntryWidget::RefreshVisuals()
 
 void UDeckLibraryCardEntryWidget::HandleCardButtonClicked()
 {
-	if (!CardDefinition || !bCanAddToDeck)
+	if (!CanAddDisplayedCardToDeck())
 	{
 		return;
 	}

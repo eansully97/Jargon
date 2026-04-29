@@ -22,9 +22,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trap|Effects", meta = (ToolTip = "Optional shared effects resolved when a unit enters this trap. Empty keeps the legacy trap damage fallback."))
 	TArray<FJargonEffectSpec> TriggeredEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trap|Effects")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trap|Effects", meta = (ToolTip = "Whether this trap destroys itself after successfully resolving generic TriggeredEffects or the legacy fallback damage."))
 	bool bTriggerOnce = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trap", meta = (ClampMin = "0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trap|Legacy Fallback", meta = (ClampMin = "0", ToolTip = "Legacy fallback damage used only when TriggeredEffects is empty. Prefer TriggeredEffects for new trap authoring."))
 	int32 DefaultTrapDamage = 1;
 };

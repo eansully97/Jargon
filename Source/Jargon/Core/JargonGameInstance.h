@@ -9,6 +9,7 @@
 
 class UCardDefinition;
 class UCardPackDefinition;
+class UJargonRelicDefinition;
 
 UCLASS()
 class JARGON_API UJargonGameInstance : public UGameInstance
@@ -63,6 +64,20 @@ public:
 		return RunCurrencies;
 	}
 
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Relics")
+	TArray<UJargonRelicDefinition*> GetRunRelics() const;
+
+	const TArray<TObjectPtr<UJargonRelicDefinition>>& GetRunRelicsRef() const
+	{
+		return RunRelics;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Relics")
+	bool AddRunRelic(UJargonRelicDefinition* RelicDefinition);
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Relics")
+	bool HasRunRelic(const UJargonRelicDefinition* RelicDefinition) const;
+
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
 	bool CanAffordCurrency(const FJargonCurrencyAmount& Cost) const;
 
@@ -98,6 +113,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Encounter")
 	bool IsEncounterCleared(const FName& EncounterId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Exploration")
+	void MarkExplorationInteractionCompleted(const FName& CompletionId);
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Exploration")
+	bool IsExplorationInteractionCompleted(const FName& CompletionId) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
 	void PrepareReturnToExploration();
@@ -211,6 +232,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	TSet<FName> ClearedEncounterIds;
 
+	UPROPERTY(VisibleAnywhere, Category = "Jargon|Exploration")
+	TSet<FName> CompletedExplorationInteractionIds;
+
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run")
 	bool bHasActiveRun = false;
 
@@ -228,6 +252,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Economy")
 	FJargonCurrencyAmount RunCurrencies;
+
+	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Relics")
+	TArray<TObjectPtr<UJargonRelicDefinition>> RunRelics;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Post Combat")
 	bool bHasPendingPostCombatReport = false;

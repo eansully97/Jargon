@@ -65,6 +65,10 @@ private:
 		FCardResolveResult& OutResult
 	);
 
+	/**
+	 * Legacy direct card-effect resolvers retained as a conservative fallback/reference.
+	 * ResolveCard's canonical path is FCardEffectSpec -> FJargonEffectSpec -> FJargonEffectResolver.
+	 */
 	static bool ResolveEffectSpec(
 		const UCardDefinition* Card,
 		const FCardEffectSpec& EffectSpec,

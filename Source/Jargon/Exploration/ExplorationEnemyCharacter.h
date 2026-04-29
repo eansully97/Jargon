@@ -9,6 +9,7 @@
 class USphereComponent;
 class UEncounterDefinition;
 class UJargonGameInstance;
+class AAIController;
 
 UCLASS()
 class JARGON_API AExplorationEnemyCharacter : public ACharacter
@@ -35,7 +36,13 @@ protected:
 	bool IsValidTriggeringActor(AActor* OtherActor) const;
 	void DisableEncounter();
 	void StartEncounterForPlayer(AActor* TriggeringActor);
-	void UpdateSimplePacing(float DeltaSeconds);
+	void UpdateScoutMovement(float DeltaSeconds);
+	void BeginScoutMovement();
+	void StartScoutWait();
+	void ChooseNextScoutTarget();
+	bool TryMoveToScoutTarget(const FVector& TargetLocation);
+	bool FindReachableScoutLocation(FVector& OutLocation) const;
+	AAIController* GetOrCreateScoutController();
 	UEncounterDefinition* ResolveEncounterDefinitionToStart() const;
 
 protected:
@@ -54,6 +61,25 @@ protected:
 	UPROPERTY(Transient)
 	bool bEncounterStarting = false;
 
+	UPROPERTY(EditAnywhere, Category = "Scouting")
+	bool bEnableScoutMovement = false;
+
+	UPROPERTY(EditAnywhere, Category = "Scouting", meta = (ClampMin = "0.0", EditCondition = "bEnableScoutMovement"))
+	float ScoutRadius = 650.f;
+
+	UPROPERTY(EditAnywhere, Category = "Scouting", meta = (ClampMin = "0.0", EditCondition = "bEnableScoutMovement"))
+	float MinWaitTime = 1.f;
+
+	UPROPERTY(EditAnywhere, Category = "Scouting", meta = (ClampMin = "0.0", EditCondition = "bEnableScoutMovement"))
+	float MaxWaitTime = 3.f;
+
+	UPROPERTY(EditAnywhere, Category = "Scouting", meta = (ClampMin = "1.0", EditCondition = "bEnableScoutMovement"))
+	float AcceptanceRadius = 75.f;
+
+	UPROPERTY(EditAnywhere, Category = "Scouting", meta = (ClampMin = "0.0", EditCondition = "bEnableScoutMovement"))
+	float MoveSpeed = 150.f;
+
+	/** Legacy back-and-forth pacing toggle. Kept so older placed actors upgrade safely into scout movement. */
 	UPROPERTY(EditAnywhere, Category = "Pacing")
 	bool bEnableSimplePacing = false;
 
@@ -72,4 +98,16 @@ protected:
 
 	UPROPERTY(Transient)
 	bool bMovingToOffset = true;
+
+	UPROPERTY(Transient)
+	FVector ScoutOriginLocation = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	FVector ScoutTargetLocation = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	float ScoutWaitRemaining = 0.f;
+
+	UPROPERTY(Transient)
+	bool bScoutMoveInProgress = false;
 };

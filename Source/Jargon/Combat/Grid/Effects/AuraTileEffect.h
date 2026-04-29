@@ -20,15 +20,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Effects", meta = (ToolTip = "Optional shared effects resolved on player turn start. Empty keeps the legacy aura operation fallback."))
 	TArray<FJargonEffectSpec> AuraEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Legacy Fallback", meta = (ToolTip = "Legacy fallback operation used only when AuraEffects is empty. Prefer AuraEffects for new aura authoring."))
 	EJargonTileEffectOperation AuraOperation = EJargonTileEffectOperation::ApplyShield;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Legacy Fallback", meta = (ToolTip = "Legacy fallback target filter used only when AuraEffects is empty. Prefer AuraEffects for new aura authoring."))
 	EJargonTileEffectTargetFilter TargetFilter = EJargonTileEffectTargetFilter::FriendlyToSource;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura", meta = (ClampMin = "0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Legacy Fallback", meta = (ClampMin = "0", ToolTip = "Legacy fallback amount used only when AuraEffects is empty. Prefer AuraEffects for new aura authoring."))
 	int32 DefaultEffectValue = 1;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura", meta = (ToolTip = "If true, this aura resolves AuraEffects or legacy fallback behavior on player turn start."))
 	bool bApplyOnPlayerTurnStart = true;
 };

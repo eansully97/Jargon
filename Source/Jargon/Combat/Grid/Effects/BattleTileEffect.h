@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Core/JargonTypes.h"
 #include "Combat/Effects/JargonEffectTypes.h"
+#include "Combat/Presentation/JargonCombatCueTypes.h"
 #include "GameFramework/Actor.h"
 #include "BattleTileEffect.generated.h"
 
@@ -33,6 +34,13 @@ enum class EJargonTileEffectOperation : uint8
 	ApplyStun UMETA(DisplayName = "Apply Stun")
 };
 
+/*
+ * Legacy tile-effect operation/filter enums.
+ *
+ * New trap/aura authoring should prefer FJargonEffectSpec arrays on TrapTileEffect
+ * and AuraTileEffect. These enums remain for existing fallback behavior and older
+ * Blueprint children while content migrates naturally.
+ */
 UCLASS(Blueprintable)
 class JARGON_API ABattleTileEffect : public AActor
 {
@@ -159,6 +167,8 @@ protected:
 
 	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	bool ApplyConfiguredOperationToUnit(ABattleUnit* TargetUnit, EJargonTileEffectOperation Operation, int32 Amount) const;
+
+	void EmitTileEffectCue(EJargonCombatCueType CueType, ABattleUnit* TargetUnit = nullptr) const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")

@@ -4,6 +4,7 @@
 #include "Combat/Effects/JargonEffectTypes.h"
 
 class ABattleUnit;
+class ABattleTileEffect;
 class AGridTile;
 
 class JARGON_API FJargonEffectResolver
@@ -77,8 +78,17 @@ private:
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context);
 
+	static bool DoesTileEffectPassTargetFilter(
+		const ABattleTileEffect* TileEffect,
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context);
+
 	static bool ApplyUnitPayload(
 		ABattleUnit* TargetUnit,
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context);
+
+	static bool ValidateEffectForContext(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context);
 

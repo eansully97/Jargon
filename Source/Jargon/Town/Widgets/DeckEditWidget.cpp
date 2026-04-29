@@ -6,11 +6,32 @@
 
 namespace
 {
+constexpr int32 MaxCopiesPerCardInDeck = 3;
+
 struct FDeckEditCardCounts
 {
 	int32 DeckCount = 0;
 	int32 ReserveCount = 0;
 };
+
+int32 CountCopiesOfCard(const TArray<TObjectPtr<UCardDefinition>>& Cards, const UCardDefinition* Card)
+{
+	if (!Card)
+	{
+		return 0;
+	}
+
+	int32 CopyCount = 0;
+	for (const TObjectPtr<UCardDefinition>& CandidateCard : Cards)
+	{
+		if (CandidateCard.Get() == Card)
+		{
+			++CopyCount;
+		}
+	}
+
+	return CopyCount;
+}
 
 FString GetCardDisplayNameForSort(const UCardDefinition* Card)
 {
@@ -63,6 +84,11 @@ bool UDeckEditWidget::AddOneCopyToDeck(UCardDefinition* Card)
 {
 	UJargonGameInstance* RunState = ResolveRunState(CachedRunState.Get());
 	if (!RunState || !Card)
+	{
+		return false;
+	}
+
+	if (CountCopiesOfCard(RunDeckCards, Card) >= MaxCopiesPerCardInDeck)
 	{
 		return false;
 	}
@@ -217,7 +243,7 @@ void UDeckEditWidget::RebuildViewData()
 		LibraryEntry.DeckCount = Counts.DeckCount;
 		LibraryEntry.ReserveCount = Counts.ReserveCount;
 		LibraryEntry.OwnedCount = Counts.DeckCount + Counts.ReserveCount;
-		LibraryEntry.bCanAddToDeck = Counts.ReserveCount > 0;
+		LibraryEntry.bCanAddToDeck = Counts.ReserveCount > 0 && Counts.DeckCount < MaxCopiesPerCardInDeck;
 		LibraryEntry.bCanRemoveFromDeck = Counts.DeckCount > 0;
 		LibraryEntries.Add(LibraryEntry);
 	}

@@ -3,11 +3,14 @@
 #include "Combat/JargonCombatGameMode.h"
 
 #include "Combat/CardResolver.h"
+#include "Combat/Effects/JargonEffectContextBuilder.h"
 #include "Combat/Effects/JargonEffectResolver.h"
 #include "Combat/JargonCombatPlayerController.h"
+#include "Combat/Presentation/JargonCombatPresentationManager.h"
 #include "Combat/TacticsCameraPawn.h"
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
+#include "Data/JargonRelicDefinition.h"
 #include "Exploration/Encounters/EncounterTypes.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -19,6 +22,57 @@
 #include "Units/BattleUnit.h"
 #include "Units/EnemyBattleUnit.h"
 #include "Units/PlayerBattleUnit.h"
+
+namespace
+{
+void ResolveRunRelicEffects(
+	AJargonCombatGameMode* CombatGameMode,
+	UJargonRelicDefinition* RelicDefinition,
+	const TArray<FJargonEffectSpec>& Effects,
+	const FJargonEffectContext& Context,
+	const TCHAR* HookName)
+{
+	if (!CombatGameMode || !RelicDefinition || Effects.Num() <= 0)
+	{
+		return;
+	}
+
+	FJargonCombatCueEvent RelicCue;
+	RelicCue.CueType = EJargonCombatCueType::RelicTriggered;
+	RelicCue.Trigger = Context.Trigger;
+	RelicCue.SourceObject = RelicDefinition;
+	RelicCue.SourceRelic = RelicDefinition;
+	RelicCue.SourceUnit = Context.SourceUnit;
+	RelicCue.TargetUnit = Context.PrimaryUnitTarget;
+	RelicCue.SourceTile = Context.SourceTile;
+	RelicCue.TargetTile = Context.PrimaryTileTarget;
+	RelicCue.WorldLocation = Context.PrimaryTileTarget
+		? Context.PrimaryTileTarget->GetActorLocation()
+		: (Context.SourceUnit ? Context.SourceUnit->GetActorLocation() : FVector::ZeroVector);
+	RelicCue.bHasWorldLocation = Context.PrimaryTileTarget.Get() != nullptr || Context.SourceUnit.Get() != nullptr;
+	RelicCue.TextOverride = RelicDefinition->DisplayName.IsEmpty()
+		? FText::FromString(TEXT("Relic triggered"))
+		: FText::Format(FText::FromString(TEXT("{0} triggered")), RelicDefinition->DisplayName);
+	CombatGameMode->EmitCombatCue(RelicCue);
+
+	FJargonEffectResult EffectResult;
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(Effects, Context, EffectResult);
+	if (!bResolved)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Run relic '%s' failed to resolve %s effects."),
+			*GetNameSafe(RelicDefinition),
+			HookName ? HookName : TEXT("unknown"));
+		return;
+	}
+
+	if (EffectResult.bContinuesAsynchronously)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Run relic '%s' started an async %s effect. Async relic effects are not specially sequenced yet."),
+			*GetNameSafe(RelicDefinition),
+			HookName ? HookName : TEXT("unknown"));
+	}
+}
+}
 
 AJargonCombatGameMode::AJargonCombatGameMode()
 {
@@ -55,6 +109,7 @@ void AJargonCombatGameMode::InitializeCombat()
 
 	UE_LOG(LogTemp, Log, TEXT("Combat GameMode initialized for world '%s'."), *GetNameSafe(GetWorld()));
 
+	InitializePresentationManager();
 	InitializeCameraPawn();
 	FindGridBoard();
 	SpawnCombatants();
@@ -434,6 +489,54 @@ void AJargonCombatGameMode::ClearBasicAttackTimer()
 	PendingAttackTarget.Reset();
 	bReturnToPlayerTurnAfterAttackSequence = false;
 	bContinueEnemyTurnAfterAttackSequence = false;
+}
+
+void AJargonCombatGameMode::InitializePresentationManager()
+{
+	PresentationManager = nullptr;
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<AJargonCombatPresentationManager> It(World); It; ++It)
+	{
+		PresentationManager = *It;
+		break;
+	}
+
+	if (!PresentationManager)
+	{
+		TSubclassOf<AJargonCombatPresentationManager> ManagerClass = PresentationManagerClass;
+		if (!ManagerClass)
+		{
+			ManagerClass = AJargonCombatPresentationManager::StaticClass();
+		}
+
+		PresentationManager = World->SpawnActor<AJargonCombatPresentationManager>(
+			ManagerClass,
+			FVector::ZeroVector,
+			FRotator::ZeroRotator);
+	}
+
+	if (PresentationManager)
+	{
+		PresentationManager->InitializePresentation(PresentationSettings, this);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Combat presentation manager failed to spawn. Combat cue events will be ignored."));
+	}
+}
+
+void AJargonCombatGameMode::EmitCombatCue(const FJargonCombatCueEvent& Cue)
+{
+	if (PresentationManager)
+	{
+		PresentationManager->HandleCombatCue(Cue);
+	}
 }
 
 void AJargonCombatGameMode::InitializeCameraPawn()
@@ -943,6 +1046,21 @@ void AJargonCombatGameMode::StartPlayerTurn()
 		}
 	}
 
+	if (CurrentRound == 1)
+	{
+		ExecuteRunRelicOnCombatStartEffects();
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+	}
+
+	ExecuteRunRelicOnPlayerTurnStartEffects();
+	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+	{
+		return;
+	}
+
 	SetCurrentActingEnemy(nullptr);
 	ClearEnemyTurnTimer();
 	ClearBasicAttackTimer();
@@ -952,6 +1070,20 @@ void AJargonCombatGameMode::StartPlayerTurn()
 	SetSelectedFriendlyUnit(SelectedFriendlyUnit);
 	CurrentMaxEnergy = CalculateMaxEnergyForRound(CurrentRound);
 	SetCurrentEnergy(CurrentMaxEnergy);
+
+	if (PlayerUnit)
+	{
+		FJargonCombatCueEvent TurnStartCue;
+		TurnStartCue.CueType = EJargonCombatCueType::TurnStart;
+		TurnStartCue.SourceUnit = PlayerUnit;
+		TurnStartCue.TargetUnit = PlayerUnit;
+		TurnStartCue.SourceTile = PlayerUnit->GetCurrentTile();
+		TurnStartCue.TargetTile = PlayerUnit->GetCurrentTile();
+		TurnStartCue.WorldLocation = PlayerUnit->GetActorLocation();
+		TurnStartCue.bHasWorldLocation = true;
+		EmitCombatCue(TurnStartCue);
+	}
+
 	NotifyPlayerTurnStartTileEffects();
 
 	AJargonCombatPlayerController* CombatPC = GetCombatPlayerController();
@@ -988,6 +1120,12 @@ void AJargonCombatGameMode::StartEnemyTurn()
 	}
 
 	SetCombatPhase(ECombatPhase::EnemyTurn);
+
+	FJargonCombatCueEvent EnemyTurnCue;
+	EnemyTurnCue.CueType = EJargonCombatCueType::EnemyTurnStart;
+	EnemyTurnCue.WorldLocation = PlayerUnit ? PlayerUnit->GetActorLocation() : FVector::ZeroVector;
+	EnemyTurnCue.bHasWorldLocation = PlayerUnit.Get() != nullptr;
+	EmitCombatCue(EnemyTurnCue);
 
 	AJargonCombatPlayerController* CombatPC = GetCombatPlayerController();
 	if (CombatPC)
@@ -1137,6 +1275,130 @@ void AJargonCombatGameMode::EndEnemyTurn()
 	EnemyTurnActionIndex = 0;
 	CurrentRound++;
 	StartPlayerTurn();
+}
+
+void AJargonCombatGameMode::ExecuteRunRelicOnCombatStartEffects()
+{
+	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
+	if (!GameInstance || !PlayerUnit)
+	{
+		return;
+	}
+
+	AGridTile* PlayerTile = PlayerUnit->GetCurrentTile();
+	if (!PlayerTile)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Run relic combat-start effects skipped because PlayerUnit has no current tile."));
+		return;
+	}
+
+	const TArray<UJargonRelicDefinition*> RunRelics = GameInstance->GetRunRelics();
+	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
+	{
+		if (!RelicDefinition || RelicDefinition->OnCombatStartEffects.Num() <= 0)
+		{
+			continue;
+		}
+
+		const FJargonEffectContext EffectContext = FJargonEffectContextBuilder::BuildForRelic(
+			this,
+			RelicDefinition,
+			EJargonEffectTrigger::OnCombatStart,
+			PlayerUnit,
+			PlayerUnit,
+			PlayerTile,
+			PlayerUnit);
+
+		ResolveRunRelicEffects(this, RelicDefinition, RelicDefinition->OnCombatStartEffects, EffectContext, TEXT("OnCombatStart"));
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+	}
+}
+
+void AJargonCombatGameMode::ExecuteRunRelicOnPlayerTurnStartEffects()
+{
+	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
+	if (!GameInstance || !PlayerUnit || PlayerUnit->IsDead())
+	{
+		return;
+	}
+
+	AGridTile* PlayerTile = PlayerUnit->GetCurrentTile();
+	if (!PlayerTile)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Run relic player-turn-start effects skipped because PlayerUnit has no current tile."));
+		return;
+	}
+
+	const TArray<UJargonRelicDefinition*> RunRelics = GameInstance->GetRunRelics();
+	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
+	{
+		if (!RelicDefinition || RelicDefinition->OnPlayerTurnStartEffects.Num() <= 0)
+		{
+			continue;
+		}
+
+		const FJargonEffectContext EffectContext = FJargonEffectContextBuilder::BuildForRelic(
+			this,
+			RelicDefinition,
+			EJargonEffectTrigger::OnTurnStart,
+			PlayerUnit,
+			PlayerUnit,
+			PlayerTile,
+			PlayerUnit);
+
+		ResolveRunRelicEffects(this, RelicDefinition, RelicDefinition->OnPlayerTurnStartEffects, EffectContext, TEXT("OnPlayerTurnStart"));
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+	}
+}
+
+void AJargonCombatGameMode::ExecuteRunRelicOnEnemyDeathEffects(ABattleUnit* DeadEnemy, AGridTile* DeathTile)
+{
+	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
+	if (!GameInstance || !DeadEnemy)
+	{
+		return;
+	}
+
+	if (!DeathTile)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Run relic enemy-death effects skipped for '%s' because no death tile was captured."),
+			*GetNameSafe(DeadEnemy));
+		return;
+	}
+
+	ABattleUnit* RelicSourceUnit = IsValid(PlayerUnit) && !PlayerUnit->IsDead()
+		? PlayerUnit.Get()
+		: nullptr;
+
+	const TArray<UJargonRelicDefinition*> RunRelics = GameInstance->GetRunRelics();
+	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
+	{
+		if (!RelicDefinition || RelicDefinition->OnEnemyDeathEffects.Num() <= 0)
+		{
+			continue;
+		}
+
+		const FJargonEffectContext EffectContext = FJargonEffectContextBuilder::BuildForRelic(
+			this,
+			RelicDefinition,
+			EJargonEffectTrigger::OnEnemyDeath,
+			RelicSourceUnit,
+			DeadEnemy,
+			DeathTile,
+			DeadEnemy);
+
+		ResolveRunRelicEffects(this, RelicDefinition, RelicDefinition->OnEnemyDeathEffects, EffectContext, TEXT("OnEnemyDeath"));
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+	}
 }
 
 void AJargonCombatGameMode::NotifyPlayerTurnStartTileEffects()
@@ -1340,6 +1602,32 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClass(
 		return nullptr;
 	}
 
+	return SpawnPersistentTileEffectFromClassForTeam(
+		TileEffectClass,
+		Card,
+		SourceUnit->GetTeam(),
+		TargetTile,
+		EffectCategory,
+		EffectValue,
+		EffectRadius,
+		EffectDuration);
+}
+
+ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClassForTeam(
+	TSubclassOf<ABattleTileEffect> TileEffectClass,
+	const UCardDefinition* Card,
+	ETeam SourceTeam,
+	AGridTile* TargetTile,
+	ECardCategory EffectCategory,
+	int32 EffectValue,
+	int32 EffectRadius,
+	int32 EffectDuration)
+{
+	if (!TargetTile || !TileEffectClass)
+	{
+		return nullptr;
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -1359,12 +1647,12 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClass(
 
 	SpawnedEffect->InitializeFromCard(
 		const_cast<UCardDefinition*>(Card),
-		SourceUnit->GetTeam(),
+		SourceTeam,
 		EffectCategory,
 		EffectValue,
 		EffectRadius,
 		EffectDuration);
-		SpawnedEffect->PlaceOnTile(TargetTile);
+	SpawnedEffect->PlaceOnTile(TargetTile);
 	
 	ActiveTileEffects.Add(SpawnedEffect);
 	return SpawnedEffect;
@@ -1461,14 +1749,13 @@ void AJargonCombatGameMode::ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit)
 		return;
 	}
 
-	FJargonEffectContext EffectContext;
-	EffectContext.GameMode = this;
-	EffectContext.SourceObject = SummonedUnit;
-	EffectContext.SourceUnit = SummonedUnit;
-	EffectContext.SourceTeam = SummonedUnit->GetTeam();
-	EffectContext.SourceTile = SummonedTile;
-	EffectContext.PrimaryTileTarget = SummonedTile;
-	EffectContext.TriggeringUnit = SummonedUnit;
+	const FJargonEffectContext EffectContext = FJargonEffectContextBuilder::BuildForUnit(
+		this,
+		SummonedUnit,
+		EJargonEffectTrigger::OnSummoned,
+		nullptr,
+		SummonedTile,
+		SummonedUnit);
 
 	FJargonEffectResult EffectResult;
 	const bool bResolved = FJargonEffectResolver::ResolveEffects(OnSummonedEffects, EffectContext, EffectResult);
@@ -1507,37 +1794,16 @@ void AJargonCombatGameMode::ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit)
 		return;
 	}
 
-	TArray<FJargonEffectSpec> EffectsToResolve;
-	EffectsToResolve.Reserve(AuthoredEffects.Num());
-	for (const FJargonEffectSpec& EffectSpec : AuthoredEffects)
-	{
-		if (EffectSpec.Operation == EJargonEffectOperation::MoveSource)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has a MoveSource OnTurnStartEffect. Async movement is not supported for unit turn-start effects yet; skipping that spec."),
-				*GetNameSafe(SourceUnit));
-			continue;
-		}
-
-		EffectsToResolve.Add(EffectSpec);
-	}
-
-	if (EffectsToResolve.Num() <= 0)
-	{
-		return;
-	}
-
-	FJargonEffectContext EffectContext;
-	EffectContext.GameMode = this;
-	EffectContext.SourceObject = SourceUnit;
-	EffectContext.SourceUnit = SourceUnit;
-	EffectContext.SourceTeam = SourceUnit->GetTeam();
-	EffectContext.SourceTile = SourceTile;
-	EffectContext.PrimaryUnitTarget = SourceUnit;
-	EffectContext.PrimaryTileTarget = SourceTile;
-	EffectContext.TriggeringUnit = SourceUnit;
+	const FJargonEffectContext EffectContext = FJargonEffectContextBuilder::BuildForUnit(
+		this,
+		SourceUnit,
+		EJargonEffectTrigger::OnTurnStart,
+		SourceUnit,
+		SourceTile,
+		SourceUnit);
 
 	FJargonEffectResult EffectResult;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(EffectsToResolve, EffectContext, EffectResult);
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(AuthoredEffects, EffectContext, EffectResult);
 	if (!bResolved)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' failed to resolve its OnTurnStartEffects."),
@@ -1579,48 +1845,20 @@ void AJargonCombatGameMode::ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTi
 		return;
 	}
 
-	TArray<FJargonEffectSpec> EffectsToResolve;
-	EffectsToResolve.Reserve(AuthoredEffects.Num());
-	for (const FJargonEffectSpec& EffectSpec : AuthoredEffects)
-	{
-		if (EffectSpec.Operation == EJargonEffectOperation::MoveSource)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has a MoveSource OnDeathEffect. Async movement is not supported for death effects; skipping that spec."),
-				*GetNameSafe(DeadUnit));
-			continue;
-		}
-
-		if (EffectSpec.Delivery == EJargonEffectDelivery::ChainUnits)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has a ChainUnits OnDeathEffect. Death-triggered chain targeting is ambiguous without an explicit initial living target; skipping that spec."),
-				*GetNameSafe(DeadUnit));
-			continue;
-		}
-
-		EffectsToResolve.Add(EffectSpec);
-	}
-
-	if (EffectsToResolve.Num() <= 0)
-	{
-		return;
-	}
-
-	FJargonEffectContext EffectContext;
-	EffectContext.GameMode = this;
-	EffectContext.SourceObject = DeadUnit;
-	EffectContext.SourceUnit = DeadUnit;
-	EffectContext.SourceTeam = DeadUnit->GetTeam();
-	EffectContext.SourceTile = DeathTile;
-	EffectContext.PrimaryUnitTarget = DeadUnit;
-	EffectContext.PrimaryTileTarget = DeathTile;
-	EffectContext.TriggeringUnit = DeadUnit;
+	const FJargonEffectContext EffectContext = FJargonEffectContextBuilder::BuildForUnit(
+		this,
+		DeadUnit,
+		EJargonEffectTrigger::OnDeath,
+		DeadUnit,
+		DeathTile,
+		DeadUnit);
 
 	UE_LOG(LogTemp, Log, TEXT("Executing OnDeathEffects for unit '%s' at tile %s."),
 		*GetNameSafe(DeadUnit),
 		*DeathTile->GetCoord().ToString());
 
 	FJargonEffectResult EffectResult;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(EffectsToResolve, EffectContext, EffectResult);
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(AuthoredEffects, EffectContext, EffectResult);
 	if (!bResolved)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' failed to resolve its OnDeathEffects."),
@@ -1748,6 +1986,20 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 
 		return false;
 	}
+
+	FJargonCombatCueEvent CardCue;
+	CardCue.CueType = EJargonCombatCueType::CardPlayed;
+	CardCue.Trigger = EJargonEffectTrigger::OnPlayed;
+	CardCue.SourceObject = Card;
+	CardCue.SourceCard = Card;
+	CardCue.SourceUnit = PlayerUnit;
+	CardCue.TargetUnit = ResolvedUnitTarget;
+	CardCue.SourceTile = PlayerUnit ? PlayerUnit->GetCurrentTile() : nullptr;
+	CardCue.TargetTile = TileTarget;
+	CardCue.WorldLocation = TileTarget ? TileTarget->GetActorLocation() : (PlayerUnit ? PlayerUnit->GetActorLocation() : FVector::ZeroVector);
+	CardCue.bHasWorldLocation = TileTarget != nullptr || PlayerUnit.Get() != nullptr;
+	CardCue.TextOverride = Card->DisplayName;
+	EmitCombatCue(CardCue);
 
 	// Only after this point should the card be paid for.
 	if (ResolveResult.bConsumeEnergy)
@@ -2128,6 +2380,12 @@ void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit, AGridTile* Dea
 		AccumulateEnemyKillReward(DeadUnit);
 
 		ExecuteOnDeathEffects(DeadUnit, DeathTile);
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+
+		ExecuteRunRelicOnEnemyDeathEffects(DeadUnit, DeathTile);
 		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
 		{
 			return;

@@ -12,6 +12,8 @@ void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMod
 
 	if (AuraEffects.Num() > 0)
 	{
+		EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered);
+
 		FJargonEffectResult EffectResult;
 		const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode);
 		const bool bResolved = FJargonEffectResolver::ResolveEffects(AuraEffects, EffectContext, EffectResult);
@@ -50,6 +52,8 @@ void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMod
 	{
 		return;
 	}
+
+	EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered);
 
 	UE_LOG(LogTemp, Log, TEXT("Aura '%s' applied operation %d with value %d to %d unit(s) within radius %d."),
 		*GetNameSafe(this),

@@ -2,12 +2,16 @@
 
 #include "Exploration/ExplorationEnemyCharacter.h"
 
+#include "AIController.h"
 #include "Components/SphereComponent.h"
 #include "Core/JargonGameInstance.h"
 #include "Encounters/EncounterDefinition.h"
 #include "Encounters/EncounterTypes.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
 
 AExplorationEnemyCharacter::AExplorationEnemyCharacter()
 {
@@ -23,10 +27,18 @@ AExplorationEnemyCharacter::AExplorationEnemyCharacter()
 	AggroSphere->SetGenerateOverlapEvents(true);
 
 	bEncounterStarting = false;
+	bEnableScoutMovement = true;
+	ScoutRadius = 800.f;
+	MinWaitTime = 1.f;
+	MaxWaitTime = 3.f;
+	AcceptanceRadius = 100.f;
+	MoveSpeed = 150.f;
 	bEnableSimplePacing = false;
 	PatrolOffset = FVector(300.f, 0.f, 0.f);
 	PatrolSpeed = 120.f;
 	bMovingToOffset = true;
+	ScoutWaitRemaining = 0.f;
+	bScoutMoveInProgress = false;
 }
 
 void AExplorationEnemyCharacter::BeginPlay()
@@ -43,6 +55,22 @@ void AExplorationEnemyCharacter::BeginPlay()
 
 	PatrolStartLocation = GetActorLocation();
 	PatrolTargetLocation = PatrolStartLocation + PatrolOffset;
+	ScoutOriginLocation = GetActorLocation();
+
+	if (bEnableSimplePacing && !bEnableScoutMovement)
+	{
+		bEnableScoutMovement = true;
+		ScoutRadius = FMath::Max(ScoutRadius, PatrolOffset.Size());
+		MoveSpeed = PatrolSpeed > 0.f ? PatrolSpeed : MoveSpeed;
+	}
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		if (MoveSpeed > 0.f)
+		{
+			MovementComponent->MaxWalkSpeed = MoveSpeed;
+		}
+	}
 
 	if (EncounterId.IsNone())
 	{
@@ -60,15 +88,18 @@ void AExplorationEnemyCharacter::BeginPlay()
 		{
 			DisableEncounter();
 			SetActorHiddenInGame(true);
+			return;
 		}
 	}
+
+	BeginScoutMovement();
 }
 
 void AExplorationEnemyCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	UpdateSimplePacing(DeltaSeconds);
+	UpdateScoutMovement(DeltaSeconds);
 }
 
 void AExplorationEnemyCharacter::OnAggroSphereBeginOverlap(
@@ -115,6 +146,11 @@ void AExplorationEnemyCharacter::DisableEncounter()
 	{
 		AggroSphere->SetGenerateOverlapEvents(false);
 		AggroSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (AAIController* ScoutController = Cast<AAIController>(GetController()))
+	{
+		ScoutController->StopMovement();
 	}
 
 	bEncounterStarting = true;
@@ -220,27 +256,172 @@ UEncounterDefinition* AExplorationEnemyCharacter::ResolveEncounterDefinitionToSt
 		: nullptr;
 }
 
-void AExplorationEnemyCharacter::UpdateSimplePacing(float DeltaSeconds)
+void AExplorationEnemyCharacter::BeginScoutMovement()
 {
-	if (!bEnableSimplePacing || bEncounterStarting)
+	if (!bEnableScoutMovement || bEncounterStarting)
 	{
 		return;
 	}
 
-	const FVector CurrentTarget = bMovingToOffset ? PatrolTargetLocation : PatrolStartLocation;
-	const FVector CurrentLocation = GetActorLocation();
+	ScoutRadius = FMath::Max(0.f, ScoutRadius);
+	MinWaitTime = FMath::Max(0.f, MinWaitTime);
+	MaxWaitTime = FMath::Max(MinWaitTime, MaxWaitTime);
+	AcceptanceRadius = FMath::Max(1.f, AcceptanceRadius);
 
-	const FVector ToTarget = CurrentTarget - CurrentLocation;
-	const float DistanceToTarget = ToTarget.Size();
-
-	if (DistanceToTarget <= 5.f)
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
-		bMovingToOffset = !bMovingToOffset;
+		if (MoveSpeed > 0.f)
+		{
+			MovementComponent->MaxWalkSpeed = MoveSpeed;
+		}
+	}
+
+	StartScoutWait();
+}
+
+void AExplorationEnemyCharacter::UpdateScoutMovement(float DeltaSeconds)
+{
+	if (!bEnableScoutMovement || bEncounterStarting)
+	{
 		return;
 	}
 
-	const FVector Direction = ToTarget.GetSafeNormal();
-	const FVector NewLocation = CurrentLocation + (Direction * PatrolSpeed * DeltaSeconds);
+	if (ScoutWaitRemaining > 0.f)
+	{
+		ScoutWaitRemaining -= DeltaSeconds;
+		if (ScoutWaitRemaining <= 0.f)
+		{
+			ChooseNextScoutTarget();
+		}
 
-	SetActorLocation(NewLocation);
+		return;
+	}
+
+	if (!bScoutMoveInProgress)
+	{
+		ChooseNextScoutTarget();
+		return;
+	}
+
+	if (AAIController* ScoutController = Cast<AAIController>(GetController()))
+	{
+		if (ScoutController->GetMoveStatus() != EPathFollowingStatus::Moving)
+		{
+			bScoutMoveInProgress = false;
+			StartScoutWait();
+			return;
+		}
+	}
+
+	const float DistanceToTarget = FVector::Dist2D(GetActorLocation(), ScoutTargetLocation);
+	if (DistanceToTarget <= AcceptanceRadius)
+	{
+		if (AAIController* ScoutController = Cast<AAIController>(GetController()))
+		{
+			ScoutController->StopMovement();
+		}
+
+		bScoutMoveInProgress = false;
+		StartScoutWait();
+	}
+}
+
+void AExplorationEnemyCharacter::StartScoutWait()
+{
+	const float WaitMax = FMath::Max(MinWaitTime, MaxWaitTime);
+	ScoutWaitRemaining = WaitMax > 0.f
+		? FMath::FRandRange(MinWaitTime, WaitMax)
+		: 0.f;
+	bScoutMoveInProgress = false;
+}
+
+void AExplorationEnemyCharacter::ChooseNextScoutTarget()
+{
+	FVector CandidateLocation = FVector::ZeroVector;
+	if (!FindReachableScoutLocation(CandidateLocation))
+	{
+		StartScoutWait();
+		return;
+	}
+
+	if (!TryMoveToScoutTarget(CandidateLocation))
+	{
+		StartScoutWait();
+	}
+}
+
+bool AExplorationEnemyCharacter::TryMoveToScoutTarget(const FVector& TargetLocation)
+{
+	AAIController* ScoutController = GetOrCreateScoutController();
+	if (!ScoutController)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ExplorationEnemyCharacter '%s' could not start scout movement because it has no AI controller."), *GetName());
+		return false;
+	}
+
+	ScoutTargetLocation = TargetLocation;
+
+	const EPathFollowingRequestResult::Type MoveResult = ScoutController->MoveToLocation(
+		ScoutTargetLocation,
+		AcceptanceRadius,
+		true,
+		true,
+		true,
+		false);
+
+	if (MoveResult == EPathFollowingRequestResult::Failed)
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("ExplorationEnemyCharacter '%s' failed to move to scout target."), *GetName());
+		return false;
+	}
+
+	bScoutMoveInProgress = true;
+	return true;
+}
+
+bool AExplorationEnemyCharacter::FindReachableScoutLocation(FVector& OutLocation) const
+{
+	if (ScoutRadius <= 0.f)
+	{
+		OutLocation = ScoutOriginLocation;
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const UNavigationSystemV1* NavigationSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	if (!NavigationSystem)
+	{
+		return false;
+	}
+
+	FNavLocation NavLocation;
+	const bool bFoundLocation = NavigationSystem->GetRandomReachablePointInRadius(
+		ScoutOriginLocation,
+		ScoutRadius,
+		NavLocation);
+
+	if (!bFoundLocation)
+	{
+		return false;
+	}
+
+	OutLocation = NavLocation.Location;
+	return true;
+}
+
+AAIController* AExplorationEnemyCharacter::GetOrCreateScoutController()
+{
+	AAIController* ScoutController = Cast<AAIController>(GetController());
+	if (ScoutController)
+	{
+		return ScoutController;
+	}
+
+	SpawnDefaultController();
+	return Cast<AAIController>(GetController());
 }

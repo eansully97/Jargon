@@ -2,6 +2,7 @@
 
 #include "Combat/CardResolver.h"
 
+#include "Combat/Effects/JargonEffectContextBuilder.h"
 #include "Combat/Effects/JargonEffectResolver.h"
 #include "Combat/JargonCombatGameMode.h"
 #include "Data/CardDefinition.h"
@@ -186,21 +187,6 @@ namespace
 		return JargonEffectSpecs;
 	}
 
-	FJargonEffectContext BuildJargonEffectContextFromCardContext(
-		const UCardDefinition* Card,
-		const FCardResolveContext& Context)
-	{
-		FJargonEffectContext JargonContext;
-		JargonContext.GameMode = Context.GameMode;
-		JargonContext.SourceObject = const_cast<UCardDefinition*>(Card);
-		JargonContext.SourceUnit = Context.SourceUnit;
-		JargonContext.SourceTeam = Context.SourceUnit ? Context.SourceUnit->GetTeam() : ETeam::Player;
-		JargonContext.SourceTile = Context.SourceUnit ? Context.SourceUnit->GetCurrentTile() : nullptr;
-		JargonContext.PrimaryUnitTarget = Context.UnitTarget;
-		JargonContext.PrimaryTileTarget = Context.TileTarget;
-		JargonContext.SourceCard = const_cast<UCardDefinition*>(Card);
-		return JargonContext;
-	}
 }
 
 bool FCardResolver::ResolveCard(
@@ -235,7 +221,12 @@ bool FCardResolver::ResolveEffectSpecCard(
 	}
 
 	const TArray<FJargonEffectSpec> JargonEffectSpecs = ConvertCardEffectsToJargonEffectSpecs(Card);
-	const FJargonEffectContext JargonContext = BuildJargonEffectContextFromCardContext(Card, Context);
+	const FJargonEffectContext JargonContext = FJargonEffectContextBuilder::BuildForCard(
+		Context.GameMode.Get(),
+		const_cast<UCardDefinition*>(Card),
+		Context.SourceUnit.Get(),
+		Context.UnitTarget.Get(),
+		Context.TileTarget.Get());
 
 	FJargonEffectResult JargonResult;
 	const bool bResolved = FJargonEffectResolver::ResolveEffects(JargonEffectSpecs, JargonContext, JargonResult);

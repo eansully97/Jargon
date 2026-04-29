@@ -24,7 +24,17 @@ public class Jargon : ModuleRules
 			"SlateCore"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"AssetRegistry",
+			"ApplicationCore"
+		});
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] {
+				"UnrealEd"
+			});
+		}
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Jargon",

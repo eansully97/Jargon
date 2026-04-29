@@ -42,6 +42,7 @@ protected:
 	UFUNCTION()
 	void HandleCardButtonClicked();
 
+	bool CanAddDisplayedCardToDeck() const;
 	void RefreshVisuals();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Deck Library")
