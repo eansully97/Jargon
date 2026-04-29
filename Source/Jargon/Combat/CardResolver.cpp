@@ -2,6 +2,7 @@
 
 #include "Combat/CardResolver.h"
 
+#include "Combat/Effects/JargonEffectResolver.h"
 #include "Combat/JargonCombatGameMode.h"
 #include "Data/CardDefinition.h"
 #include "Grid/GridBoard.h"
@@ -38,6 +39,168 @@ namespace
 
 		return Units;
 	}
+
+	FJargonEffectSpec ConvertCardEffectSpecToJargonEffectSpec(
+		const UCardDefinition* Card,
+		const FCardEffectSpec& CardEffectSpec)
+	{
+		FJargonEffectSpec JargonEffectSpec;
+		JargonEffectSpec.Value = Card ? Card->GetConfiguredValueForEffect(CardEffectSpec) : FMath::Max(0, CardEffectSpec.Value);
+		JargonEffectSpec.Radius = Card ? Card->GetConfiguredRadiusForEffect(CardEffectSpec) : FMath::Max(0, CardEffectSpec.EffectRadius);
+		JargonEffectSpec.ChainCount = FMath::Max(1, CardEffectSpec.ChainCount);
+		JargonEffectSpec.MoveDistance = Card ? Card->GetConfiguredRangeForEffect(CardEffectSpec) : FMath::Max(0, CardEffectSpec.MoveDistance);
+		JargonEffectSpec.PushDistance = Card ? Card->GetConfiguredPushDistanceForEffect(CardEffectSpec) : FMath::Max(0, CardEffectSpec.PushDistance);
+		JargonEffectSpec.PullDistance = FMath::Max(0, CardEffectSpec.PullDistance);
+		JargonEffectSpec.CollisionDamage = Card ? Card->GetConfiguredCollisionDamageForEffect(CardEffectSpec) : FMath::Max(0, CardEffectSpec.CollisionDamage);
+		JargonEffectSpec.UnitClass = CardEffectSpec.UnitClass;
+		JargonEffectSpec.bSummonEntersWithAttackExhausted = CardEffectSpec.bSummonEntersWithAttackExhausted;
+		JargonEffectSpec.TileEffectClass = CardEffectSpec.TileEffectClass;
+		JargonEffectSpec.TileEffectDuration = FMath::Max(0, CardEffectSpec.TileEffectDuration);
+		JargonEffectSpec.TileEffectCategory = Card ? Card->Category : ECardCategory::Trap;
+
+		switch (CardEffectSpec.Operation)
+		{
+		case ECardEffectOperation::DealDamage:
+			JargonEffectSpec.Operation = EJargonEffectOperation::DealDamage;
+			JargonEffectSpec.Delivery = JargonEffectSpec.Radius > 0
+				? EJargonEffectDelivery::UnitsInRadius
+				: EJargonEffectDelivery::ExplicitUnit;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::EnemyToSource;
+			break;
+
+		case ECardEffectOperation::Heal:
+			JargonEffectSpec.Operation = EJargonEffectOperation::Heal;
+			JargonEffectSpec.Delivery = JargonEffectSpec.Radius > 0
+				? EJargonEffectDelivery::UnitsInRadius
+				: EJargonEffectDelivery::ExplicitUnit;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::FriendlyToSource;
+			break;
+
+		case ECardEffectOperation::ApplyShield:
+			JargonEffectSpec.Operation = EJargonEffectOperation::ApplyShield;
+			JargonEffectSpec.Delivery = JargonEffectSpec.Radius > 0
+				? EJargonEffectDelivery::UnitsInRadius
+				: EJargonEffectDelivery::ExplicitUnit;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::FriendlyToSource;
+			break;
+
+		case ECardEffectOperation::ApplyStun:
+			JargonEffectSpec.Operation = EJargonEffectOperation::ApplyStun;
+			JargonEffectSpec.Delivery = JargonEffectSpec.Radius > 0
+				? EJargonEffectDelivery::UnitsInRadius
+				: EJargonEffectDelivery::ExplicitUnit;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::EnemyToSource;
+			break;
+
+		case ECardEffectOperation::MoveSelf:
+			JargonEffectSpec.Operation = EJargonEffectOperation::MoveSource;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ExplicitTile;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::SourceOnly;
+			break;
+
+		case ECardEffectOperation::PushTarget:
+			JargonEffectSpec.Operation = EJargonEffectOperation::PushTarget;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ExplicitUnit;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::EnemyToSource;
+			break;
+
+		case ECardEffectOperation::PullTarget:
+			JargonEffectSpec.Operation = EJargonEffectOperation::PullTarget;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ExplicitUnit;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::EnemyToSource;
+			break;
+
+		case ECardEffectOperation::SummonUnit:
+			JargonEffectSpec.Operation = EJargonEffectOperation::SummonUnit;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ExplicitTile;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::None;
+			break;
+
+		case ECardEffectOperation::PlaceTileEffect:
+			JargonEffectSpec.Operation = EJargonEffectOperation::PlaceTileEffect;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ExplicitTile;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::None;
+			break;
+
+		case ECardEffectOperation::DestroyTileEffect:
+			JargonEffectSpec.Operation = EJargonEffectOperation::DestroyTileEffect;
+			JargonEffectSpec.Delivery = JargonEffectSpec.Radius > 0
+				? EJargonEffectDelivery::TilesInRadius
+				: EJargonEffectDelivery::ExplicitTile;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::EnemyToSource;
+			break;
+
+		case ECardEffectOperation::DrawCards:
+			JargonEffectSpec.Operation = EJargonEffectOperation::DrawCards;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::Self;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::SourceOnly;
+			break;
+
+		case ECardEffectOperation::GainEnergy:
+			JargonEffectSpec.Operation = EJargonEffectOperation::GainEnergy;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::Self;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::SourceOnly;
+			break;
+
+		case ECardEffectOperation::ChainDamage:
+			JargonEffectSpec.Operation = EJargonEffectOperation::DealDamage;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ChainUnits;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::EnemyToSource;
+			break;
+
+		case ECardEffectOperation::ChainHeal:
+			JargonEffectSpec.Operation = EJargonEffectOperation::Heal;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ChainUnits;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::FriendlyToSource;
+			break;
+
+		case ECardEffectOperation::ChainStun:
+			JargonEffectSpec.Operation = EJargonEffectOperation::ApplyStun;
+			JargonEffectSpec.Delivery = EJargonEffectDelivery::ChainUnits;
+			JargonEffectSpec.TargetFilter = EJargonEffectTargetFilter::EnemyToSource;
+			break;
+
+		case ECardEffectOperation::None:
+		default:
+			JargonEffectSpec.Operation = EJargonEffectOperation::None;
+			break;
+		}
+
+		return JargonEffectSpec;
+	}
+
+	TArray<FJargonEffectSpec> ConvertCardEffectsToJargonEffectSpecs(const UCardDefinition* Card)
+	{
+		TArray<FJargonEffectSpec> JargonEffectSpecs;
+		if (!Card)
+		{
+			return JargonEffectSpecs;
+		}
+
+		JargonEffectSpecs.Reserve(Card->Effects.Num());
+		for (const FCardEffectSpec& CardEffectSpec : Card->Effects)
+		{
+			JargonEffectSpecs.Add(ConvertCardEffectSpecToJargonEffectSpec(Card, CardEffectSpec));
+		}
+
+		return JargonEffectSpecs;
+	}
+
+	FJargonEffectContext BuildJargonEffectContextFromCardContext(
+		const UCardDefinition* Card,
+		const FCardResolveContext& Context)
+	{
+		FJargonEffectContext JargonContext;
+		JargonContext.GameMode = Context.GameMode;
+		JargonContext.SourceObject = const_cast<UCardDefinition*>(Card);
+		JargonContext.SourceUnit = Context.SourceUnit;
+		JargonContext.SourceTeam = Context.SourceUnit ? Context.SourceUnit->GetTeam() : ETeam::Player;
+		JargonContext.SourceTile = Context.SourceUnit ? Context.SourceUnit->GetCurrentTile() : nullptr;
+		JargonContext.PrimaryUnitTarget = Context.UnitTarget;
+		JargonContext.PrimaryTileTarget = Context.TileTarget;
+		JargonContext.SourceCard = const_cast<UCardDefinition*>(Card);
+		return JargonContext;
+	}
 }
 
 bool FCardResolver::ResolveCard(
@@ -71,50 +234,17 @@ bool FCardResolver::ResolveEffectSpecCard(
 		return false;
 	}
 
-	bool bResolvedAnyEffect = false;
+	const TArray<FJargonEffectSpec> JargonEffectSpecs = ConvertCardEffectsToJargonEffectSpecs(Card);
+	const FJargonEffectContext JargonContext = BuildJargonEffectContextFromCardContext(Card, Context);
 
-	for (int32 EffectIndex = 0; EffectIndex < Card->Effects.Num(); ++EffectIndex)
-	{
-		const FCardEffectSpec& EffectSpec = Card->Effects[EffectIndex];
-		FCardResolveResult EffectResult;
+	FJargonEffectResult JargonResult;
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(JargonEffectSpecs, JargonContext, JargonResult);
 
-		UE_LOG(LogTemp, Warning, TEXT("Resolving card '%s' effect[%d]: %d"),
-		*Card->DisplayName.ToString(),
-		EffectIndex,
-		static_cast<int32>(EffectSpec.Operation));
-		
-		if (!ResolveEffectSpec(Card, EffectSpec, Context, EffectResult))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Card '%s' failed to resolve effect spec at index %d."),
-				*Card->DisplayName.ToString(), EffectIndex);
-			continue;
-		}
+	OutResult.bConsumePlayerMove |= JargonResult.bConsumePlayerMove;
+	OutResult.bContinuesAsynchronously |= JargonResult.bContinuesAsynchronously;
+	OutResult.EnergyGainAfterCost += JargonResult.EnergyGainAfterCost;
 
-		bResolvedAnyEffect = true;
-		OutResult.bConsumeEnergy &= EffectResult.bConsumeEnergy;
-		OutResult.bConsumeCard &= EffectResult.bConsumeCard;
-		OutResult.bConsumePlayerMove |= EffectResult.bConsumePlayerMove;
-		OutResult.bContinuesAsynchronously |= EffectResult.bContinuesAsynchronously;
-		OutResult.EnergyGainAfterCost += EffectResult.EnergyGainAfterCost;
-
-		if (EffectResult.bContinuesAsynchronously)
-		{
-			if (EffectIndex < Card->Effects.Num() - 1)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("Card '%s' started an async effect before later effect specs. Later effects are not resolved in this pass."),
-					*Card->DisplayName.ToString());
-			}
-			break;
-		}
-		UE_LOG(LogTemp, Warning, TEXT("Card '%s' effect[%d] result: %s Async=%s EnergyGain=%d"),
-	*Card->DisplayName.ToString(),
-	EffectIndex,
-	bResolvedAnyEffect ? TEXT("Success") : TEXT("Fail"),
-	EffectResult.bContinuesAsynchronously ? TEXT("true") : TEXT("false"),
-	EffectResult.EnergyGainAfterCost);
-	}
-
-	return bResolvedAnyEffect;
+	return bResolved;
 }
 
 bool FCardResolver::ResolveEffectSpec(

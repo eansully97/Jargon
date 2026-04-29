@@ -3,6 +3,7 @@
 #include "Combat/JargonCombatGameMode.h"
 
 #include "Combat/CardResolver.h"
+#include "Combat/Effects/JargonEffectResolver.h"
 #include "Combat/JargonCombatPlayerController.h"
 #include "Combat/TacticsCameraPawn.h"
 #include "Core/JargonGameInstance.h"
@@ -921,6 +922,17 @@ void AJargonCombatGameMode::StartPlayerTurn()
 		FriendlyUnit->ClearTemporaryShield();
 		FriendlyUnit->ResetTurnActions();
 
+		ExecuteOnTurnStartEffects(FriendlyUnit);
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+
+		if (!IsValid(FriendlyUnit) || FriendlyUnit->IsDead())
+		{
+			continue;
+		}
+
 		if (FriendlyUnit->ConsumeStunTurn())
 		{
 			UE_LOG(LogTemp, Log, TEXT("Friendly unit '%s' is stunned and loses its actions this turn."),
@@ -1053,6 +1065,17 @@ void AJargonCombatGameMode::ResolveNextEnemyAction()
 bool AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
 {
 	if (!EnemyUnit || EnemyUnit->IsDead())
+	{
+		return false;
+	}
+
+	ExecuteOnTurnStartEffects(EnemyUnit);
+	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+	{
+		return false;
+	}
+
+	if (!IsValid(EnemyUnit) || EnemyUnit->IsDead())
 	{
 		return false;
 	}
@@ -1312,7 +1335,7 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClass(
 	int32 EffectRadius,
 	int32 EffectDuration)
 {
-	if (!Card || !SourceUnit || !TargetTile || !TileEffectClass)
+	if (!SourceUnit || !TargetTile || !TileEffectClass)
 	{
 		return nullptr;
 	}
@@ -1412,7 +1435,204 @@ ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromClass(
 		SpawnedUnit->FaceLocation(SourceUnit->GetActorLocation());
 	}
 
+	ExecuteOnSummonedEffects(SpawnedUnit);
+
 	return SpawnedUnit;
+}
+
+void AJargonCombatGameMode::ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit)
+{
+	if (!IsValid(SummonedUnit) || SummonedUnit->IsDead())
+	{
+		return;
+	}
+
+	const TArray<FJargonEffectSpec>& OnSummonedEffects = SummonedUnit->GetOnSummonedEffects();
+	if (OnSummonedEffects.Num() <= 0)
+	{
+		return;
+	}
+
+	AGridTile* SummonedTile = SummonedUnit->GetCurrentTile();
+	if (!SummonedTile)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Summoned unit '%s' has OnSummonedEffects but no current tile."),
+			*GetNameSafe(SummonedUnit));
+		return;
+	}
+
+	FJargonEffectContext EffectContext;
+	EffectContext.GameMode = this;
+	EffectContext.SourceObject = SummonedUnit;
+	EffectContext.SourceUnit = SummonedUnit;
+	EffectContext.SourceTeam = SummonedUnit->GetTeam();
+	EffectContext.SourceTile = SummonedTile;
+	EffectContext.PrimaryTileTarget = SummonedTile;
+	EffectContext.TriggeringUnit = SummonedUnit;
+
+	FJargonEffectResult EffectResult;
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(OnSummonedEffects, EffectContext, EffectResult);
+	if (!bResolved)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Summoned unit '%s' failed to resolve its OnSummonedEffects."),
+			*GetNameSafe(SummonedUnit));
+		return;
+	}
+
+	if (EffectResult.bContinuesAsynchronously)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Summoned unit '%s' started an async OnSummonedEffect. Later summon-entry effects may have been skipped by the resolver."),
+			*GetNameSafe(SummonedUnit));
+	}
+}
+
+void AJargonCombatGameMode::ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit)
+{
+	if (!IsValid(SourceUnit) || SourceUnit->IsDead())
+	{
+		return;
+	}
+
+	const TArray<FJargonEffectSpec>& AuthoredEffects = SourceUnit->GetOnTurnStartEffects();
+	if (AuthoredEffects.Num() <= 0)
+	{
+		return;
+	}
+
+	AGridTile* SourceTile = SourceUnit->GetCurrentTile();
+	if (!SourceTile)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has OnTurnStartEffects but no current tile."),
+			*GetNameSafe(SourceUnit));
+		return;
+	}
+
+	TArray<FJargonEffectSpec> EffectsToResolve;
+	EffectsToResolve.Reserve(AuthoredEffects.Num());
+	for (const FJargonEffectSpec& EffectSpec : AuthoredEffects)
+	{
+		if (EffectSpec.Operation == EJargonEffectOperation::MoveSource)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has a MoveSource OnTurnStartEffect. Async movement is not supported for unit turn-start effects yet; skipping that spec."),
+				*GetNameSafe(SourceUnit));
+			continue;
+		}
+
+		EffectsToResolve.Add(EffectSpec);
+	}
+
+	if (EffectsToResolve.Num() <= 0)
+	{
+		return;
+	}
+
+	FJargonEffectContext EffectContext;
+	EffectContext.GameMode = this;
+	EffectContext.SourceObject = SourceUnit;
+	EffectContext.SourceUnit = SourceUnit;
+	EffectContext.SourceTeam = SourceUnit->GetTeam();
+	EffectContext.SourceTile = SourceTile;
+	EffectContext.PrimaryUnitTarget = SourceUnit;
+	EffectContext.PrimaryTileTarget = SourceTile;
+	EffectContext.TriggeringUnit = SourceUnit;
+
+	FJargonEffectResult EffectResult;
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(EffectsToResolve, EffectContext, EffectResult);
+	if (!bResolved)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' failed to resolve its OnTurnStartEffects."),
+			*GetNameSafe(SourceUnit));
+		return;
+	}
+
+	if (EffectResult.bContinuesAsynchronously)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' started an async OnTurnStartEffect. Async unit turn-start effects are not fully sequenced yet."),
+			*GetNameSafe(SourceUnit));
+	}
+}
+
+void AJargonCombatGameMode::ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTile* DeathTile)
+{
+	if (!IsValid(DeadUnit))
+	{
+		return;
+	}
+
+	if (DeadUnit->HasExecutedDeathEffects())
+	{
+		return;
+	}
+
+	DeadUnit->MarkDeathEffectsExecuted();
+
+	const TArray<FJargonEffectSpec>& AuthoredEffects = DeadUnit->GetOnDeathEffects();
+	if (AuthoredEffects.Num() <= 0)
+	{
+		return;
+	}
+
+	if (!DeathTile)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has OnDeathEffects but no captured death tile."),
+			*GetNameSafe(DeadUnit));
+		return;
+	}
+
+	TArray<FJargonEffectSpec> EffectsToResolve;
+	EffectsToResolve.Reserve(AuthoredEffects.Num());
+	for (const FJargonEffectSpec& EffectSpec : AuthoredEffects)
+	{
+		if (EffectSpec.Operation == EJargonEffectOperation::MoveSource)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has a MoveSource OnDeathEffect. Async movement is not supported for death effects; skipping that spec."),
+				*GetNameSafe(DeadUnit));
+			continue;
+		}
+
+		if (EffectSpec.Delivery == EJargonEffectDelivery::ChainUnits)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Unit '%s' has a ChainUnits OnDeathEffect. Death-triggered chain targeting is ambiguous without an explicit initial living target; skipping that spec."),
+				*GetNameSafe(DeadUnit));
+			continue;
+		}
+
+		EffectsToResolve.Add(EffectSpec);
+	}
+
+	if (EffectsToResolve.Num() <= 0)
+	{
+		return;
+	}
+
+	FJargonEffectContext EffectContext;
+	EffectContext.GameMode = this;
+	EffectContext.SourceObject = DeadUnit;
+	EffectContext.SourceUnit = DeadUnit;
+	EffectContext.SourceTeam = DeadUnit->GetTeam();
+	EffectContext.SourceTile = DeathTile;
+	EffectContext.PrimaryUnitTarget = DeadUnit;
+	EffectContext.PrimaryTileTarget = DeathTile;
+	EffectContext.TriggeringUnit = DeadUnit;
+
+	UE_LOG(LogTemp, Log, TEXT("Executing OnDeathEffects for unit '%s' at tile %s."),
+		*GetNameSafe(DeadUnit),
+		*DeathTile->GetCoord().ToString());
+
+	FJargonEffectResult EffectResult;
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(EffectsToResolve, EffectContext, EffectResult);
+	if (!bResolved)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' failed to resolve its OnDeathEffects."),
+			*GetNameSafe(DeadUnit));
+		return;
+	}
+
+	if (EffectResult.bContinuesAsynchronously)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' started an async OnDeathEffect. Async death effects are not fully sequenced yet."),
+			*GetNameSafe(DeadUnit));
+	}
 }
 
 void AJargonCombatGameMode::NotifyTileEffectsUnitEntered(ABattleUnit* EnteringUnit, AGridTile* EnteredTile)
@@ -1850,7 +2070,7 @@ bool AJargonCombatGameMode::TryPlayCardOnSelf(UCardDefinition* Card)
 	return TryPlayCardWithResolvedTile(Card, PlayerUnit->GetCurrentTile(), PlayerUnit, true);
 }
 
-void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit)
+void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit, AGridTile* DeathTile)
 {
 	if (!DeadUnit)
 	{
@@ -1889,7 +2109,11 @@ void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit)
 		SelectedFriendlyUnit = nullptr;
 		RefreshSelectedFriendlyUnitPresentation();
 		PlayerUnit = nullptr;
-		HandleDefeat();
+		ExecuteOnDeathEffects(DeadUnit, DeathTile);
+		if (CombatPhase != ECombatPhase::Victory)
+		{
+			HandleDefeat();
+		}
 		return;
 	}
 
@@ -1903,6 +2127,12 @@ void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit)
 	{
 		AccumulateEnemyKillReward(DeadUnit);
 
+		ExecuteOnDeathEffects(DeadUnit, DeathTile);
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+
 		if (AreAllEnemiesDefeated())
 		{
 			HandleVictory();
@@ -1914,6 +2144,8 @@ void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit)
 	{
 		SetSelectedFriendlyUnit(nullptr);
 	}
+
+	ExecuteOnDeathEffects(DeadUnit, DeathTile);
 }
 
 void AJargonCombatGameMode::HandleVictory()

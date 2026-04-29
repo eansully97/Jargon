@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Core/JargonTypes.h"
+#include "Combat/Effects/JargonEffectTypes.h"
 #include "GameFramework/Actor.h"
 #include "BattleTileEffect.generated.h"
 
@@ -56,6 +57,9 @@ public:
 
 	virtual void HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMode);
 	virtual void HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMode, ABattleUnit* EnteringUnit);
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Effects")
+	FJargonEffectContext BuildEffectContext(AJargonCombatGameMode* CombatGameMode, ABattleUnit* TriggeringUnit = nullptr) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	void ShowAffectedTiles();

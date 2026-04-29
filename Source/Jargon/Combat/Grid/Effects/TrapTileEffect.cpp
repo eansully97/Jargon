@@ -2,6 +2,7 @@
 
 #include "TrapTileEffect.h"
 
+#include "Combat/Effects/JargonEffectResolver.h"
 #include "Combat/Grid/GridTile.h"
 #include "Combat/Units/BattleUnit.h"
 
@@ -17,13 +18,34 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 		return;
 	}
 
-	if (EnteringUnit->GetTeam() == GetSourceTeam())
+	AGridTile* TrapTile = GetCurrentTile();
+	if (!TrapTile || EnteringUnit->GetCurrentTile() != TrapTile)
 	{
 		return;
 	}
 
-	AGridTile* TrapTile = GetCurrentTile();
-	if (!TrapTile || EnteringUnit->GetCurrentTile() != TrapTile)
+	if (TriggeredEffects.Num() > 0)
+	{
+		FJargonEffectResult EffectResult;
+		const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode, EnteringUnit);
+		const bool bResolved = FJargonEffectResolver::ResolveEffects(TriggeredEffects, EffectContext, EffectResult);
+		if (!bResolved)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Trap '%s' failed to resolve its generic triggered effects for entering unit '%s'."),
+				*GetNameSafe(this),
+				*GetNameSafe(EnteringUnit));
+			return;
+		}
+
+		if (bTriggerOnce && IsValid(this))
+		{
+			Destroy();
+		}
+
+		return;
+	}
+
+	if (EnteringUnit->GetTeam() == GetSourceTeam())
 	{
 		return;
 	}

@@ -13,6 +13,13 @@ public:
 	virtual void HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMode) override;
 
 protected:
+	/**
+	 * Optional shared-effect aura payloads. If this array is empty, the legacy AuraOperation/TargetFilter behavior is used.
+	 * For a shield aura, use ApplyShield + UnitsInRadius + FriendlyToSource and set Radius on the effect spec.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Effects", meta = (ToolTip = "Optional shared effects resolved on player turn start. Empty keeps the legacy aura operation fallback."))
+	TArray<FJargonEffectSpec> AuraEffects;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura")
 	EJargonTileEffectOperation AuraOperation = EJargonTileEffectOperation::ApplyShield;
 

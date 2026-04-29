@@ -402,6 +402,7 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 	}
 
 	bIsDead = true;
+	AGridTile* DeathTile = CurrentTile;
 	StopPathMovement();
 	ClearCurrentTileOccupancy();
 	CurrentTile = nullptr;
@@ -409,7 +410,7 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
 	if (CombatGameMode)
 	{
-		CombatGameMode->HandleUnitDied(this);
+		CombatGameMode->HandleUnitDied(this, DeathTile);
 	}
 
 	PlayDeathPresentation();

@@ -96,6 +96,22 @@ void ABattleTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameM
 {
 }
 
+FJargonEffectContext ABattleTileEffect::BuildEffectContext(AJargonCombatGameMode* CombatGameMode, ABattleUnit* TriggeringUnit) const
+{
+	FJargonEffectContext Context;
+	Context.GameMode = CombatGameMode;
+	Context.SourceObject = const_cast<ABattleTileEffect*>(this);
+	Context.SourceUnit = nullptr;
+	Context.SourceTeam = SourceTeam;
+	Context.SourceTile = CurrentTile;
+	Context.PrimaryUnitTarget = TriggeringUnit;
+	Context.PrimaryTileTarget = CurrentTile;
+	Context.TriggeringUnit = TriggeringUnit;
+	Context.OwningTileEffect = const_cast<ABattleTileEffect*>(this);
+	Context.SourceCard = SourceCard;
+	return Context;
+}
+
 void ABattleTileEffect::SetRemainingDuration(int32 NewDuration)
 {
 	RemainingDuration = FMath::Max(0, NewDuration);

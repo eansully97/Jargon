@@ -45,6 +45,7 @@ public:
 	bool TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget);
 	bool TryPlayCardOnSelf(UCardDefinition* Card);
 	bool StartPlayerControlledMoveSequence(ABattleUnit* MovingUnit, const TArray<AGridTile*>& Path, bool bConsumeMoveAction);
+	void ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTile* DeathTile);
 	ABattleTileEffect* SpawnPersistentTileEffectFromClass(
 		TSubclassOf<ABattleTileEffect> TileEffectClass,
 		const UCardDefinition* Card,
@@ -67,7 +68,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|Preview")
 	void PreviewUnitMovementRange(ABattleUnit* UnitToPreview);
 
-	void HandleUnitDied(ABattleUnit* DeadUnit);
+	void HandleUnitDied(ABattleUnit* DeadUnit, AGridTile* DeathTile = nullptr);
 	void HandleVictory();
 	void HandleDefeat();
 	void ReturnToExploration();
@@ -190,6 +191,8 @@ protected:
 	void ResolveNextEnemyAction();
 	bool ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
 	void EndEnemyTurn();
+	void ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit);
+	void ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit);
 	void NotifyPlayerTurnStartTileEffects();
 	void RefreshSelectedFriendlyUnitPresentation();
 	void SetSelectedFriendlyUnit(ABattleUnit* NewSelectedFriendlyUnit);

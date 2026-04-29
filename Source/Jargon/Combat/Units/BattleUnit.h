@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/Effects/JargonEffectTypes.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/Actor.h"
 #include "BattleUnit.generated.h"
@@ -204,6 +205,31 @@ public:
 		return MovementCompletedDelegate;
 	}
 
+	const TArray<FJargonEffectSpec>& GetOnSummonedEffects() const
+	{
+		return OnSummonedEffects;
+	}
+
+	const TArray<FJargonEffectSpec>& GetOnTurnStartEffects() const
+	{
+		return OnTurnStartEffects;
+	}
+
+	const TArray<FJargonEffectSpec>& GetOnDeathEffects() const
+	{
+		return OnDeathEffects;
+	}
+
+	bool HasExecutedDeathEffects() const
+	{
+		return bHasExecutedDeathEffects;
+	}
+
+	void MarkDeathEffectsExecuted()
+	{
+		bHasExecutedDeathEffects = true;
+	}
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -271,11 +297,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")
 	ETeam Team = ETeam::Enemy;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true"))
+	TArray<FJargonEffectSpec> OnSummonedEffects;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true", ToolTip = "Shared effects resolved at the start of this unit's side turn. Use self and radius effects here; targeted activated abilities are not supported yet."))
+	TArray<FJargonEffectSpec> OnTurnStartEffects;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true", ToolTip = "Shared effects resolved once when this unit dies. The death tile is captured before occupancy is cleared."))
+	TArray<FJargonEffectSpec> OnDeathEffects;
+
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit")
 	TObjectPtr<AGridTile> CurrentTile = nullptr;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit | Status")
 	bool bIsDead = false;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit | Status")
+	bool bHasExecutedDeathEffects = false;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
 	int32 StunTurnsRemaining = 0;

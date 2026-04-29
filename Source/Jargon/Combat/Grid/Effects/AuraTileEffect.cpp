@@ -1,11 +1,26 @@
 #include "AuraTileEffect.h"
 
+#include "Combat/Effects/JargonEffectResolver.h"
 #include "Combat/Units/BattleUnit.h"
 
 void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMode)
 {
 	if (!bApplyOnPlayerTurnStart)
 	{
+		return;
+	}
+
+	if (AuraEffects.Num() > 0)
+	{
+		FJargonEffectResult EffectResult;
+		const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode);
+		const bool bResolved = FJargonEffectResolver::ResolveEffects(AuraEffects, EffectContext, EffectResult);
+		if (!bResolved)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Aura '%s' failed to resolve its generic turn-start effects."),
+				*GetNameSafe(this));
+		}
+
 		return;
 	}
 
