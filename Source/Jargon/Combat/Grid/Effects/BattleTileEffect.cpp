@@ -342,7 +342,18 @@ bool ABattleTileEffect::ApplyConfiguredOperationToUnit(
 	switch (Operation)
 	{
 	case EJargonTileEffectOperation::DealDamage:
-		TargetUnit->ApplyDamage(Amount);
+		{
+			FJargonEffectContext DamageContext;
+			DamageContext.SourceObject = const_cast<ABattleTileEffect*>(this);
+			DamageContext.SourceTeam = SourceTeam;
+			DamageContext.SourceTile = CurrentTile;
+			DamageContext.PrimaryUnitTarget = TargetUnit;
+			DamageContext.PrimaryTileTarget = TargetUnit->GetCurrentTile() ? TargetUnit->GetCurrentTile() : CurrentTile.Get();
+			DamageContext.OwningTileEffect = const_cast<ABattleTileEffect*>(this);
+			DamageContext.SourceCard = SourceCard;
+			DamageContext.Trigger = EJargonEffectTrigger::OnTurnStart;
+			TargetUnit->ApplyDamageFromEffectContext(Amount, DamageContext);
+		}
 		return true;
 
 	case EJargonTileEffectOperation::Heal:

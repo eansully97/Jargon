@@ -28,6 +28,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Scan", meta = (ToolTip = "Package paths scanned recursively for UCardPackDefinition assets. Example: /Game/Jargon/Data/CardPacks"))
 	TArray<FName> PackScanPaths;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Scan", meta = (ToolTip = "Package paths scanned recursively for UJargonSummonedUnitDefinition assets. Example: /Game/Jargon/Data/SummonedUnits"))
+	TArray<FName> SummonedUnitScanPaths;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Output", meta = (ToolTip = "Subfolder under Project/Saved where CSV reports are written."))
 	FString OutputSubdirectory = TEXT("CardCatalog");
 

@@ -32,6 +32,12 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> ShieldText = nullptr;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> StunText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> FreezeText = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit Status")
 	FSlateColor AttackReadyColor = FSlateColor(FLinearColor(0.95f, 0.95f, 0.05f, 1.f));
 

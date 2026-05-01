@@ -36,6 +36,19 @@ void AJargonInteractableActor::Interact_Implementation(AJargonExplorationPlayerC
 {
 }
 
+FJargonInteractionPromptData AJargonInteractableActor::BuildInteractionPromptData_Implementation(AJargonExplorationPlayerController* InteractingController)
+{
+	FJargonInteractionPromptData PromptData;
+	PromptData.Interactable = this;
+	PromptData.PromptText = InteractionPromptText;
+	PromptData.VerbText = InteractionVerbText;
+	PromptData.bCanInteract = true;
+	PromptData.bShouldShowPrompt = true;
+	PromptData.bHasWorldLocation = true;
+	PromptData.WorldLocation = GetActorLocation();
+	return PromptData;
+}
+
 void AJargonInteractableActor::NotifyInteractionPromptShown(AJargonExplorationPlayerController* InteractingController)
 {
 	BP_OnInteractionPromptShown(InteractingController);

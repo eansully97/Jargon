@@ -18,6 +18,7 @@
 #include "NiagaraSystem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "World/Interactions/JargonInteractableActor.h"
+#include "World/Interactions/JargonInteractionPromptWidget.h"
 
 namespace
 {
@@ -36,6 +37,8 @@ AJargonExplorationPlayerController::AJargonExplorationPlayerController()
 	bHasCachedDestination = false;
 	bHasIssuedHoldMove = false;
 	bCameraPanning = false;
+	bCameraRotating = false;
+	bHasRotatedCameraDuringHold = false;
 
 	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("Path Following Component"));
 
@@ -52,11 +55,25 @@ AJargonExplorationPlayerController::AJargonExplorationPlayerController()
 	FXCursor = LoadOptionalAsset<UNiagaraSystem>(TEXT("/Game/TopDown/Cursor/FX_Cursor_Success.FX_Cursor_Success"));
 }
 
+void AJargonExplorationPlayerController::BeginPlay()
+{
+	Super::BeginPlay();
+
+	CreateInteractionPromptWidget();
+	UpdateInteractionPromptWidget();
+}
+
 void AJargonExplorationPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
 	TickHeldCursorFollow(DeltaTime);
+	TickEdgeScreenCameraPan(DeltaTime);
+
+	if (CurrentInteractionPromptData.bShouldShowPrompt)
+	{
+		UpdateInteractionPromptWidgetPosition();
+	}
 }
 
 void AJargonExplorationPlayerController::TickHeldCursorFollow(float DeltaTime)
@@ -212,6 +229,8 @@ void AJargonExplorationPlayerController::SetWorldClickMovementEnabled(bool bEnab
 	{
 		StopMovement();
 	}
+
+	RefreshInteractionPromptData();
 }
 
 void AJargonExplorationPlayerController::NotifyInteractableEnteredRange(AJargonInteractableActor* Interactable)
@@ -245,12 +264,23 @@ void AJargonExplorationPlayerController::NotifyInteractableExitedRange(AJargonIn
 		SetCurrentInteractable(nullptr);
 		RefreshCurrentInteractable();
 	}
+	else
+	{
+		RefreshInteractionPromptData();
+	}
 }
 
 void AJargonExplorationPlayerController::InteractWithCurrentInteractable()
 {
 	if (!ShouldHandleWorldClickMovement())
 	{
+		UE_CLOG(
+			bLogInteractionPromptDebug,
+			LogJargon,
+			Log,
+			TEXT("Interaction ignored for '%s' because world interaction input is disabled."),
+			*GetNameSafe(this)
+		);
 		return;
 	}
 
@@ -268,6 +298,17 @@ void AJargonExplorationPlayerController::InteractWithCurrentInteractable()
 	Interactable->Interact(this);
 }
 
+void AJargonExplorationPlayerController::RefreshInteractionPrompt()
+{
+	if (!CurrentInteractable.IsValid())
+	{
+		RefreshCurrentInteractable();
+		return;
+	}
+
+	RefreshInteractionPromptData();
+}
+
 void AJargonExplorationPlayerController::ResetClickMoveState()
 {
 	FollowTime = 0.f;
@@ -276,6 +317,8 @@ void AJargonExplorationPlayerController::ResetClickMoveState()
 	bMoveToMouseCursor = false;
 	bHasCachedDestination = false;
 	bHasIssuedHoldMove = false;
+	bCameraRotating = false;
+	bHasRotatedCameraDuringHold = false;
 	CachedDestination = FVector::ZeroVector;
 }
 
@@ -303,7 +346,7 @@ void AJargonExplorationPlayerController::OnSetDestinationReleased()
 		return;
 	}
 
-	if (FollowTime <= ShortPressThreshold)
+	if (FollowTime <= ShortPressThreshold && !bHasRotatedCameraDuringHold)
 	{
 		if (!bHasCachedDestination)
 		{
@@ -518,6 +561,45 @@ void AJargonExplorationPlayerController::EndCameraPan()
 	bCameraPanning = false;
 }
 
+void AJargonExplorationPlayerController::BeginCameraRotate()
+{
+	if (!ShouldHandleAttachedCameraInput() || !GetControlledPawnSpringArm())
+	{
+		bCameraRotating = false;
+		return;
+	}
+
+	bCameraRotating = true;
+}
+
+void AJargonExplorationPlayerController::EndCameraRotate()
+{
+	bCameraRotating = false;
+}
+
+void AJargonExplorationPlayerController::HandleCameraRotate(float AxisValue)
+{
+	if (!bCameraRotating || !ShouldHandleAttachedCameraInput() || FMath::IsNearlyZero(AxisValue))
+	{
+		return;
+	}
+
+	USpringArmComponent* SpringArm = GetControlledPawnSpringArm();
+	if (!SpringArm)
+	{
+		EndCameraRotate();
+		return;
+	}
+
+	CacheCameraDefaultsIfNeeded(SpringArm);
+
+	const float SignedAxisValue = bInvertCameraRotation ? -AxisValue : AxisValue;
+	FRotator NewRotation = SpringArm->GetComponentRotation();
+	NewRotation.Yaw += SignedAxisValue * CameraRotationSpeed;
+	SpringArm->SetWorldRotation(NewRotation);
+	bHasRotatedCameraDuringHold = true;
+}
+
 void AJargonExplorationPlayerController::HandleCameraPanX(float AxisValue)
 {
 	ApplyCameraPanInput(AxisValue*.3f, 0.f);
@@ -525,7 +607,7 @@ void AJargonExplorationPlayerController::HandleCameraPanX(float AxisValue)
 
 void AJargonExplorationPlayerController::HandleCameraPanY(float AxisValue)
 {
-	ApplyCameraPanInput(0.f, AxisValue*.3f);
+	ApplyCameraPanInput(0.f, -AxisValue*.3f);
 }
 
 bool AJargonExplorationPlayerController::HandleRawCameraInputKey(const FInputKeyEventArgs& Params)
@@ -539,13 +621,16 @@ bool AJargonExplorationPlayerController::HandleRawCameraInputKey(const FInputKey
 	{
 		if (Params.Event == IE_Pressed)
 		{
-			BeginCameraPan();
+			if (bEnableRightClickHoldCameraRotation)
+			{
+				BeginCameraRotate();
+			}
 			return ShouldHandleAttachedCameraInput();
 		}
 
 		if (Params.Event == IE_Released)
 		{
-			EndCameraPan();
+			EndCameraRotate();
 			return true;
 		}
 	}
@@ -588,6 +673,12 @@ bool AJargonExplorationPlayerController::HandleRawCameraInputKey(const FInputKey
 		}
 	}
 
+	if (bCameraRotating && Params.Event == IE_Axis && Params.Key == EKeys::MouseX)
+	{
+		HandleCameraRotate(Params.AmountDepressed);
+		return true;
+	}
+
 	return false;
 }
 
@@ -604,8 +695,7 @@ void AJargonExplorationPlayerController::ApplyCameraPanInput(float AxisX, float 
 	}
 
 	USpringArmComponent* SpringArm = GetControlledPawnSpringArm();
-	APawn* ControlledPawn = GetPawn();
-	if (!SpringArm || !ControlledPawn)
+	if (!SpringArm)
 	{
 		EndCameraPan();
 		return;
@@ -613,17 +703,32 @@ void AJargonExplorationPlayerController::ApplyCameraPanInput(float AxisX, float 
 
 	CacheCameraDefaultsIfNeeded(SpringArm);
 
-	FVector RightVector = ControlledPawn->GetActorRightVector();
-	FVector ForwardVector = ControlledPawn->GetActorForwardVector();
-	RightVector.Z = 0.f;
-	ForwardVector.Z = 0.f;
-	RightVector.Normalize();
-	ForwardVector.Normalize();
+	const FRotator CameraYawRotation(0.f, SpringArm->GetComponentRotation().Yaw, 0.f);
+	FVector ForwardVector = FRotationMatrix(CameraYawRotation).GetUnitAxis(EAxis::X);
+	FVector RightVector = FRotationMatrix(CameraYawRotation).GetUnitAxis(EAxis::Y);
 
 	const float SignedAxisX = bInvertCameraPanX ? -AxisX : AxisX;
 	const float SignedAxisY = bInvertCameraPanY ? AxisY : -AxisY;
 
-	CameraPanOffset += ((RightVector * SignedAxisX) + (ForwardVector * SignedAxisY)) * CameraPanSpeed;
+	ApplyCameraPanOffsetDelta(((RightVector * SignedAxisX) + (ForwardVector * SignedAxisY)) * CameraPanSpeed);
+}
+
+void AJargonExplorationPlayerController::ApplyCameraPanOffsetDelta(const FVector& OffsetDelta)
+{
+	if (!ShouldHandleAttachedCameraInput() || OffsetDelta.IsNearlyZero())
+	{
+		return;
+	}
+
+	USpringArmComponent* SpringArm = GetControlledPawnSpringArm();
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	CacheCameraDefaultsIfNeeded(SpringArm);
+
+	CameraPanOffset += OffsetDelta;
 	CameraPanOffset.Z = 0.f;
 
 	const float PanDistance = CameraPanOffset.Size2D();
@@ -633,6 +738,75 @@ void AJargonExplorationPlayerController::ApplyCameraPanInput(float AxisX, float 
 	}
 
 	ApplyCameraPanOffset(SpringArm);
+}
+
+void AJargonExplorationPlayerController::TickEdgeScreenCameraPan(float DeltaTime)
+{
+	if (!bEnableEdgeScreenCameraPan || !ShouldHandleAttachedCameraInput() || EdgePanCameraMoveSpeed <= 0.f || EdgePanBorderSize <= 0.f)
+	{
+		return;
+	}
+
+	int32 ViewportSizeX = 0;
+	int32 ViewportSizeY = 0;
+	GetViewportSize(ViewportSizeX, ViewportSizeY);
+	if (ViewportSizeX <= 0 || ViewportSizeY <= 0)
+	{
+		return;
+	}
+
+	float MouseX = 0.f;
+	float MouseY = 0.f;
+	if (!GetMousePosition(MouseX, MouseY))
+	{
+		return;
+	}
+
+	float AxisX = 0.f;
+	float AxisY = 0.f;
+	if (MouseX <= EdgePanBorderSize)
+	{
+		AxisX = -1.f;
+	}
+	else if (MouseX >= static_cast<float>(ViewportSizeX) - EdgePanBorderSize)
+	{
+		AxisX = 1.f;
+	}
+
+	if (MouseY <= EdgePanBorderSize)
+	{
+		AxisY = 1.f;
+	}
+	else if (MouseY >= static_cast<float>(ViewportSizeY) - EdgePanBorderSize)
+	{
+		AxisY = -1.f;
+	}
+
+	if (FMath::IsNearlyZero(AxisX) && FMath::IsNearlyZero(AxisY))
+	{
+		return;
+	}
+
+	USpringArmComponent* SpringArm = GetControlledPawnSpringArm();
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	const FRotator CameraYawRotation(0.f, SpringArm->GetComponentRotation().Yaw, 0.f);
+	FVector ForwardVector = FRotationMatrix(CameraYawRotation).GetUnitAxis(EAxis::X);
+	FVector RightVector = FRotationMatrix(CameraYawRotation).GetUnitAxis(EAxis::Y);
+
+	const float SignedAxisX = bInvertCameraPanX ? -AxisX : AxisX;
+	const float SignedAxisY = bInvertCameraPanY ? -AxisY : AxisY;
+	FVector PanDirection = (RightVector * SignedAxisX) + (ForwardVector * SignedAxisY);
+	PanDirection.Z = 0.f;
+	if (!PanDirection.Normalize())
+	{
+		return;
+	}
+
+	ApplyCameraPanOffsetDelta(PanDirection * EdgePanCameraMoveSpeed * DeltaTime);
 }
 
 USpringArmComponent* AJargonExplorationPlayerController::GetControlledPawnSpringArm()
@@ -687,8 +861,19 @@ void AJargonExplorationPlayerController::SetCurrentInteractable(AJargonInteracta
 	AJargonInteractableActor* PreviousInteractable = CurrentInteractable.Get();
 	if (PreviousInteractable == NewInteractable)
 	{
+		RefreshInteractionPromptData();
 		return;
 	}
+
+	UE_CLOG(
+		bLogInteractionPromptDebug,
+		LogJargon,
+		Log,
+		TEXT("Interaction prompt active interactable changed on '%s': %s -> %s"),
+		*GetNameSafe(this),
+		*GetNameSafe(PreviousInteractable),
+		*GetNameSafe(NewInteractable)
+	);
 
 	if (IsValid(PreviousInteractable))
 	{
@@ -701,4 +886,155 @@ void AJargonExplorationPlayerController::SetCurrentInteractable(AJargonInteracta
 	{
 		NewInteractable->NotifyInteractionPromptShown(this);
 	}
+
+	RefreshInteractionPromptData();
+}
+
+void AJargonExplorationPlayerController::RefreshInteractionPromptData()
+{
+	FJargonInteractionPromptData NewPromptData;
+
+	AJargonInteractableActor* Interactable = CurrentInteractable.Get();
+	if (ShouldShowInteractionPrompt() && IsValid(Interactable))
+	{
+		NewPromptData = Interactable->BuildInteractionPromptData(this);
+		NewPromptData.Interactable = Interactable;
+		NewPromptData.bShouldShowPrompt = NewPromptData.bShouldShowPrompt && NewPromptData.bCanInteract;
+	}
+	else
+	{
+		UE_CLOG(
+			bLogInteractionPromptDebug && IsValid(Interactable),
+			LogJargon,
+			Log,
+			TEXT("Interaction prompt suppressed for '%s'. Interactable=%s WorldInputEnabled=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(Interactable),
+			bWorldClickMovementEnabled ? TEXT("true") : TEXT("false")
+		);
+		NewPromptData.Reset();
+	}
+
+	CurrentInteractionPromptData = NewPromptData;
+	OnInteractionPromptChanged.Broadcast(CurrentInteractionPromptData);
+	BP_OnInteractionPromptChanged(CurrentInteractionPromptData);
+	UpdateInteractionPromptWidget();
+}
+
+bool AJargonExplorationPlayerController::ShouldShowInteractionPrompt() const
+{
+	return ShouldHandleWorldClickMovement();
+}
+
+void AJargonExplorationPlayerController::CreateInteractionPromptWidget()
+{
+	if (!IsLocalPlayerController() || InteractionPromptWidget)
+	{
+		return;
+	}
+
+	if (!InteractionPromptWidgetClass)
+	{
+		UE_CLOG(
+			bLogInteractionPromptDebug,
+			LogJargon,
+			Log,
+			TEXT("No interaction prompt widget class assigned on '%s'. OnInteractionPromptChanged remains available for Blueprint UI."),
+			*GetNameSafe(this)
+		);
+		return;
+	}
+
+	InteractionPromptWidget = CreateWidget<UJargonInteractionPromptWidget>(this, InteractionPromptWidgetClass);
+	if (!InteractionPromptWidget)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("Failed to create interaction prompt widget for '%s'."), *GetNameSafe(this));
+		return;
+	}
+
+	InteractionPromptWidget->AddToViewport(InteractionPromptZOrder);
+	InteractionPromptWidget->SetAlignmentInViewport(InteractionPromptViewportAlignment);
+	InteractionPromptWidget->ClearPromptData();
+	UpdateInteractionPromptWidgetPosition();
+
+	UE_CLOG(
+		bLogInteractionPromptDebug,
+		LogJargon,
+		Log,
+		TEXT("Created interaction prompt widget '%s' for '%s'."),
+		*GetNameSafe(InteractionPromptWidget),
+		*GetNameSafe(this)
+	);
+}
+
+void AJargonExplorationPlayerController::UpdateInteractionPromptWidget()
+{
+	if (!InteractionPromptWidget)
+	{
+		return;
+	}
+
+	if (CurrentInteractionPromptData.bShouldShowPrompt)
+	{
+		InteractionPromptWidget->ApplyPromptData(CurrentInteractionPromptData);
+		UpdateInteractionPromptWidgetPosition();
+		UE_CLOG(
+			bLogInteractionPromptDebug,
+			LogJargon,
+			Log,
+			TEXT("Applied interaction prompt widget data for '%s'. Interactable=%s Prompt='%s'"),
+			*GetNameSafe(this),
+			*GetNameSafe(CurrentInteractionPromptData.Interactable),
+			*CurrentInteractionPromptData.PromptText.ToString()
+		);
+	}
+	else
+	{
+		InteractionPromptWidget->ClearPromptData();
+		UE_CLOG(
+			bLogInteractionPromptDebug,
+			LogJargon,
+			Log,
+			TEXT("Cleared interaction prompt widget for '%s'."),
+			*GetNameSafe(this)
+		);
+	}
+}
+
+void AJargonExplorationPlayerController::UpdateInteractionPromptWidgetPosition()
+{
+	if (!InteractionPromptWidget)
+	{
+		return;
+	}
+
+	int32 ViewportSizeX = 0;
+	int32 ViewportSizeY = 0;
+	GetViewportSize(ViewportSizeX, ViewportSizeY);
+
+	FVector2D PromptScreenPosition(
+		static_cast<float>(ViewportSizeX) * InteractionPromptFallbackViewportPosition.X,
+		static_cast<float>(ViewportSizeY) * InteractionPromptFallbackViewportPosition.Y
+	);
+
+	bool bUsedWorldLocation = false;
+	if (bPositionInteractionPromptAtWorldLocation && CurrentInteractionPromptData.bHasWorldLocation)
+	{
+		const FVector ProjectedWorldLocation = CurrentInteractionPromptData.WorldLocation + InteractionPromptWorldOffset;
+		bUsedWorldLocation = ProjectWorldLocationToScreen(ProjectedWorldLocation, PromptScreenPosition, true);
+	}
+
+	PromptScreenPosition += InteractionPromptScreenOffset;
+	InteractionPromptWidget->SetAlignmentInViewport(InteractionPromptViewportAlignment);
+	InteractionPromptWidget->SetPositionInViewport(PromptScreenPosition, false);
+
+	UE_CLOG(
+		bLogInteractionPromptDebug && CurrentInteractionPromptData.bShouldShowPrompt,
+		LogJargon,
+		VeryVerbose,
+		TEXT("Positioned interaction prompt for '%s'. UsedWorldLocation=%s ScreenPosition=%s"),
+		*GetNameSafe(this),
+		bUsedWorldLocation ? TEXT("true") : TEXT("false"),
+		*PromptScreenPosition.ToString()
+	);
 }

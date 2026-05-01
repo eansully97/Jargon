@@ -8,6 +8,7 @@
 #include "Combat/Units/BattleUnit.h"
 #include "Data/CardDefinition.h"
 #include "Data/JargonRelicDefinition.h"
+#include "Data/JargonSummonedUnitDefinition.h"
 
 namespace
 {
@@ -45,7 +46,8 @@ namespace
 		return Operation == EJargonEffectOperation::DealDamage
 			|| Operation == EJargonEffectOperation::Heal
 			|| Operation == EJargonEffectOperation::ApplyShield
-			|| Operation == EJargonEffectOperation::ApplyStun;
+			|| Operation == EJargonEffectOperation::ApplyStun
+			|| Operation == EJargonEffectOperation::ApplyFreeze;
 	}
 
 	bool IsLiveSourceUnit(const FJargonEffectContext& Context)
@@ -114,6 +116,8 @@ namespace
 			return TEXT("ApplyShield");
 		case EJargonEffectOperation::ApplyStun:
 			return TEXT("ApplyStun");
+		case EJargonEffectOperation::ApplyFreeze:
+			return TEXT("ApplyFreeze");
 		case EJargonEffectOperation::MoveSource:
 			return TEXT("MoveSource");
 		case EJargonEffectOperation::PushTarget:
@@ -130,6 +134,8 @@ namespace
 			return TEXT("DrawCards");
 		case EJargonEffectOperation::GainEnergy:
 			return TEXT("GainEnergy");
+		case EJargonEffectOperation::GainElementCharge:
+			return TEXT("GainElementCharge");
 		default:
 			return TEXT("Unknown");
 		}
@@ -179,6 +185,139 @@ namespace
 		default:
 			return TEXT("Unknown");
 		}
+	}
+
+	AGridTile* GetTraceSourceTile(const FJargonEffectContext& Context)
+	{
+		if (Context.SourceTile)
+		{
+			return Context.SourceTile.Get();
+		}
+
+		return Context.SourceUnit ? Context.SourceUnit->GetCurrentTile() : nullptr;
+	}
+
+	void PopulateTraceEventFromContext(
+		FJargonEffectTraceEvent& Event,
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		EJargonEffectTraceEventType EventType,
+		int32 EffectIndex,
+		const TCHAR* Reason = TEXT(""),
+		const TCHAR* Warning = TEXT(""))
+	{
+		Event.EffectIndex = EffectIndex;
+		Event.EventType = EventType;
+		Event.Operation = EffectSpec.Operation;
+		Event.Delivery = EffectSpec.Delivery;
+		Event.TargetFilter = EffectSpec.TargetFilter;
+		Event.SourceObject = Context.SourceObject;
+		Event.SourceCard = Context.SourceCard;
+		Event.SourceUnit = Context.SourceUnit;
+		Event.SourceTile = GetTraceSourceTile(Context);
+		Event.ExplicitUnitTarget = Context.PrimaryUnitTarget;
+		Event.ExplicitTileTarget = Context.PrimaryTileTarget;
+		Event.Value = EffectSpec.Value;
+		Event.ElementType = EffectSpec.ElementType;
+		Event.Reason = Reason;
+		Event.Warning = Warning;
+	}
+
+	void AddTraceEvent(
+		FJargonEffectTrace* OutTrace,
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		EJargonEffectTraceEventType EventType,
+		int32 EffectIndex,
+		const TCHAR* Reason = TEXT(""),
+		const TCHAR* Warning = TEXT(""))
+	{
+		if (!OutTrace)
+		{
+			return;
+		}
+
+		FJargonEffectTraceEvent Event;
+		PopulateTraceEventFromContext(Event, EffectSpec, Context, EventType, EffectIndex, Reason, Warning);
+		OutTrace->AddEvent(Event);
+	}
+
+	void AddTraceOperationResult(
+		FJargonEffectTrace* OutTrace,
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		int32 EffectIndex,
+		bool bResolved,
+		const FJargonEffectResult& EffectResult,
+		const TCHAR* Reason = TEXT(""))
+	{
+		if (!OutTrace)
+		{
+			return;
+		}
+
+		FJargonEffectTraceEvent Event;
+		PopulateTraceEventFromContext(
+			Event,
+			EffectSpec,
+			Context,
+			bResolved ? EJargonEffectTraceEventType::OperationApplied : EJargonEffectTraceEventType::OperationFailed,
+			EffectIndex,
+			bResolved ? Reason : (FCString::Strlen(Reason) > 0 ? Reason : TEXT("OperationFailed")),
+			bResolved ? TEXT("") : TEXT("Operation failed to resolve."));
+		Event.bOperationSucceeded = bResolved;
+		Event.bResolvedAnyEffect = EffectResult.bResolvedAnyEffect;
+		Event.bContinuesAsynchronously = EffectResult.bContinuesAsynchronously;
+		Event.SpawnedUnit = EffectResult.SpawnedUnit;
+		Event.SpawnedTileEffect = EffectResult.SpawnedTileEffect;
+		Event.EnergyGain = EffectResult.EnergyGainAfterCost;
+		if (bResolved && EffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
+		{
+			Event.ElementChargeDelta = FMath::Max(0, EffectSpec.Value);
+		}
+		OutTrace->AddEvent(Event);
+	}
+
+	void AddTraceUnitsGathered(
+		FJargonEffectTrace* OutTrace,
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		int32 EffectIndex,
+		const TArray<ABattleUnit*>& TargetUnits)
+	{
+		if (!OutTrace)
+		{
+			return;
+		}
+
+		FJargonEffectTraceEvent Event;
+		PopulateTraceEventFromContext(Event, EffectSpec, Context, EJargonEffectTraceEventType::TargetsGathered, EffectIndex, TEXT("TargetsGathered"));
+		for (ABattleUnit* TargetUnit : TargetUnits)
+		{
+			Event.ResolvedUnitTargets.Add(TargetUnit);
+		}
+		OutTrace->AddEvent(Event);
+	}
+
+	void AddTraceTilesGathered(
+		FJargonEffectTrace* OutTrace,
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		int32 EffectIndex,
+		const TArray<AGridTile*>& TargetTiles)
+	{
+		if (!OutTrace)
+		{
+			return;
+		}
+
+		FJargonEffectTraceEvent Event;
+		PopulateTraceEventFromContext(Event, EffectSpec, Context, EJargonEffectTraceEventType::TargetsGathered, EffectIndex, TEXT("TargetsGathered"));
+		for (AGridTile* TargetTile : TargetTiles)
+		{
+			Event.ResolvedTileTargets.Add(TargetTile);
+		}
+		OutTrace->AddEvent(Event);
 	}
 
 }
@@ -391,9 +530,9 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 			UE_LOG(LogTemp, Warning, TEXT("SummonUnit requires a living SourceUnit."));
 			return false;
 		}
-		if (!EffectSpec.UnitClass)
+		if (!EffectSpec.SummonedUnitDefinition && !EffectSpec.UnitClass)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect has no UnitClass."));
+			UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect has neither SummonedUnitDefinition nor UnitClass."));
 			return false;
 		}
 		if (!GetResolvedTargetTile(Context))
@@ -442,6 +581,19 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 		}
 		break;
 
+	case EJargonEffectOperation::GainElementCharge:
+		if (EffectSpec.ElementType == EJargonElementType::None)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("GainElementCharge requires an ElementType other than None."));
+			return false;
+		}
+		if (EffectSpec.Value <= 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("GainElementCharge requires Value > 0."));
+			return false;
+		}
+		break;
+
 	default:
 		break;
 	}
@@ -454,31 +606,67 @@ bool FJargonEffectResolver::ResolveEffects(
 	const FJargonEffectContext& Context,
 	FJargonEffectResult& OutResult)
 {
+	return ResolveEffects(Effects, Context, OutResult, nullptr);
+}
+
+bool FJargonEffectResolver::ResolveEffects(
+	const TArray<FJargonEffectSpec>& Effects,
+	const FJargonEffectContext& Context,
+	FJargonEffectResult& OutResult,
+	FJargonEffectTrace* OutTrace)
+{
 	if (Effects.Num() <= 0)
 	{
+		if (OutTrace)
+		{
+			OutTrace->ResetForContext(Context);
+			AddTraceEvent(OutTrace, FJargonEffectSpec(), Context, EJargonEffectTraceEventType::ResolveStarted, INDEX_NONE, TEXT("NoEffects"));
+			AddTraceEvent(OutTrace, FJargonEffectSpec(), Context, EJargonEffectTraceEventType::ValidationFailed, INDEX_NONE, TEXT("NoEffects"), TEXT("JargonEffectResolver received no effects to resolve."));
+			AddTraceEvent(OutTrace, FJargonEffectSpec(), Context, EJargonEffectTraceEventType::ResolveFinished, INDEX_NONE, TEXT("NoEffects"));
+			OutTrace->bResolved = false;
+			OutTrace->Summary = OutTrace->ToCompactString();
+		}
 		UE_LOG(LogTemp, Warning, TEXT("JargonEffectResolver received no effects to resolve."));
 		return false;
 	}
 
+	if (OutTrace)
+	{
+		OutTrace->ResetForContext(Context);
+		AddTraceEvent(OutTrace, Effects[0], Context, EJargonEffectTraceEventType::ResolveStarted, INDEX_NONE, TEXT("ResolveStarted"));
+	}
+
 	if (!Context.GameMode)
 	{
+		if (OutTrace)
+		{
+			AddTraceEvent(OutTrace, Effects[0], Context, EJargonEffectTraceEventType::ValidationFailed, INDEX_NONE, TEXT("MissingGameMode"), TEXT("JargonEffectResolver cannot resolve effects without a combat game mode."));
+			AddTraceEvent(OutTrace, Effects[0], Context, EJargonEffectTraceEventType::ResolveFinished, INDEX_NONE, TEXT("MissingGameMode"));
+			OutTrace->bResolved = false;
+			OutTrace->Summary = OutTrace->ToCompactString();
+		}
 		UE_LOG(LogTemp, Warning, TEXT("JargonEffectResolver cannot resolve effects without a combat game mode."));
 		return false;
 	}
 
 	bool bResolvedAnyEffect = false;
+	bool bResolvedAnySpecOrNoOp = false;
 
 	for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)
 	{
 		FJargonEffectResult EffectResult;
-		if (!ResolveEffect(Effects[EffectIndex], Context, EffectResult))
+		if (!ResolveEffect(Effects[EffectIndex], Context, EffectResult, OutTrace, EffectIndex))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Jargon effect spec at index %d failed to resolve."), EffectIndex);
 			continue;
 		}
 
-		bResolvedAnyEffect = true;
-		OutResult.bResolvedAnyEffect = true;
+		bResolvedAnySpecOrNoOp = true;
+		if (EffectResult.bResolvedAnyEffect)
+		{
+			bResolvedAnyEffect = true;
+			OutResult.bResolvedAnyEffect = true;
+		}
 		OutResult.bConsumePlayerMove |= EffectResult.bConsumePlayerMove;
 		OutResult.bContinuesAsynchronously |= EffectResult.bContinuesAsynchronously;
 		OutResult.EnergyGainAfterCost += EffectResult.EnergyGainAfterCost;
@@ -497,13 +685,23 @@ bool FJargonEffectResolver::ResolveEffects(
 		{
 			if (EffectIndex < Effects.Num() - 1)
 			{
+				AddTraceEvent(OutTrace, Effects[EffectIndex], Context, EJargonEffectTraceEventType::EffectsSkipped, EffectIndex, TEXT("AsyncSkippedLaterEffects"), TEXT("Async effect skipped later effect specs for this resolve pass."));
 				UE_LOG(LogTemp, Warning, TEXT("Async Jargon effect at index %d started before later effect specs. Later effects are skipped for this resolve pass."), EffectIndex);
 			}
 			break;
 		}
 	}
 
-	return bResolvedAnyEffect;
+	const bool bResolved = bResolvedAnyEffect || bResolvedAnySpecOrNoOp;
+	if (OutTrace)
+	{
+		OutTrace->bResolved = bResolved;
+		OutTrace->bResolvedAnyEffect = bResolvedAnyEffect;
+		OutTrace->bContinuedAsynchronously = OutResult.bContinuesAsynchronously;
+		AddTraceEvent(OutTrace, Effects[0], Context, EJargonEffectTraceEventType::ResolveFinished, INDEX_NONE, bResolved ? TEXT("Resolved") : TEXT("OperationFailed"));
+		OutTrace->Summary = OutTrace->ToCompactString();
+	}
+	return bResolved;
 }
 
 bool FJargonEffectResolver::ResolveEffect(
@@ -511,53 +709,96 @@ bool FJargonEffectResolver::ResolveEffect(
 	const FJargonEffectContext& Context,
 	FJargonEffectResult& OutResult)
 {
+	return ResolveEffect(EffectSpec, Context, OutResult, nullptr, INDEX_NONE);
+}
+
+bool FJargonEffectResolver::ResolveEffect(
+	const FJargonEffectSpec& EffectSpec,
+	const FJargonEffectContext& Context,
+	FJargonEffectResult& OutResult,
+	FJargonEffectTrace* OutTrace,
+	int32 EffectIndex)
+{
+	AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::ResolveStarted, EffectIndex, TEXT("ResolveStarted"));
+
 	if (!Context.GameMode)
 	{
+		AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::ValidationFailed, EffectIndex, TEXT("MissingGameMode"), TEXT("Effect cannot resolve without a combat game mode."));
+		AddTraceOperationResult(OutTrace, EffectSpec, Context, EffectIndex, false, OutResult, TEXT("MissingGameMode"));
 		return false;
 	}
 
 	if (!ValidateEffectForContext(EffectSpec, Context))
 	{
+		AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::ValidationFailed, EffectIndex, TEXT("ValidationFailed"), TEXT("ValidateEffectForContext returned false."));
+		AddTraceOperationResult(OutTrace, EffectSpec, Context, EffectIndex, false, OutResult, TEXT("ValidationFailed"));
 		return false;
 	}
 
+	bool bResolved = false;
 	if (IsUnitPayloadOperation(EffectSpec.Operation))
 	{
-		return ResolveUnitPayloadEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolveUnitPayloadEffect(EffectSpec, Context, OutResult, OutTrace, EffectIndex);
+		AddTraceOperationResult(OutTrace, EffectSpec, Context, EffectIndex, bResolved, OutResult);
+		if (bResolved && OutResult.bContinuesAsynchronously)
+		{
+			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::AsyncStarted, EffectIndex, TEXT("AsyncStarted"));
+		}
+		return bResolved;
 	}
 
 	switch (EffectSpec.Operation)
 	{
 	case EJargonEffectOperation::MoveSource:
-		return ResolveMoveSourceEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolveMoveSourceEffect(EffectSpec, Context, OutResult);
+		break;
 
 	case EJargonEffectOperation::PushTarget:
-		return ResolvePushTargetEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolvePushTargetEffect(EffectSpec, Context, OutResult, OutTrace, EffectIndex);
+		break;
 
 	case EJargonEffectOperation::PullTarget:
 		UE_LOG(LogTemp, Warning, TEXT("PullTarget is intentionally deferred in the generic Jargon effect resolver."));
-		return false;
+		bResolved = false;
+		break;
 
 	case EJargonEffectOperation::SummonUnit:
-		return ResolveSummonUnitEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolveSummonUnitEffect(EffectSpec, Context, OutResult, OutTrace, EffectIndex);
+		break;
 
 	case EJargonEffectOperation::PlaceTileEffect:
-		return ResolvePlaceTileEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolvePlaceTileEffect(EffectSpec, Context, OutResult);
+		break;
 
 	case EJargonEffectOperation::DestroyTileEffect:
-		return ResolveDestroyTileEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolveDestroyTileEffect(EffectSpec, Context, OutResult, OutTrace, EffectIndex);
+		break;
 
 	case EJargonEffectOperation::DrawCards:
-		return ResolveDrawCardsEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolveDrawCardsEffect(EffectSpec, Context, OutResult);
+		break;
 
 	case EJargonEffectOperation::GainEnergy:
-		return ResolveGainEnergyEffect(EffectSpec, Context, OutResult);
+		bResolved = ResolveGainEnergyEffect(EffectSpec, Context, OutResult);
+		break;
+
+	case EJargonEffectOperation::GainElementCharge:
+		bResolved = ResolveGainElementChargeEffect(EffectSpec, Context, OutResult);
+		break;
 
 	case EJargonEffectOperation::None:
 	default:
 		UE_LOG(LogTemp, Warning, TEXT("Unsupported or empty Jargon effect operation: %d."), static_cast<int32>(EffectSpec.Operation));
-		return false;
+		bResolved = false;
+		break;
 	}
+
+	AddTraceOperationResult(OutTrace, EffectSpec, Context, EffectIndex, bResolved, OutResult);
+	if (bResolved && OutResult.bContinuesAsynchronously)
+	{
+		AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::AsyncStarted, EffectIndex, TEXT("AsyncStarted"));
+	}
+	return bResolved;
 }
 
 bool FJargonEffectResolver::ResolveMoveSourceEffect(
@@ -608,7 +849,9 @@ bool FJargonEffectResolver::ResolveMoveSourceEffect(
 bool FJargonEffectResolver::ResolvePushTargetEffect(
 	const FJargonEffectSpec& EffectSpec,
 	const FJargonEffectContext& Context,
-	FJargonEffectResult& OutResult)
+	FJargonEffectResult& OutResult,
+	FJargonEffectTrace* OutTrace,
+	int32 EffectIndex)
 {
 	if (!Context.GameMode || !IsLiveSourceUnit(Context))
 	{
@@ -616,9 +859,19 @@ bool FJargonEffectResolver::ResolvePushTargetEffect(
 		return false;
 	}
 
-	const TArray<ABattleUnit*> TargetUnits = GatherTargetUnits(EffectSpec, Context);
+	const TArray<ABattleUnit*> TargetUnits = GatherTargetUnits(EffectSpec, Context, OutTrace, EffectIndex);
+	AddTraceUnitsGathered(OutTrace, EffectSpec, Context, EffectIndex, TargetUnits);
 	if (TargetUnits.Num() <= 0)
 	{
+		if (CanTreatNoTargetsAsNoOp(Context))
+		{
+			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::NoTargetsNoOp, EffectIndex, TEXT("NoTargetsCleanNoOp"));
+			UE_LOG(LogTemp, Verbose, TEXT("PushTarget found no valid target units in %s context; treating as a clean no-op."),
+				GetEffectTriggerName(Context.Trigger));
+			OutResult.bResolvedAnyEffect = false;
+			return true;
+		}
+
 		UE_LOG(LogTemp, Warning, TEXT("PushTarget found no valid target units."));
 		return false;
 	}
@@ -672,19 +925,25 @@ bool FJargonEffectResolver::ResolvePushTargetEffect(
 		if (bCollidedWithObstruction && CollisionDamage > 0 && !TargetUnit->IsDead())
 		{
 			EmitEffectResolverCue(Context, EffectSpec, EJargonCombatCueType::PushCollision, TargetUnit, TargetTile, CollisionDamage);
-			TargetUnit->ApplyDamage(CollisionDamage);
+			TargetUnit->ApplyDamageFromEffectContext(CollisionDamage, Context);
 			bResolvedAnyPushEffect = true;
 		}
 	}
 
 	OutResult.bResolvedAnyEffect = bResolvedAnyPushEffect;
+	if (!bResolvedAnyPushEffect && CanTreatNoTargetsAsNoOp(Context))
+	{
+		return true;
+	}
 	return bResolvedAnyPushEffect;
 }
 
 bool FJargonEffectResolver::ResolveSummonUnitEffect(
 	const FJargonEffectSpec& EffectSpec,
 	const FJargonEffectContext& Context,
-	FJargonEffectResult& OutResult)
+	FJargonEffectResult& OutResult,
+	FJargonEffectTrace* OutTrace,
+	int32 EffectIndex)
 {
 	if (!Context.GameMode || !IsLiveSourceUnit(Context))
 	{
@@ -699,17 +958,43 @@ bool FJargonEffectResolver::ResolveSummonUnitEffect(
 		return false;
 	}
 
-	if (!EffectSpec.UnitClass)
+	if (!EffectSpec.SummonedUnitDefinition && !EffectSpec.UnitClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect has no UnitClass."));
+		UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect has neither SummonedUnitDefinition nor UnitClass."));
 		return false;
 	}
 
-	ABattleUnit* SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromClass(
-		EffectSpec.UnitClass,
-		Context.SourceUnit,
-		TargetTile,
-		EffectSpec.bSummonEntersWithAttackExhausted);
+	ABattleUnit* SpawnedUnit = nullptr;
+	if (EffectSpec.SummonedUnitDefinition)
+	{
+		SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromDefinition(
+			EffectSpec.SummonedUnitDefinition.Get(),
+			Context.SourceUnit,
+			TargetTile,
+			EffectSpec.bSummonEntersWithAttackExhausted,
+			true);
+
+		if (!SpawnedUnit && EffectSpec.UnitClass)
+		{
+			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::FallbackUsed, EffectIndex, TEXT("DefinitionSpawnFailedFallbackToUnitClass"), TEXT("Summon definition failed to spawn; falling back to legacy UnitClass."));
+			UE_LOG(LogTemp, Warning, TEXT("SummonUnit definition '%s' failed to spawn. Falling back to legacy UnitClass '%s'."),
+				*GetNameSafe(EffectSpec.SummonedUnitDefinition.Get()),
+				*GetNameSafe(EffectSpec.UnitClass.Get()));
+			SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromClass(
+				EffectSpec.UnitClass,
+				Context.SourceUnit,
+				TargetTile,
+				EffectSpec.bSummonEntersWithAttackExhausted);
+		}
+	}
+	else
+	{
+		SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromClass(
+			EffectSpec.UnitClass,
+			Context.SourceUnit,
+			TargetTile,
+			EffectSpec.bSummonEntersWithAttackExhausted);
+	}
 
 	if (!SpawnedUnit)
 	{
@@ -793,7 +1078,9 @@ bool FJargonEffectResolver::ResolvePlaceTileEffect(
 bool FJargonEffectResolver::ResolveDestroyTileEffect(
 	const FJargonEffectSpec& EffectSpec,
 	const FJargonEffectContext& Context,
-	FJargonEffectResult& OutResult)
+	FJargonEffectResult& OutResult,
+	FJargonEffectTrace* OutTrace,
+	int32 EffectIndex)
 {
 	if (!Context.GameMode)
 	{
@@ -801,8 +1088,18 @@ bool FJargonEffectResolver::ResolveDestroyTileEffect(
 	}
 
 	const TArray<AGridTile*> TargetTiles = GatherTargetTiles(EffectSpec, Context);
+	AddTraceTilesGathered(OutTrace, EffectSpec, Context, EffectIndex, TargetTiles);
 	if (TargetTiles.Num() <= 0)
 	{
+		if (CanTreatNoTargetsAsNoOp(Context))
+		{
+			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::NoTargetsNoOp, EffectIndex, TEXT("NoTargetsCleanNoOp"));
+			UE_LOG(LogTemp, Verbose, TEXT("DestroyTileEffect found no target tiles in %s context; treating as a clean no-op."),
+				GetEffectTriggerName(Context.Trigger));
+			OutResult.bResolvedAnyEffect = false;
+			return true;
+		}
+
 		UE_LOG(LogTemp, Warning, TEXT("DestroyTileEffect found no target tiles."));
 		return false;
 	}
@@ -836,6 +1133,10 @@ bool FJargonEffectResolver::ResolveDestroyTileEffect(
 	}
 
 	OutResult.bResolvedAnyEffect = bDestroyedAny;
+	if (!bDestroyedAny && CanTreatNoTargetsAsNoOp(Context))
+	{
+		return true;
+	}
 	return bDestroyedAny;
 }
 
@@ -878,10 +1179,41 @@ bool FJargonEffectResolver::ResolveGainEnergyEffect(
 	return true;
 }
 
-bool FJargonEffectResolver::ResolveUnitPayloadEffect(
+bool FJargonEffectResolver::ResolveGainElementChargeEffect(
 	const FJargonEffectSpec& EffectSpec,
 	const FJargonEffectContext& Context,
 	FJargonEffectResult& OutResult)
+{
+	if (!Context.GameMode)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GainElementCharge requires a combat game mode."));
+		return false;
+	}
+
+	if (EffectSpec.ElementType == EJargonElementType::None)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GainElementCharge requires an ElementType other than None."));
+		return false;
+	}
+
+	const int32 ChargeAmount = FMath::Max(0, EffectSpec.Value);
+	if (ChargeAmount <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GainElementCharge requires Value > 0."));
+		return false;
+	}
+
+	Context.GameMode->GainElementCharges(EffectSpec.ElementType, ChargeAmount);
+	OutResult.bResolvedAnyEffect = true;
+	return true;
+}
+
+bool FJargonEffectResolver::ResolveUnitPayloadEffect(
+	const FJargonEffectSpec& EffectSpec,
+	const FJargonEffectContext& Context,
+	FJargonEffectResult& OutResult,
+	FJargonEffectTrace* OutTrace,
+	int32 EffectIndex)
 {
 	const int32 Amount = FMath::Max(0, EffectSpec.Value);
 	if (Amount <= 0)
@@ -890,9 +1222,20 @@ bool FJargonEffectResolver::ResolveUnitPayloadEffect(
 		return false;
 	}
 
-	const TArray<ABattleUnit*> TargetUnits = GatherTargetUnits(EffectSpec, Context);
+	const TArray<ABattleUnit*> TargetUnits = GatherTargetUnits(EffectSpec, Context, OutTrace, EffectIndex);
+	AddTraceUnitsGathered(OutTrace, EffectSpec, Context, EffectIndex, TargetUnits);
 	if (TargetUnits.Num() <= 0)
 	{
+		if (CanTreatNoTargetsAsNoOp(Context))
+		{
+			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::NoTargetsNoOp, EffectIndex, TEXT("NoTargetsCleanNoOp"));
+			UE_LOG(LogTemp, Verbose, TEXT("Unit payload effect %s found no valid target units in %s context; treating as a clean no-op."),
+				GetEffectOperationName(EffectSpec.Operation),
+				GetEffectTriggerName(Context.Trigger));
+			OutResult.bResolvedAnyEffect = false;
+			return true;
+		}
+
 		UE_LOG(LogTemp, Warning, TEXT("Unit payload effect %d found no valid target units."), static_cast<int32>(EffectSpec.Operation));
 		return false;
 	}
@@ -927,12 +1270,18 @@ bool FJargonEffectResolver::ResolveUnitPayloadEffect(
 	}
 
 	OutResult.bResolvedAnyEffect = bAppliedAny;
+	if (!bAppliedAny && CanTreatNoTargetsAsNoOp(Context))
+	{
+		return true;
+	}
 	return bAppliedAny;
 }
 
 TArray<ABattleUnit*> FJargonEffectResolver::GatherTargetUnits(
 	const FJargonEffectSpec& EffectSpec,
-	const FJargonEffectContext& Context)
+	const FJargonEffectContext& Context,
+	FJargonEffectTrace* OutTrace,
+	int32 EffectIndex)
 {
 	TArray<ABattleUnit*> TargetUnits;
 
@@ -946,21 +1295,32 @@ TArray<ABattleUnit*> FJargonEffectResolver::GatherTargetUnits(
 		break;
 
 	case EJargonEffectDelivery::ExplicitUnit:
+	{
+		const bool bCanFallbackToSource =
+			(EffectSpec.Operation == EJargonEffectOperation::Heal ||
+				EffectSpec.Operation == EJargonEffectOperation::ApplyShield) &&
+			Context.SourceUnit &&
+			DoesUnitPassTargetFilter(Context.SourceUnit, EffectSpec, Context);
+
 		if (ABattleUnit* TargetUnit = GetResolvedTargetUnit(Context))
 		{
 			if (DoesUnitPassTargetFilter(TargetUnit, EffectSpec, Context))
 			{
 				TargetUnits.Add(TargetUnit);
 			}
+			else if (bCanFallbackToSource)
+			{
+				AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::FallbackUsed, EffectIndex, TEXT("ExplicitFriendlyFallbackToSource"), TEXT("Explicit target failed the target filter; friendly effect used the source unit."));
+				TargetUnits.Add(Context.SourceUnit);
+			}
 		}
-		else if ((EffectSpec.Operation == EJargonEffectOperation::Heal ||
-			EffectSpec.Operation == EJargonEffectOperation::ApplyShield) &&
-			Context.SourceUnit &&
-			DoesUnitPassTargetFilter(Context.SourceUnit, EffectSpec, Context))
+		else if (bCanFallbackToSource)
 		{
+			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::FallbackUsed, EffectIndex, TEXT("ExplicitFriendlyFallbackToSource"), TEXT("No explicit target was resolved; friendly effect used the source unit."));
 			TargetUnits.Add(Context.SourceUnit);
 		}
 		break;
+	}
 
 	case EJargonEffectDelivery::UnitsInRadius:
 	{
@@ -1227,7 +1587,7 @@ bool FJargonEffectResolver::ApplyUnitPayload(
 	switch (EffectSpec.Operation)
 	{
 	case EJargonEffectOperation::DealDamage:
-		TargetUnit->ApplyDamage(Amount);
+		TargetUnit->ApplyDamageFromEffectContext(Amount, Context);
 		return true;
 
 	case EJargonEffectOperation::Heal:
@@ -1242,6 +1602,29 @@ bool FJargonEffectResolver::ApplyUnitPayload(
 		TargetUnit->ApplyStun(Amount);
 		return true;
 
+	case EJargonEffectOperation::ApplyFreeze:
+		TargetUnit->ApplyFreeze(Amount);
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+bool FJargonEffectResolver::CanTreatNoTargetsAsNoOp(const FJargonEffectContext& Context)
+{
+	switch (Context.Trigger)
+	{
+	case EJargonEffectTrigger::OnSummoned:
+	case EJargonEffectTrigger::OnEnterTile:
+	case EJargonEffectTrigger::OnTurnStart:
+	case EJargonEffectTrigger::OnDeath:
+	case EJargonEffectTrigger::OnCombatStart:
+	case EJargonEffectTrigger::OnEnemyDeath:
+		return true;
+
+	case EJargonEffectTrigger::OnPlayed:
+	case EJargonEffectTrigger::Activated:
 	default:
 		return false;
 	}

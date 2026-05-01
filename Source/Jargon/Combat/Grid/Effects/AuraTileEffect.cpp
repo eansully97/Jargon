@@ -12,8 +12,6 @@ void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMod
 
 	if (AuraEffects.Num() > 0)
 	{
-		EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered);
-
 		FJargonEffectResult EffectResult;
 		const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode);
 		const bool bResolved = FJargonEffectResolver::ResolveEffects(AuraEffects, EffectContext, EffectResult);
@@ -21,6 +19,10 @@ void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMod
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Aura '%s' failed to resolve its generic turn-start effects."),
 				*GetNameSafe(this));
+		}
+		else if (EffectResult.bResolvedAnyEffect)
+		{
+			EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered);
 		}
 
 		return;

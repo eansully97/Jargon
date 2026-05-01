@@ -9,6 +9,7 @@ class ABattleUnit;
 class AGridTile;
 class AJargonCombatGameMode;
 class UCardDefinition;
+class UJargonSummonedUnitDefinition;
 
 UENUM(BlueprintType)
 enum class EJargonEffectOperation : uint8
@@ -25,7 +26,9 @@ enum class EJargonEffectOperation : uint8
 	PlaceTileEffect UMETA(DisplayName = "Place Tile Effect"),
 	DestroyTileEffect UMETA(DisplayName = "Destroy Tile Effect"),
 	DrawCards UMETA(DisplayName = "Draw Cards"),
-	GainEnergy UMETA(DisplayName = "Gain Energy")
+	GainEnergy UMETA(DisplayName = "Gain Energy"),
+	GainElementCharge UMETA(DisplayName = "Gain Element Charge"),
+	ApplyFreeze UMETA(DisplayName = "Apply Freeze")
 };
 
 UENUM(BlueprintType)
@@ -84,10 +87,16 @@ struct JARGON_API FJargonEffectSpec
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (
 		ClampMin = "0",
-		ToolTip = "Primary amount for this effect. Damage, healing, shield, stun turns, cards drawn, energy gained, or tile-effect payload value.",
-		EditCondition = "Operation == EJargonEffectOperation::DealDamage || Operation == EJargonEffectOperation::Heal || Operation == EJargonEffectOperation::ApplyShield || Operation == EJargonEffectOperation::ApplyStun || Operation == EJargonEffectOperation::PlaceTileEffect || Operation == EJargonEffectOperation::DrawCards || Operation == EJargonEffectOperation::GainEnergy",
+		ToolTip = "Primary amount for this effect. Damage, healing, shield, stun/freeze turns, cards drawn, energy gained, element charges, or tile-effect payload value.",
+		EditCondition = "Operation == EJargonEffectOperation::DealDamage || Operation == EJargonEffectOperation::Heal || Operation == EJargonEffectOperation::ApplyShield || Operation == EJargonEffectOperation::ApplyStun || Operation == EJargonEffectOperation::ApplyFreeze || Operation == EJargonEffectOperation::PlaceTileEffect || Operation == EJargonEffectOperation::DrawCards || Operation == EJargonEffectOperation::GainEnergy || Operation == EJargonEffectOperation::GainElementCharge",
 		EditConditionHides))
 	int32 Value = 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Element", meta = (
+		ToolTip = "Element charge type affected by GainElementCharge.",
+		EditCondition = "Operation == EJargonEffectOperation::GainElementCharge",
+		EditConditionHides))
+	EJargonElementType ElementType = EJargonElementType::None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (
 		ClampMin = "0",
@@ -136,6 +145,12 @@ struct JARGON_API FJargonEffectSpec
 		EditCondition = "Operation == EJargonEffectOperation::SummonUnit",
 		EditConditionHides))
 	TSubclassOf<ABattleUnit> UnitClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon", meta = (
+		ToolTip = "Optional data-driven summon definition. If set, runtime uses this definition before falling back to legacy UnitClass behavior.",
+		EditCondition = "Operation == EJargonEffectOperation::SummonUnit",
+		EditConditionHides))
+	TObjectPtr<UJargonSummonedUnitDefinition> SummonedUnitDefinition = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon", meta = (
 		ToolTip = "Whether the summoned unit enters with its attack already spent.",
@@ -224,4 +239,269 @@ struct JARGON_API FJargonEffectResult
 
 	UPROPERTY()
 	TObjectPtr<ABattleTileEffect> SpawnedTileEffect = nullptr;
+};
+
+UENUM(BlueprintType)
+enum class EJargonEffectTraceEventType : uint8
+{
+	ResolveStarted UMETA(DisplayName = "Resolve Started"),
+	ValidationFailed UMETA(DisplayName = "Validation Failed"),
+	ValidationWarning UMETA(DisplayName = "Validation Warning"),
+	TargetsGathered UMETA(DisplayName = "Targets Gathered"),
+	TargetSkipped UMETA(DisplayName = "Target Skipped"),
+	NoTargetsNoOp UMETA(DisplayName = "No Targets No-op"),
+	OperationApplied UMETA(DisplayName = "Operation Applied"),
+	OperationFailed UMETA(DisplayName = "Operation Failed"),
+	FallbackUsed UMETA(DisplayName = "Fallback Used"),
+	AsyncStarted UMETA(DisplayName = "Async Started"),
+	EffectsSkipped UMETA(DisplayName = "Effects Skipped"),
+	ResolveFinished UMETA(DisplayName = "Resolve Finished")
+};
+
+USTRUCT(BlueprintType)
+struct JARGON_API FJargonEffectTraceEvent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	int32 EffectIndex = INDEX_NONE;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	EJargonEffectTraceEventType EventType = EJargonEffectTraceEventType::ResolveStarted;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	EJargonEffectOperation Operation = EJargonEffectOperation::None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	EJargonEffectDelivery Delivery = EJargonEffectDelivery::ExplicitUnit;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	EJargonEffectTargetFilter TargetFilter = EJargonEffectTargetFilter::None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<UObject> SourceObject = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<UCardDefinition> SourceCard = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<ABattleUnit> SourceUnit = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<AGridTile> SourceTile = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<ABattleUnit> ExplicitUnitTarget = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<AGridTile> ExplicitTileTarget = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TArray<TObjectPtr<ABattleUnit>> ResolvedUnitTargets;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TArray<TObjectPtr<AGridTile>> ResolvedTileTargets;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<ABattleUnit> SkippedUnitTarget = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<AGridTile> SkippedTileTarget = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	FString Reason;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	FString Warning;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	bool bOperationSucceeded = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	bool bResolvedAnyEffect = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	bool bContinuesAsynchronously = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<ABattleUnit> SpawnedUnit = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<ABattleTileEffect> SpawnedTileEffect = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	int32 Value = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	int32 EnergyGain = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	EJargonElementType ElementType = EJargonElementType::None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	int32 ElementChargeDelta = 0;
+};
+
+USTRUCT(BlueprintType)
+struct JARGON_API FJargonEffectTrace
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	FGuid TraceId;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	EJargonEffectTrigger Trigger = EJargonEffectTrigger::OnPlayed;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<UObject> SourceObject = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TObjectPtr<UCardDefinition> SourceCard = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	TArray<FJargonEffectTraceEvent> Events;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	bool bResolved = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	bool bResolvedAnyEffect = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	bool bContinuedAsynchronously = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
+	FString Summary;
+
+	void ResetForContext(const FJargonEffectContext& Context)
+	{
+		TraceId = FGuid::NewGuid();
+		Trigger = Context.Trigger;
+		SourceObject = Context.SourceObject;
+		SourceCard = Context.SourceCard;
+		Events.Reset();
+		bResolved = false;
+		bResolvedAnyEffect = false;
+		bContinuedAsynchronously = false;
+		Summary.Reset();
+	}
+
+	void AddEvent(const FJargonEffectTraceEvent& Event)
+	{
+		Events.Add(Event);
+	}
+
+	bool HasWarnings() const
+	{
+		for (const FJargonEffectTraceEvent& Event : Events)
+		{
+			if (!Event.Warning.IsEmpty() ||
+				Event.EventType == EJargonEffectTraceEventType::ValidationFailed ||
+				Event.EventType == EJargonEffectTraceEventType::ValidationWarning ||
+				Event.EventType == EJargonEffectTraceEventType::OperationFailed ||
+				Event.EventType == EJargonEffectTraceEventType::FallbackUsed ||
+				Event.EventType == EJargonEffectTraceEventType::EffectsSkipped)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	static FString GetEnumTokenName(const UEnum* Enum, int64 Value)
+	{
+		if (Enum)
+		{
+			const FString Name = Enum->GetNameStringByValue(Value);
+			if (!Name.IsEmpty())
+			{
+				return Name;
+			}
+		}
+
+		return FString::Printf(TEXT("%lld"), Value);
+	}
+
+	static FString GetTraceEventName(EJargonEffectTraceEventType Value)
+	{
+		return GetEnumTokenName(StaticEnum<EJargonEffectTraceEventType>(), static_cast<int64>(Value));
+	}
+
+	static FString GetOperationName(EJargonEffectOperation Value)
+	{
+		return GetEnumTokenName(StaticEnum<EJargonEffectOperation>(), static_cast<int64>(Value));
+	}
+
+	static FString GetDeliveryName(EJargonEffectDelivery Value)
+	{
+		return GetEnumTokenName(StaticEnum<EJargonEffectDelivery>(), static_cast<int64>(Value));
+	}
+
+	static FString GetTargetFilterName(EJargonEffectTargetFilter Value)
+	{
+		return GetEnumTokenName(StaticEnum<EJargonEffectTargetFilter>(), static_cast<int64>(Value));
+	}
+
+	static FString GetTriggerName(EJargonEffectTrigger Value)
+	{
+		return GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(Value));
+	}
+
+	static FString GetElementName(EJargonElementType Value)
+	{
+		return GetEnumTokenName(StaticEnum<EJargonElementType>(), static_cast<int64>(Value));
+	}
+
+	FString ToCompactString() const
+	{
+		return FString::Printf(
+			TEXT("Trace=%s Trigger=%s Source=%s Card=%s Events=%d Resolved=%s AnyEffect=%s Async=%s Warnings=%s"),
+			*TraceId.ToString(EGuidFormats::DigitsWithHyphens),
+			*GetTriggerName(Trigger),
+			*GetNameSafe(SourceObject.Get()),
+			SourceCard.Get() ? TEXT("Assigned") : TEXT("None"),
+			Events.Num(),
+			bResolved ? TEXT("true") : TEXT("false"),
+			bResolvedAnyEffect ? TEXT("true") : TEXT("false"),
+			bContinuedAsynchronously ? TEXT("true") : TEXT("false"),
+			HasWarnings() ? TEXT("true") : TEXT("false"));
+	}
+
+	FString ToMultilineString() const
+	{
+		TArray<FString> Lines;
+		Lines.Add(ToCompactString());
+
+		for (const FJargonEffectTraceEvent& Event : Events)
+		{
+			Lines.Add(FString::Printf(
+				TEXT("[%d] Event=%s Operation=%s Delivery=%s Filter=%s Source=%s Card=%s UnitTarget=%s TileTarget=%s Units=%d Tiles=%d Success=%s AnyEffect=%s Async=%s SpawnedUnit=%s SpawnedTileEffect=%s Value=%d EnergyGain=%d Element=%s ElementDelta=%d Reason=%s Warning=%s"),
+				Event.EffectIndex,
+				*GetTraceEventName(Event.EventType),
+				*GetOperationName(Event.Operation),
+				*GetDeliveryName(Event.Delivery),
+				*GetTargetFilterName(Event.TargetFilter),
+				*GetNameSafe(Event.SourceObject.Get()),
+				Event.SourceCard.Get() ? TEXT("Assigned") : TEXT("None"),
+				Event.ExplicitUnitTarget.Get() ? TEXT("Assigned") : TEXT("None"),
+				Event.ExplicitTileTarget.Get() ? TEXT("Assigned") : TEXT("None"),
+				Event.ResolvedUnitTargets.Num(),
+				Event.ResolvedTileTargets.Num(),
+				Event.bOperationSucceeded ? TEXT("true") : TEXT("false"),
+				Event.bResolvedAnyEffect ? TEXT("true") : TEXT("false"),
+				Event.bContinuesAsynchronously ? TEXT("true") : TEXT("false"),
+				Event.SpawnedUnit.Get() ? TEXT("Assigned") : TEXT("None"),
+				Event.SpawnedTileEffect.Get() ? TEXT("Assigned") : TEXT("None"),
+				Event.Value,
+				Event.EnergyGain,
+				*GetElementName(Event.ElementType),
+				Event.ElementChargeDelta,
+				*Event.Reason,
+				*Event.Warning));
+		}
+
+		return FString::Join(Lines, LINE_TERMINATOR);
+	}
 };

@@ -10,6 +10,7 @@
 #include "Data/JargonRelicDefinition.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Sound/SoundBase.h"
@@ -50,11 +51,28 @@ bool HasAnyAssignedCueAsset(const TMap<EJargonCombatCueType, TObjectPtr<AssetTyp
 
 	return false;
 }
+
+bool IsUsableNiagaraParameterName(FName ParameterName)
+{
+	return !ParameterName.IsNone();
+}
 }
 
 AJargonCombatPresentationManager::AJargonCombatPresentationManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
+}
+
+void AJargonCombatPresentationManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DamageFloatingTextAggregationTimerHandle);
+	}
+
+	PendingDamageFloatingTextByTarget.Reset();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AJargonCombatPresentationManager::InitializePresentation(
@@ -218,16 +236,16 @@ FText AJargonCombatPresentationManager::GetCueDisplayText(const FJargonCombatCue
 		return FText::FromString(TEXT("Shield Break"));
 
 	case EJargonCombatCueType::StunApplied:
-		return FText::FromString(TEXT("Stun"));
-
-	case EJargonCombatCueType::StunConsumed:
 		return FText::FromString(TEXT("Stunned"));
+
+	case EJargonCombatCueType::FreezeApplied:
+		return FText::FromString(TEXT("Frozen"));
+
+	case EJargonCombatCueType::FreezeConsumed:
+		return FText::FromString(TEXT("Thawing"));
 
 	case EJargonCombatCueType::UnitSummoned:
 		return FText::FromString(TEXT("Summoned"));
-
-	case EJargonCombatCueType::UnitDied:
-		return FText::FromString(TEXT("Defeated"));
 
 	case EJargonCombatCueType::RelicTriggered:
 		if (Cue.SourceRelic && !Cue.SourceRelic->DisplayName.IsEmpty())
@@ -235,6 +253,49 @@ FText AJargonCombatPresentationManager::GetCueDisplayText(const FJargonCombatCue
 			return FText::Format(FText::FromString(TEXT("{0} triggered")), Cue.SourceRelic->DisplayName);
 		}
 		return FText::FromString(TEXT("Relic triggered"));
+
+	case EJargonCombatCueType::ClassPassiveTriggered:
+		if (Cue.HeroClass != EJargonHeroClass::None)
+		{
+			const UEnum* HeroClassEnum = StaticEnum<EJargonHeroClass>();
+			const FText HeroClassName = HeroClassEnum
+				? HeroClassEnum->GetDisplayNameTextByValue(static_cast<int64>(Cue.HeroClass))
+				: FText::FromString(TEXT("Hero"));
+			return FText::Format(FText::FromString(TEXT("{0} Passive")), HeroClassName);
+		}
+		return FText::FromString(TEXT("Class Passive"));
+
+	case EJargonCombatCueType::HeroAspectTriggered:
+		if (Cue.HeroAspect != EJargonHeroAspect::None)
+		{
+			const UEnum* HeroAspectEnum = StaticEnum<EJargonHeroAspect>();
+			return HeroAspectEnum
+				? HeroAspectEnum->GetDisplayNameTextByValue(static_cast<int64>(Cue.HeroAspect))
+				: FText::FromString(TEXT("Hero Aspect"));
+		}
+		return FText::FromString(TEXT("Hero Aspect"));
+
+	case EJargonCombatCueType::HeroAspectActivated:
+		if (Cue.HeroAspect != EJargonHeroAspect::None)
+		{
+			const UEnum* HeroAspectEnum = StaticEnum<EJargonHeroAspect>();
+			const FText AspectName = HeroAspectEnum
+				? HeroAspectEnum->GetDisplayNameTextByValue(static_cast<int64>(Cue.HeroAspect))
+				: FText::FromString(TEXT("Hero Aspect"));
+			return FText::Format(FText::FromString(TEXT("{0} Awakened")), AspectName);
+		}
+		return FText::FromString(TEXT("Hero Aspect Awakened"));
+
+	case EJargonCombatCueType::ElementalBonusTriggered:
+		if (Cue.SourceCard && !Cue.SourceCard->DisplayName.IsEmpty())
+		{
+			const UEnum* ElementEnum = StaticEnum<EJargonElementType>();
+			const FText ElementName = ElementEnum
+				? ElementEnum->GetDisplayNameTextByValue(static_cast<int64>(Cue.ElementType))
+				: FText::FromString(TEXT("Element"));
+			return FText::Format(FText::FromString(TEXT("{0}: {1} Bonus")), Cue.SourceCard->DisplayName, ElementName);
+		}
+		return FText::FromString(TEXT("Elemental Bonus"));
 
 	default:
 		return FText::GetEmpty();
@@ -263,6 +324,8 @@ bool AJargonCombatPresentationManager::IsUnitCue(const FJargonCombatCueEvent& Cu
 	case EJargonCombatCueType::ShieldBroken:
 	case EJargonCombatCueType::StunApplied:
 	case EJargonCombatCueType::StunConsumed:
+	case EJargonCombatCueType::FreezeApplied:
+	case EJargonCombatCueType::FreezeConsumed:
 	case EJargonCombatCueType::UnitSummoned:
 	case EJargonCombatCueType::UnitDied:
 	case EJargonCombatCueType::ChainJump:
@@ -295,6 +358,42 @@ bool AJargonCombatPresentationManager::IsRelicCue(const FJargonCombatCueEvent& C
 	return Cue.CueType == EJargonCombatCueType::RelicTriggered || Cue.SourceRelic != nullptr;
 }
 
+int32 AJargonCombatPresentationManager::GetCueTypeId(const FJargonCombatCueEvent& Cue) const
+{
+	return static_cast<int32>(Cue.CueType);
+}
+
+float AJargonCombatPresentationManager::GetCueDurationScale(const FJargonCombatCueEvent& Cue) const
+{
+	(void)Cue;
+
+	return PresentationSettings
+		? FMath::Max(0.01f, PresentationSettings->DefaultDurationScale)
+		: 1.f;
+}
+
+float AJargonCombatPresentationManager::GetCueRadius(const FJargonCombatCueEvent& Cue) const
+{
+	return static_cast<float>(FMath::Max(0, Cue.Radius));
+}
+
+float AJargonCombatPresentationManager::GetCueValueAsFloat(const FJargonCombatCueEvent& Cue) const
+{
+	return static_cast<float>(Cue.Value);
+}
+
+bool AJargonCombatPresentationManager::HasValidSourceLocation(const FJargonCombatCueEvent& Cue) const
+{
+	FVector UnusedLocation;
+	return GetCueSourceLocation(Cue, UnusedLocation);
+}
+
+bool AJargonCombatPresentationManager::HasValidTargetLocation(const FJargonCombatCueEvent& Cue) const
+{
+	FVector UnusedLocation;
+	return GetCueTargetLocation(Cue, UnusedLocation);
+}
+
 void AJargonCombatPresentationManager::PlayConfiguredVFX(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const
 {
 	if (!PresentationSettings || !PresentationSettings->bEnableVFX)
@@ -309,11 +408,220 @@ void AJargonCombatPresentationManager::PlayConfiguredVFX(const FJargonCombatCueE
 		return;
 	}
 
-	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+	FRotator VFXRotation = FRotator::ZeroRotator;
+	FVector VFXScale = FVector(1.f);
+
+	if (PresentationSettings->bUseSimpleVFXTransformMode)
+	{
+		if (PresentationSettings->bOrientVFXToCueDirection)
+		{
+			FVector CueDirection = FVector::UpVector;
+			float SourceToTargetDistance = 0.f;
+			const bool bHasCueDirection = ResolveCueDirection(Cue, CueDirection, SourceToTargetDistance);
+			if (bHasCueDirection)
+			{
+				if (PresentationSettings->bInvertVFXDirection)
+				{
+					CueDirection *= -1.f;
+				}
+
+				VFXRotation = CueDirection.Rotation();
+			}
+			else if (PresentationSettings->bEnableDebugValidation && Cue.CueType == EJargonCombatCueType::Damage)
+			{
+				FVector SourceLocation = FVector::ZeroVector;
+				FVector TargetLocation = FVector::ZeroVector;
+				const bool bHasSourceLocation = GetCueSourceLocation(Cue, SourceLocation);
+				const bool bHasTargetLocation = GetCueTargetLocation(Cue, TargetLocation);
+				UE_LOG(LogTemp, Warning, TEXT("Damage cue has no valid source-to-target direction for VFX orientation. SourceValid=%s TargetValid=%s SourceUnit=%s TargetUnit=%s SourceObject=%s"),
+					bHasSourceLocation ? TEXT("true") : TEXT("false"),
+					bHasTargetLocation ? TEXT("true") : TEXT("false"),
+					*GetNameSafe(Cue.SourceUnit.Get()),
+					*GetNameSafe(Cue.TargetUnit.Get()),
+					*GetNameSafe(Cue.SourceObject.Get()));
+			}
+		}
+
+		const float ComponentScale = ResolveSimpleVFXComponentScale(Cue);
+		VFXScale = FVector(ComponentScale);
+	}
+
+	UNiagaraComponent* NiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 		GetWorld(),
 		NiagaraSystem,
 		CueLocation,
-		FRotator::ZeroRotator);
+		VFXRotation,
+		VFXScale,
+		true,
+		false);
+
+	ApplyCueParametersToNiagaraComponent(NiagaraComponent, Cue, CueLocation);
+
+	if (NiagaraComponent)
+	{
+		NiagaraComponent->Activate(true);
+	}
+}
+
+void AJargonCombatPresentationManager::ApplyCueParametersToNiagaraComponent(
+	UNiagaraComponent* NiagaraComponent,
+	const FJargonCombatCueEvent& Cue,
+	const FVector& CueLocation) const
+{
+	if (!NiagaraComponent || !PresentationSettings || !PresentationSettings->bApplyNiagaraCueParameters)
+	{
+		return;
+	}
+
+	const FLinearColor CueColor = GetCueDisplayColor(Cue);
+	const float CueValue = GetCueValueAsFloat(Cue);
+	const float CueRadius = GetCueRadius(Cue);
+	const float DurationScale = GetCueDurationScale(Cue);
+	const int32 CueTypeId = GetCueTypeId(Cue);
+
+	FVector SourceLocation = FVector::ZeroVector;
+	const bool bHasSourceLocation = GetCueSourceLocation(Cue, SourceLocation);
+
+	FVector TargetLocation = FVector::ZeroVector;
+	const bool bHasTargetLocation = GetCueTargetLocation(Cue, TargetLocation);
+
+	float SourceToTargetDistance = 0.f;
+	FVector CueDirection = FVector::UpVector;
+	const bool bHasCueDirection = ResolveCueDirection(Cue, CueDirection, SourceToTargetDistance);
+
+	const float RawSpriteSize =
+		PresentationSettings->BaseSpriteSize +
+		FMath::Max(0.f, CueValue) * PresentationSettings->ValueSpriteSizeScale;
+	const float MaxSpriteSize = FMath::Max(1.f, PresentationSettings->MaxSpriteSize);
+	const float SpriteSize = FMath::Clamp(RawSpriteSize, 1.f, MaxSpriteSize);
+
+	const float RawSpriteScale =
+		PresentationSettings->BaseSpriteScale +
+		FMath::Max(0.f, CueValue) * PresentationSettings->ValueSpriteScaleAmount +
+		CueRadius * PresentationSettings->RadiusSpriteScaleAmount;
+	const float MinSpriteScale = FMath::Max(0.01f, PresentationSettings->MinSpriteScale);
+	const float MaxSpriteScale = FMath::Max(MinSpriteScale, PresentationSettings->MaxSpriteScale);
+	const float CueSpriteScale = FMath::Clamp(RawSpriteScale, MinSpriteScale, MaxSpriteScale);
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->CueColorParameterName))
+	{
+		NiagaraComponent->SetVariableLinearColor(PresentationSettings->CueColorParameterName, CueColor);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->ValueParameterName))
+	{
+		NiagaraComponent->SetVariableFloat(PresentationSettings->ValueParameterName, CueValue);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->RadiusParameterName))
+	{
+		NiagaraComponent->SetVariableFloat(PresentationSettings->RadiusParameterName, CueRadius);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->CueLocationParameterName))
+	{
+		NiagaraComponent->SetVariablePosition(PresentationSettings->CueLocationParameterName, CueLocation);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->SourceLocationParameterName))
+	{
+		NiagaraComponent->SetVariablePosition(PresentationSettings->SourceLocationParameterName, SourceLocation);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->TargetLocationParameterName))
+	{
+		NiagaraComponent->SetVariablePosition(PresentationSettings->TargetLocationParameterName, TargetLocation);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->DurationScaleParameterName))
+	{
+		NiagaraComponent->SetVariableFloat(PresentationSettings->DurationScaleParameterName, DurationScale);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->CueTypeIdParameterName))
+	{
+		NiagaraComponent->SetVariableInt(PresentationSettings->CueTypeIdParameterName, CueTypeId);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->HasSourceLocationParameterName))
+	{
+		NiagaraComponent->SetVariableBool(PresentationSettings->HasSourceLocationParameterName, bHasSourceLocation);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->HasTargetLocationParameterName))
+	{
+		NiagaraComponent->SetVariableBool(PresentationSettings->HasTargetLocationParameterName, bHasTargetLocation);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->CueDirectionParameterName))
+	{
+		NiagaraComponent->SetVariableVec3(PresentationSettings->CueDirectionParameterName, CueDirection);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->HasCueDirectionParameterName))
+	{
+		NiagaraComponent->SetVariableBool(PresentationSettings->HasCueDirectionParameterName, bHasCueDirection);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->SourceToTargetDistanceParameterName))
+	{
+		NiagaraComponent->SetVariableFloat(PresentationSettings->SourceToTargetDistanceParameterName, SourceToTargetDistance);
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->SpriteSizeParameterName))
+	{
+		NiagaraComponent->SetVariableVec2(PresentationSettings->SpriteSizeParameterName, FVector2D(SpriteSize, SpriteSize));
+	}
+
+	if (IsUsableNiagaraParameterName(PresentationSettings->SpriteScaleParameterName))
+	{
+		NiagaraComponent->SetVariableFloat(PresentationSettings->SpriteScaleParameterName, CueSpriteScale);
+	}
+}
+
+bool AJargonCombatPresentationManager::ResolveCueDirection(
+	const FJargonCombatCueEvent& Cue,
+	FVector& OutDirection,
+	float& OutSourceToTargetDistance) const
+{
+	OutDirection = FVector::UpVector;
+	OutSourceToTargetDistance = 0.f;
+
+	FVector SourceLocation = FVector::ZeroVector;
+	FVector TargetLocation = FVector::ZeroVector;
+	if (!GetCueSourceLocation(Cue, SourceLocation) || !GetCueTargetLocation(Cue, TargetLocation))
+	{
+		return false;
+	}
+
+	const FVector SourceToTarget = TargetLocation - SourceLocation;
+	OutSourceToTargetDistance = SourceToTarget.Size();
+	if (OutSourceToTargetDistance <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	OutDirection = SourceToTarget / OutSourceToTargetDistance;
+	return true;
+}
+
+float AJargonCombatPresentationManager::ResolveSimpleVFXComponentScale(const FJargonCombatCueEvent& Cue) const
+{
+	if (!PresentationSettings)
+	{
+		return 1.f;
+	}
+
+	float RawScale = PresentationSettings->BaseVFXComponentScale;
+	if (PresentationSettings->bScaleVFXComponentByCueValue)
+	{
+		RawScale += FMath::Max(0.f, GetCueValueAsFloat(Cue)) * PresentationSettings->ValueVFXComponentScaleAmount;
+		RawScale += GetCueRadius(Cue) * PresentationSettings->RadiusVFXComponentScaleAmount;
+	}
+
+	const float MinScale = FMath::Max(0.01f, PresentationSettings->MinVFXComponentScale);
+	const float MaxScale = FMath::Max(MinScale, PresentationSettings->MaxVFXComponentScale);
+	return FMath::Clamp(RawScale, MinScale, MaxScale);
 }
 
 void AJargonCombatPresentationManager::PlayConfiguredSFX(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const
@@ -333,7 +641,38 @@ void AJargonCombatPresentationManager::PlayConfiguredSFX(const FJargonCombatCueE
 	UGameplayStatics::PlaySoundAtLocation(this, Sound, CueLocation);
 }
 
-void AJargonCombatPresentationManager::SpawnFloatingText(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const
+bool AJargonCombatPresentationManager::ShouldSpawnFloatingTextForCue(const FJargonCombatCueEvent& Cue) const
+{
+	if (!PresentationSettings)
+	{
+		return false;
+	}
+
+	if (PresentationSettings->bShowOnlyNumericFloatingText)
+	{
+		switch (Cue.CueType)
+		{
+		case EJargonCombatCueType::Damage:
+		case EJargonCombatCueType::PushCollision:
+		case EJargonCombatCueType::Heal:
+		case EJargonCombatCueType::ShieldGained:
+			return Cue.Value > 0;
+
+		case EJargonCombatCueType::ClassPassiveTriggered:
+		case EJargonCombatCueType::HeroAspectActivated:
+		case EJargonCombatCueType::HeroAspectTriggered:
+		case EJargonCombatCueType::ElementalBonusTriggered:
+			return true;
+
+		default:
+			return !Cue.TextOverride.IsEmpty();
+		}
+	}
+
+	return !GetCueDisplayText(Cue).IsEmpty();
+}
+
+void AJargonCombatPresentationManager::SpawnFloatingText(const FJargonCombatCueEvent& Cue, const FVector& CueLocation)
 {
 	if (!PresentationSettings ||
 		!PresentationSettings->bEnableFloatingText ||
@@ -342,17 +681,27 @@ void AJargonCombatPresentationManager::SpawnFloatingText(const FJargonCombatCueE
 		return;
 	}
 
-	const bool bStatusCue =
-		Cue.CueType == EJargonCombatCueType::ShieldBroken ||
-		Cue.CueType == EJargonCombatCueType::StunApplied ||
-		Cue.CueType == EJargonCombatCueType::StunConsumed ||
-		Cue.CueType == EJargonCombatCueType::UnitSummoned ||
-		Cue.CueType == EJargonCombatCueType::UnitDied;
-	if (Cue.Value <= 0 && Cue.TextOverride.IsEmpty() && !bStatusCue)
+	if (!ShouldSpawnFloatingTextForCue(Cue))
 	{
 		return;
 	}
 
+	const bool bDamageCue =
+		Cue.CueType == EJargonCombatCueType::Damage ||
+		Cue.CueType == EJargonCombatCueType::PushCollision;
+	if (bDamageCue &&
+		PresentationSettings->bAggregateDamageFloatingText &&
+		PresentationSettings->DamageFloatingTextAggregationWindow > 0.f)
+	{
+		QueueAggregatedDamageFloatingText(Cue, CueLocation);
+		return;
+	}
+
+	SpawnFloatingTextImmediate(Cue, CueLocation);
+}
+
+void AJargonCombatPresentationManager::SpawnFloatingTextImmediate(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const
+{
 	const FText DisplayText = GetCueDisplayText(Cue);
 	if (DisplayText.IsEmpty())
 	{
@@ -399,6 +748,62 @@ void AJargonCombatPresentationManager::SpawnFloatingText(const FJargonCombatCueE
 	FloatingTextWidget->AddToViewport(PresentationSettings->FloatingTextZOrder);
 	FloatingTextWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
 	FloatingTextWidget->SetPositionInViewport(ScreenPosition + PresentationSettings->FloatingTextScreenOffset, true);
+}
+
+void AJargonCombatPresentationManager::QueueAggregatedDamageFloatingText(const FJargonCombatCueEvent& Cue, const FVector& CueLocation)
+{
+	if (!PresentationSettings || Cue.Value <= 0 || !Cue.TargetUnit)
+	{
+		SpawnFloatingTextImmediate(Cue, CueLocation);
+		return;
+	}
+
+	FPendingFloatingDamageCue& PendingCue = PendingDamageFloatingTextByTarget.FindOrAdd(Cue.TargetUnit);
+	if (PendingCue.TotalValue <= 0)
+	{
+		PendingCue.Cue = Cue;
+		PendingCue.Cue.CueType = EJargonCombatCueType::Damage;
+		PendingCue.Cue.TextOverride = FText::GetEmpty();
+		PendingCue.CueLocation = CueLocation;
+		PendingCue.TotalValue = 0;
+	}
+
+	PendingCue.TotalValue += FMath::Max(0, Cue.Value);
+	PendingCue.Cue.Value = PendingCue.TotalValue;
+	PendingCue.Cue.TargetUnit = Cue.TargetUnit;
+	PendingCue.Cue.TargetTile = Cue.TargetTile;
+	PendingCue.Cue.WorldLocation = Cue.WorldLocation;
+	PendingCue.Cue.bHasWorldLocation = Cue.bHasWorldLocation;
+	PendingCue.CueLocation = CueLocation;
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DamageFloatingTextAggregationTimerHandle);
+		World->GetTimerManager().SetTimer(
+			DamageFloatingTextAggregationTimerHandle,
+			this,
+			&AJargonCombatPresentationManager::FlushAggregatedDamageFloatingText,
+			PresentationSettings->DamageFloatingTextAggregationWindow,
+			false);
+	}
+}
+
+void AJargonCombatPresentationManager::FlushAggregatedDamageFloatingText()
+{
+	TMap<TWeakObjectPtr<ABattleUnit>, FPendingFloatingDamageCue> PendingCues;
+	Swap(PendingCues, PendingDamageFloatingTextByTarget);
+
+	for (const TPair<TWeakObjectPtr<ABattleUnit>, FPendingFloatingDamageCue>& Pair : PendingCues)
+	{
+		if (Pair.Value.TotalValue <= 0)
+		{
+			continue;
+		}
+
+		FVector CueLocation = Pair.Value.CueLocation;
+		GetBestCueLocation(Pair.Value.Cue, CueLocation);
+		SpawnFloatingTextImmediate(Pair.Value.Cue, CueLocation);
+	}
 }
 
 void AJargonCombatPresentationManager::DrawDebugCue(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const
@@ -474,6 +879,11 @@ void AJargonCombatPresentationManager::DispatchBlueprintCueEvents(const FJargonC
 		BP_OnStunCue(Cue);
 		break;
 
+	case EJargonCombatCueType::FreezeApplied:
+	case EJargonCombatCueType::FreezeConsumed:
+		BP_OnFreezeCue(Cue);
+		break;
+
 	case EJargonCombatCueType::UnitSummoned:
 	case EJargonCombatCueType::UnitDied:
 		BP_OnUnitCue(Cue);
@@ -487,6 +897,19 @@ void AJargonCombatPresentationManager::DispatchBlueprintCueEvents(const FJargonC
 
 	case EJargonCombatCueType::RelicTriggered:
 		BP_OnRelicTriggeredCue(Cue);
+		break;
+
+	case EJargonCombatCueType::ClassPassiveTriggered:
+		BP_OnHeroClassPassiveTriggeredCue(Cue);
+		break;
+
+	case EJargonCombatCueType::HeroAspectTriggered:
+	case EJargonCombatCueType::HeroAspectActivated:
+		BP_OnHeroAspectTriggeredCue(Cue);
+		break;
+
+	case EJargonCombatCueType::ElementalBonusTriggered:
+		BP_OnElementalBonusTriggeredCue(Cue);
 		break;
 
 	default:

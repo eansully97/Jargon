@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/JargonHeroTypes.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "JargonCombatPlayerController.generated.h"
@@ -45,6 +46,9 @@ public:
 	void RequestPlayCardOnTile(AGridTile* Tile);
 	void RequestEndTurn();
 
+	UFUNCTION(Exec)
+	void JargonLogNextCardEffectTrace();
+
 	UFUNCTION(BlueprintCallable, Category = "Combat|Cards")
 	int32 GetDeckCount() const
 	{
@@ -77,6 +81,12 @@ protected:
 
 	UFUNCTION()
 	void HandleCombatEnergyChanged(int32 NewEnergy);
+
+	UFUNCTION()
+	void HandleElementChargesChanged();
+
+	UFUNCTION()
+	void HandleHeroRuntimeStateChanged(const FJargonHeroRuntimeState& NewHeroRuntimeState);
 
 	UFUNCTION()
 	void HandlePlayerActionAvailabilityChanged(bool bCanMove, bool bCanAttack);

@@ -26,8 +26,15 @@ FLinearColor UJargonCombatPresentationSettings::GetColorForCue(EJargonCombatCueT
 	case EJargonCombatCueType::StunConsumed:
 		return StunColor;
 
+	case EJargonCombatCueType::FreezeApplied:
+	case EJargonCombatCueType::FreezeConsumed:
+		return FreezeColor;
+
 	case EJargonCombatCueType::RelicTriggered:
 		return RelicColor;
+
+	case EJargonCombatCueType::ElementalBonusTriggered:
+		return ElementalBonusColor;
 
 	default:
 		return DefaultColor;

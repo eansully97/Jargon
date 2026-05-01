@@ -3,6 +3,7 @@
 #include "Data/CardDefinition.h"
 #include "Jargon.h"
 #include "Data/CardPackDefinition.h"
+#include "Data/JargonHeroDefinition.h"
 #include "Data/JargonRelicDefinition.h"
 #include "Town/JargonTownGameMode.h"
 
@@ -26,6 +27,7 @@ UJargonGameInstance::UJargonGameInstance()
 	RunCurrencies = FJargonCurrencyAmount();
 	bHasPendingPostCombatReport = false;
 	PendingPostCombatReport.Reset();
+	ActiveHeroDefinition = nullptr;
 }
 
 void UJargonGameInstance::StartEncounter(
@@ -130,6 +132,27 @@ void UJargonGameInstance::ResetRunState()
 	ClearedEncounterIds.Reset();
 	CompletedExplorationInteractionIds.Reset();
 	ClearPendingPostCombatReport();
+}
+
+void UJargonGameInstance::SetActiveHeroDefinition(UJargonHeroDefinition* HeroDefinition)
+{
+	if (ActiveHeroDefinition == HeroDefinition)
+	{
+		return;
+	}
+
+	ActiveHeroDefinition = HeroDefinition;
+	OnActiveHeroDefinitionChanged.Broadcast(ActiveHeroDefinition);
+}
+
+UJargonHeroDefinition* UJargonGameInstance::EnsureActiveHeroDefinition(UJargonHeroDefinition* DefaultHeroDefinition)
+{
+	if (!ActiveHeroDefinition && DefaultHeroDefinition)
+	{
+		SetActiveHeroDefinition(DefaultHeroDefinition);
+	}
+
+	return ActiveHeroDefinition;
 }
 
 TArray<UCardDefinition*> UJargonGameInstance::GetRunDeckCards() const

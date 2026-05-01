@@ -80,6 +80,12 @@ void AJargonCombatPlayerController::InitializeCombatUI()
 	CombatGameMode->OnEnergyChanged.RemoveDynamic(this, &AJargonCombatPlayerController::HandleCombatEnergyChanged);
 	CombatGameMode->OnEnergyChanged.AddDynamic(this, &AJargonCombatPlayerController::HandleCombatEnergyChanged);
 
+	CombatGameMode->OnElementChargesChanged.RemoveDynamic(this, &AJargonCombatPlayerController::HandleElementChargesChanged);
+	CombatGameMode->OnElementChargesChanged.AddDynamic(this, &AJargonCombatPlayerController::HandleElementChargesChanged);
+
+	CombatGameMode->OnHeroRuntimeStateChanged.RemoveDynamic(this, &AJargonCombatPlayerController::HandleHeroRuntimeStateChanged);
+	CombatGameMode->OnHeroRuntimeStateChanged.AddDynamic(this, &AJargonCombatPlayerController::HandleHeroRuntimeStateChanged);
+
 	CombatGameMode->OnPlayerActionAvailabilityChanged.RemoveDynamic(this, &AJargonCombatPlayerController::HandlePlayerActionAvailabilityChanged);
 	CombatGameMode->OnPlayerActionAvailabilityChanged.AddDynamic(this, &AJargonCombatPlayerController::HandlePlayerActionAvailabilityChanged);
 
@@ -287,6 +293,16 @@ void AJargonCombatPlayerController::HandleCombatEnergyChanged(int32)
 	RefreshCombatStateHUD();
 }
 
+void AJargonCombatPlayerController::HandleElementChargesChanged()
+{
+	RefreshCombatStateHUD();
+}
+
+void AJargonCombatPlayerController::HandleHeroRuntimeStateChanged(const FJargonHeroRuntimeState&)
+{
+	RefreshCombatStateHUD();
+}
+
 void AJargonCombatPlayerController::HandlePlayerActionAvailabilityChanged(bool /*bCanMove*/, bool /*bCanAttack*/)
 {
 	RefreshCombatStateHUD();
@@ -390,6 +406,19 @@ void AJargonCombatPlayerController::RequestEndTurn()
 	}
 
 	CombatGameMode->RequestEndPlayerTurn();
+}
+
+void AJargonCombatPlayerController::JargonLogNextCardEffectTrace()
+{
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("JargonLogNextCardEffectTrace could not arm tracing because CombatGameMode was null."));
+		return;
+	}
+
+	CombatGameMode->RequestLogNextCardEffectTrace();
+	UE_LOG(LogTemp, Display, TEXT("JargonLogNextCardEffectTrace armed. The next played card that reaches FCardResolver will log its base effect trace."));
 }
 
 void AJargonCombatPlayerController::HandleLeftClick()
@@ -536,6 +565,26 @@ void AJargonCombatPlayerController::RefreshCombatStateHUD()
 	const ECombatPhase CurrentPhase = CombatGameMode->GetCurrentCombatPhase();
 	CombatHUD->SetPhaseText(CurrentPhase);
 	CombatHUD->SetEnergyValues(CombatGameMode->GetCurrentEnergy(), CombatGameMode->GetCurrentMaxEnergy());
+	CombatHUD->SetElementChargeValues(CombatGameMode->GetAllElementCharges());
+
+	FJargonHeroClassInfo HeroClassInfo;
+	CombatGameMode->GetActiveHeroClassInfo(HeroClassInfo);
+
+	FJargonHeroAspectInfo HeroAspectInfo;
+	if (!CombatGameMode->GetActiveHeroAspectInfo(HeroAspectInfo))
+	{
+		const FJargonHeroRuntimeState HeroRuntimeState = CombatGameMode->GetHeroRuntimeState();
+		if (HeroClassInfo.HeroClass != EJargonHeroClass::None &&
+			HeroRuntimeState.DominantElement != EJargonElementType::None)
+		{
+			CombatGameMode->GetHeroAspectInfo(
+				HeroClassInfo.HeroClass,
+				HeroRuntimeState.DominantElement,
+				HeroAspectInfo);
+		}
+	}
+	CombatHUD->RefreshHeroIdentity(HeroClassInfo, HeroAspectInfo);
+
 	CombatHUD->SetActionAvailability(
 		CurrentPhase,
 		CombatGameMode->HasPlayerMoveRemaining(),

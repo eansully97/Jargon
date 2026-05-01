@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Combat/Presentation/JargonCombatCueTypes.h"
+#include "Core/JargonHeroTypes.h"
 #include "Core/JargonRunStateTypes.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/GameModeBase.h"
@@ -23,11 +24,81 @@ class AJargonCombatPlayerController;
 class UJargonRelicDefinition;
 class AJargonCombatPresentationManager;
 class UJargonCombatPresentationSettings;
+class UJargonHeroDefinition;
+class UJargonSummonedUnitDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatPhaseChangedSignature, ECombatPhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatEnergyChangedSignature, int32, NewEnergy);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnElementChargesChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHeroRuntimeStateChangedSignature, const FJargonHeroRuntimeState&, NewHeroRuntimeState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentActingEnemyChangedSignature, ABattleUnit*, NewActingEnemy);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPlayerActionAvailabilityChangedSignature, bool, bCanMove, bool, bCanAttack);
+
+USTRUCT(BlueprintType)
+struct JARGON_API FJargonCombatPacingSummary
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 InitialEnemyCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 PlayerTurnsTaken = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnemyTurnsTaken = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 CardsPlayed = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnergySpentOnCards = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 PlayerDamageDealt = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 PlayerDamageTaken = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnemyDamageDealt = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnemyDamageTaken = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 PlayerHealingReceived = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnemyHealingReceived = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 PlayerShieldGained = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnemyShieldGained = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 PlayerSummonsCreated = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnemySummonsCreated = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 EnemiesKilled = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 FriendlyUnitsLost = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	bool bHeroDied = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 HeroStartingHP = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
+	int32 HeroStartingMaxHP = 0;
+};
 
 UCLASS()
 class JARGON_API AJargonCombatGameMode : public AGameModeBase
@@ -73,6 +144,12 @@ public:
 		const ABattleUnit* SourceUnit,
 		AGridTile* TargetTile,
 		bool bAttackExhaustedOnSpawn);
+	ABattleUnit* SpawnSummonedUnitFromDefinition(
+		UJargonSummonedUnitDefinition* Definition,
+		const ABattleUnit* SourceUnit,
+		AGridTile* TargetTile,
+		bool bAttackExhaustedOverride,
+		bool bUseAttackExhaustedOverride);
 	void NotifyTileEffectsUnitEntered(ABattleUnit* EnteringUnit, AGridTile* EnteredTile);
 	
 	void RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card);
@@ -87,6 +164,7 @@ public:
 	void ReturnToExploration();
 
 	void RequestEndPlayerTurn();
+	void RequestLogNextCardEffectTrace();
 
 	APlayerBattleUnit* GetPlayerUnit() const
 	{
@@ -162,10 +240,97 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void AddCurrentEnergy(int32 Amount);
 
+	UFUNCTION(BlueprintPure, Category = "Combat|Elements")
+	int32 GetElementCharges(EJargonElementType Element) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Elements")
+	void GainElementCharges(EJargonElementType Element, int32 Amount);
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Elements")
+	bool HasElementCharges(EJargonElementType Element, int32 Amount) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Elements")
+	bool TrySpendElementCharges(EJargonElementType Element, int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Elements")
+	void ClearElementCharges();
+
+	const TMap<EJargonElementType, int32>& GetAllElementCharges() const
+	{
+		return ElementCharges;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero")
+	UJargonHeroDefinition* GetActiveHeroDefinition() const
+	{
+		return ActiveHeroDefinition;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero")
+	FJargonHeroRuntimeState GetHeroRuntimeState() const
+	{
+		return HeroRuntimeState;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Class")
+	bool GetActiveHeroClassInfo(FJargonHeroClassInfo& OutClassInfo) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Class")
+	bool GetHeroClassInfo(EJargonHeroClass HeroClass, FJargonHeroClassInfo& OutClassInfo) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Class")
+	TArray<FJargonHeroClassInfo> GetConfiguredHeroClassInfos() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Class")
+	FText GetActiveHeroClassDisplayName() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Class")
+	FText GetActiveHeroClassDescription() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	bool GetActiveHeroAspectInfo(FJargonHeroAspectInfo& OutAspectInfo) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	bool GetHeroAspectInfo(EJargonHeroClass HeroClass, EJargonElementType ElementType, FJargonHeroAspectInfo& OutAspectInfo) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	bool GetHeroAspectInfoForElement(EJargonHeroClass HeroClass, EJargonElementType Element, FJargonHeroAspectInfo& OutAspectInfo) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	TArray<FJargonHeroAspectInfo> GetConfiguredHeroAspectInfos() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	FText GetActiveHeroAspectDisplayName() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	FText GetActiveHeroAspectDescription() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	FText GetActiveHeroAspectPassiveName() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	FText GetActiveHeroDominantElementDisplayName() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
+	int32 GetRuntimeHeroAspectThreshold() const
+	{
+		return FMath::Max(1, RuntimeHeroAspectThreshold);
+	}
+
 	bool DrawCardsForPlayer(int32 Count);
 
 	UFUNCTION(BlueprintCallable, Category = "Combat|Presentation")
 	void EmitCombatCue(const FJargonCombatCueEvent& Cue);
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Pacing")
+	FJargonCombatPacingSummary GetCombatPacingSummary() const
+	{
+		return CombatPacingSummary;
+	}
+
+	void RecordCombatDamageApplied(const ABattleUnit* SourceUnit, const ABattleUnit* TargetUnit, int32 DamageAmount);
+	void RecordCombatHealingApplied(const ABattleUnit* TargetUnit, int32 HealAmount);
+	void RecordCombatShieldGained(const ABattleUnit* TargetUnit, int32 ShieldAmount);
 
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	bool HasPlayerMoveRemaining() const;
@@ -179,6 +344,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat")
 	FOnCombatEnergyChangedSignature OnEnergyChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Combat|Elements")
+	FOnElementChargesChangedSignature OnElementChargesChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Combat|Hero")
+	FOnHeroRuntimeStateChangedSignature OnHeroRuntimeStateChanged;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Hero")
+	void BP_OnHeroRuntimeStateChanged(const FJargonHeroRuntimeState& NewHeroRuntimeState);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Hero")
+	void BP_OnHeroClassPassiveTriggered(EJargonHeroClass HeroClass, EJargonEffectTrigger Trigger, const FText& PassiveName);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Hero")
+	void BP_OnHeroAspectPassiveTriggered(EJargonHeroAspect HeroAspect, EJargonEffectTrigger Trigger, const FText& PassiveName);
+
 	UPROPERTY(BlueprintAssignable, Category = "Combat")
 	FOnPlayerActionAvailabilityChangedSignature OnPlayerActionAvailabilityChanged;
 
@@ -191,6 +371,8 @@ protected:
 	void FindGridBoard();
 	void SpawnCombatants();
 	void SpawnEnemiesFromPendingEncounter();
+	TSubclassOf<APlayerBattleUnit> ResolvePlayerUnitClass() const;
+	void ApplyActiveHeroToPlayerUnit();
 	void SpawnFallbackEnemy();
 	AGridTile* ResolveEnemySpawnTile(const FHexCoord& PreferredCoord) const;
 	ABattleUnit* SpawnEnemyUnitAtTile(TSubclassOf<ABattleUnit> UnitClass, AGridTile* SpawnTile);
@@ -199,6 +381,12 @@ protected:
 	void ResetCombatRewardState();
 	void AccumulateEnemyKillReward(ABattleUnit* DeadEnemy);
 	FJargonCurrencyAmount GetEnemyKillCurrencyReward(const ABattleUnit* DeadEnemy) const;
+	void ResetCombatPacingSummary();
+	void InitializeCombatPacingSummary();
+	void RecordCombatCardPlayed(const UCardDefinition* Card, int32 EnergyCost);
+	void RecordCombatUnitSummoned(const ABattleUnit* SummonedUnit);
+	void RecordCombatUnitDied(const ABattleUnit* DeadUnit);
+	void LogCombatPacingSummary(bool bVictory);
 
 	void StartBattleFlow();
 	void StartPlayerTurn();
@@ -211,6 +399,18 @@ protected:
 	void ExecuteRunRelicOnCombatStartEffects();
 	void ExecuteRunRelicOnPlayerTurnStartEffects();
 	void ExecuteRunRelicOnEnemyDeathEffects(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
+	void ExecuteHeroClassCombatStartPassive();
+	void ExecuteHeroClassPlayerTurnStartPassive();
+	void ResolveHeroClassPassiveEffects(EJargonEffectTrigger Trigger, const FText& PassiveName, const TArray<FJargonEffectSpec>& Effects);
+	void ExecuteHeroAspectPlayerTurnStartPassive();
+	void ExecuteHeroAspectEnemyDeathPassive(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
+	void ResolveHeroAspectPassiveEffects(
+		EJargonEffectTrigger Trigger,
+		const FText& PassiveName,
+		const TArray<FJargonEffectSpec>& Effects,
+		ABattleUnit* PrimaryUnitTarget,
+		AGridTile* PrimaryTileTarget,
+		ABattleUnit* TriggeringUnit);
 	void ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit);
 	void ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit);
 	void NotifyPlayerTurnStartTileEffects();
@@ -227,6 +427,13 @@ protected:
 	bool IsFriendlyUnitSelectable(const ABattleUnit* Unit) const;
 	ABattleUnit* FindFallbackSelectedFriendlyUnit() const;
 	ABattleUnit* FindPreferredEnemyTarget(ABattleUnit* EnemyUnit) const;
+	ABattleUnit* SpawnSummonedUnitActor(TSubclassOf<ABattleUnit> UnitClass, AGridTile* TargetTile);
+	ABattleUnit* FinalizeSpawnedSummonedUnit(
+		ABattleUnit* SpawnedUnit,
+		const ABattleUnit* SourceUnit,
+		AGridTile* TargetTile,
+		bool bAttackExhaustedOnSpawn,
+		bool bRegisterEnemyTeam);
 	bool TryPlayCardWithResolvedTile(UCardDefinition* Card, AGridTile* TileTarget, ABattleUnit* ExplicitUnitTarget, bool bSkipRangeValidation);
 	AGridTile* FindBestEnemyMoveDestination(ABattleUnit* EnemyUnit, ABattleUnit* TargetUnit) const;
 	int32 GetPreferredEnemyDistance(const ABattleUnit* EnemyUnit) const;
@@ -235,6 +442,10 @@ protected:
 
 	void SetCombatPhase(ECombatPhase NewPhase);
 	void SetCurrentEnergy(int32 NewEnergy);
+	void RefreshHeroRuntimeStateFromElements();
+	EJargonElementType ResolveDominantElementFromCharges(EJargonElementType PreviousDominantElement) const;
+	EJargonHeroAspect ResolveHeroAspect(EJargonHeroClass HeroClass, EJargonElementType DominantElement, int32 DominantElementCharges) const;
+	bool IsHeroRuntimeStateDifferent(const FJargonHeroRuntimeState& First, const FJargonHeroRuntimeState& Second) const;
 	void SetCurrentActingEnemy(ABattleUnit* NewActingEnemy);
 	void BroadcastPlayerActionAvailabilityChanged();
 	bool StartPresentedBasicAttack(
@@ -263,6 +474,12 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<APlayerBattleUnit> PlayerUnit = nullptr;
 
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Hero")
+	TObjectPtr<UJargonHeroDefinition> ActiveHeroDefinition = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Hero")
+	FJargonHeroRuntimeState HeroRuntimeState;
+
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TArray<TObjectPtr<ABattleUnit>> FriendlyUnits;
 
@@ -274,6 +491,14 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Rewards")
 	FJargonCurrencyAmount AccumulatedEnemyKillCurrency;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Pacing", meta = (AllowPrivateAccess = "true"))
+	FJargonCombatPacingSummary CombatPacingSummary;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Pacing")
+	bool bLogCombatPacingSummary = true;
+
+	bool bHasLoggedCombatPacingSummary = false;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<ABattleUnit> CurrentActingEnemy = nullptr;
@@ -302,6 +527,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Enemy", meta = (DisplayName = "Fallback Enemy Unit Class"))
 	TSubclassOf<AEnemyBattleUnit> EnemyUnitClass;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Summons", meta = (ToolTip = "Generic unit class used by data-driven summon definitions when the definition does not provide an OptionalUnitClassOverride. Existing UnitClass summon cards do not use this."))
+	TSubclassOf<ABattleUnit> DefaultSummonedUnitClass;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|UI")
 	TSubclassOf<UCombatHUDWidget> CombatHUDClass;
 
@@ -325,6 +553,15 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Combat|Turn")
 	int32 CurrentMaxEnergy = 0;
+
+	UPROPERTY(VisibleAnywhere, Category = "Combat|Elements")
+	TMap<EJargonElementType, int32> ElementCharges;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Elements", meta = (ClampMin = "1"))
+	int32 MaxElementChargesPerType = 9;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Hero", meta = (ClampMin = "1", ToolTip = "Element charge threshold required for the hero to enter a temporary class/element aspect such as Mage + Quietus = Necromancer."))
+	int32 RuntimeHeroAspectThreshold = 5;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0", DisplayName = "Starting Max Energy"))
 	int32 EnergyPerTurn = 1;
@@ -363,4 +600,7 @@ protected:
 	FTimerHandle EnemyTurnTimerHandle;
 	FTimerHandle BasicAttackDamageTimerHandle;
 	FTimerHandle BasicAttackCompletionTimerHandle;
+
+private:
+	bool bLogNextCardEffectTrace = false;
 };

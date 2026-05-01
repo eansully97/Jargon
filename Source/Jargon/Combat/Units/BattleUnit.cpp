@@ -10,6 +10,8 @@
 #include "Components/WidgetComponent.h"
 #include "Combat/Widgets/BattleUnitStatusWidget.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonSummonedUnitDefinition.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -381,6 +383,39 @@ bool ABattleUnit::MoveAlongPath(const TArray<AGridTile*>& Path)
 
 void ABattleUnit::ApplyDamage(int32 Amount)
 {
+	ApplyDamageInternal(Amount, nullptr);
+}
+
+void ABattleUnit::ApplyDamageFromSource(int32 Amount, ABattleUnit* DamageSourceUnit)
+{
+	FJargonCombatCueEvent DamageCueSource;
+	if (DamageSourceUnit)
+	{
+		DamageCueSource.SourceObject = DamageSourceUnit;
+		DamageCueSource.SourceUnit = DamageSourceUnit;
+		DamageCueSource.SourceTile = DamageSourceUnit->GetCurrentTile();
+	}
+
+	ApplyDamageInternal(Amount, DamageSourceUnit ? &DamageCueSource : nullptr);
+}
+
+void ABattleUnit::ApplyDamageFromEffectContext(int32 Amount, const FJargonEffectContext& EffectContext)
+{
+	FJargonCombatCueEvent DamageCueSource;
+	DamageCueSource.Operation = EJargonEffectOperation::DealDamage;
+	DamageCueSource.Trigger = EffectContext.Trigger;
+	DamageCueSource.SourceObject = EffectContext.SourceObject;
+	DamageCueSource.SourceUnit = EffectContext.SourceUnit;
+	DamageCueSource.SourceTile = EffectContext.SourceTile;
+	DamageCueSource.OwningTileEffect = EffectContext.OwningTileEffect;
+	DamageCueSource.SourceCard = EffectContext.SourceCard;
+	DamageCueSource.SourceRelic = Cast<UJargonRelicDefinition>(EffectContext.SourceObject.Get());
+
+	ApplyDamageInternal(Amount, &DamageCueSource);
+}
+
+void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource)
+{
 	if (bIsDead || Amount <= 0)
 	{
 		return;
@@ -415,7 +450,16 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 	
 	CurrentHP = FMath::Max(0, CurrentHP - RemainingDamage);
 	RefreshStatusWidget();
-	EmitUnitCue(EJargonCombatCueType::Damage, RemainingDamage, CurrentTile);
+
+	if (AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr)
+	{
+		CombatGameMode->RecordCombatDamageApplied(
+			DamageCueSource ? DamageCueSource->SourceUnit.Get() : nullptr,
+			this,
+			RemainingDamage);
+	}
+
+	EmitDamageCue(RemainingDamage, CurrentTile, DamageCueSource);
 
 	if (bShieldChanged)
 	{
@@ -473,6 +517,11 @@ void ABattleUnit::ApplyHeal(int32 Amount)
 	RefreshStatusWidget();
 	if (ActualHeal > 0)
 	{
+		if (AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr)
+		{
+			CombatGameMode->RecordCombatHealingApplied(this, ActualHeal);
+		}
+
 		EmitUnitCue(EJargonCombatCueType::Heal, ActualHeal, CurrentTile);
 	}
 }
@@ -497,6 +546,50 @@ void ABattleUnit::IncreaseMaxHealth(int32 Amount)
 
 	MaxHP += Amount;
 	RefreshStatusWidget();
+}
+
+void ABattleUnit::SetBaseCombatStats(
+	int32 NewMaxHP,
+	int32 NewMoveRange,
+	int32 NewAttackRange,
+	int32 NewAttackDamage,
+	bool bRestoreToFullHealth)
+{
+	MaxHP = FMath::Max(1, NewMaxHP);
+	MoveRange = FMath::Max(0, NewMoveRange);
+	AttackRange = FMath::Max(1, NewAttackRange);
+	AttackDamage = FMath::Max(0, NewAttackDamage);
+
+	if (bRestoreToFullHealth)
+	{
+		CurrentHP = MaxHP;
+	}
+	else
+	{
+		CurrentHP = FMath::Clamp(CurrentHP, 0, MaxHP);
+	}
+
+	RefreshStatusWidget();
+}
+
+void ABattleUnit::ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Definition)
+{
+	if (!Definition)
+	{
+		return;
+	}
+
+	Team = Definition->Team;
+	SetBaseCombatStats(
+		Definition->MaxHP,
+		Definition->MoveRange,
+		Definition->AttackRange,
+		Definition->AttackDamage,
+		true);
+
+	OnSummonedEffects.Append(Definition->OnSummonedEffects);
+	OnTurnStartEffects.Append(Definition->OnTurnStartEffects);
+	OnDeathEffects.Append(Definition->OnDeathEffects);
 }
 
 bool ABattleUnit::CanAttackTarget(const ABattleUnit* Target) const
@@ -555,7 +648,7 @@ bool ABattleUnit::PerformBasicAttack(ABattleUnit* Target)
 		return false;
 	}
 
-	Target->ApplyDamage(AttackDamage);
+	Target->ApplyDamageFromSource(AttackDamage, this);
 	return true;
 }
 
@@ -774,6 +867,40 @@ void ABattleUnit::FinalizeDeathAndDestroy()
 	Destroy();
 }
 
+void ABattleUnit::EmitDamageCue(int32 Value, AGridTile* CueTile, const FJargonCombatCueEvent* DamageCueSource)
+{
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
+	{
+		return;
+	}
+
+	FJargonCombatCueEvent Cue;
+	Cue.CueType = EJargonCombatCueType::Damage;
+	Cue.Operation = DamageCueSource ? DamageCueSource->Operation : EJargonEffectOperation::None;
+	Cue.Trigger = DamageCueSource ? DamageCueSource->Trigger : EJargonEffectTrigger::OnPlayed;
+	Cue.SourceObject = DamageCueSource ? DamageCueSource->SourceObject : nullptr;
+	Cue.SourceUnit = DamageCueSource ? DamageCueSource->SourceUnit : nullptr;
+	Cue.SourceTile = DamageCueSource ? DamageCueSource->SourceTile : nullptr;
+	Cue.OwningTileEffect = DamageCueSource ? DamageCueSource->OwningTileEffect : nullptr;
+	Cue.SourceCard = DamageCueSource ? DamageCueSource->SourceCard : nullptr;
+	Cue.SourceRelic = DamageCueSource ? DamageCueSource->SourceRelic : nullptr;
+	Cue.TargetUnit = this;
+	Cue.TargetTile = CueTile ? CueTile : CurrentTile.Get();
+	Cue.Value = Value;
+	Cue.WorldLocation = GetActorLocation();
+	Cue.bHasWorldLocation = true;
+
+	if (!Cue.SourceObject && !Cue.SourceUnit && !Cue.SourceTile)
+	{
+		Cue.SourceObject = this;
+		Cue.SourceUnit = this;
+		Cue.SourceTile = CurrentTile;
+	}
+
+	CombatGameMode->EmitCombatCue(Cue);
+}
+
 void ABattleUnit::HandleDeathTimerElapsed()
 {
 	FinalizeDeathAndDestroy();
@@ -789,6 +916,12 @@ void ABattleUnit::AddTemporaryShield(int32 Amount)
 	TemporaryShield += Amount;
 	RefreshStatusWidget();
 	BP_OnShieldChanged(TemporaryShield);
+
+	if (AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr)
+	{
+		CombatGameMode->RecordCombatShieldGained(this, Amount);
+	}
+
 	EmitUnitCue(EJargonCombatCueType::ShieldGained, Amount, CurrentTile);
 }
 
@@ -830,6 +963,39 @@ bool ABattleUnit::ConsumeStunTurn()
 	RefreshStatusWidget();
 	BP_OnStunChanged(StunTurnsRemaining);
 	EmitUnitCue(EJargonCombatCueType::StunConsumed, 1, CurrentTile);
+
+	return true;
+}
+
+void ABattleUnit::ApplyFreeze(int32 Turns)
+{
+	const int32 SafeTurns = FMath::Max(0, Turns);
+	if (SafeTurns <= 0)
+	{
+		return;
+	}
+
+	// Freeze is stasis-flavored: repeated applications refresh duration
+	// without stacking into long lockouts.
+	FreezeTurnsRemaining = FMath::Max(FreezeTurnsRemaining, SafeTurns);
+
+	RefreshStatusWidget();
+	BP_OnFreezeChanged(FreezeTurnsRemaining);
+	EmitUnitCue(EJargonCombatCueType::FreezeApplied, SafeTurns, CurrentTile);
+}
+
+bool ABattleUnit::ConsumeFreezeTurn()
+{
+	if (FreezeTurnsRemaining <= 0)
+	{
+		return false;
+	}
+
+	FreezeTurnsRemaining = FMath::Max(0, FreezeTurnsRemaining - 1);
+
+	RefreshStatusWidget();
+	BP_OnFreezeChanged(FreezeTurnsRemaining);
+	EmitUnitCue(EJargonCombatCueType::FreezeConsumed, 1, CurrentTile);
 
 	return true;
 }

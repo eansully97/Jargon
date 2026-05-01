@@ -1,35 +1,14 @@
 #include "Exploration/JargonExplorationGameMode.h"
 
 #include "Core/JargonGameInstance.h"
+#include "Data/JargonHeroDefinition.h"
 #include "Exploration/JargonExplorationPlayerController.h"
-#include "GameFramework/Pawn.h"
-#include "UObject/ConstructorHelpers.h"
-
-namespace
-{
-UClass* ResolvePreferredWorldPawnClass()
-{
-	// Intentional prototype bridge: Jargon-owned modes/controllers drive flow,
-	// while the working template pawn keeps movement/camera/animation stable.
-	static ConstructorHelpers::FClassFinder<APawn> ThirdPersonPawnBPClass(TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"));
-	if (ThirdPersonPawnBPClass.Class)
-	{
-		return ThirdPersonPawnBPClass.Class;
-	}
-
-	static ConstructorHelpers::FClassFinder<APawn> TopDownPawnBPClass(TEXT("/Game/TopDown/Blueprints/BP_TopDownCharacter"));
-	return TopDownPawnBPClass.Class;
-}
-}
+#include "JargonCharacter.h"
 
 AJargonExplorationGameMode::AJargonExplorationGameMode()
 {
 	PlayerControllerClass = AJargonExplorationPlayerController::StaticClass();
-
-	if (UClass* PreferredWorldPawnClass = ResolvePreferredWorldPawnClass())
-	{
-		DefaultPawnClass = PreferredWorldPawnClass;
-	}
+	DefaultPawnClass = AJargonCharacter::StaticClass();
 }
 
 void AJargonExplorationGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
@@ -42,6 +21,14 @@ void AJargonExplorationGameMode::HandleStartingNewPlayer_Implementation(APlayerC
 	}
 
 	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
+	UJargonHeroDefinition* HeroDefinition = GameInstance ? GameInstance->GetActiveHeroDefinition() : nullptr;
+
+	AJargonCharacter* JargonCharacter = Cast<AJargonCharacter>(NewPlayer->GetPawn());
+	if (JargonCharacter && HeroDefinition)
+	{
+		JargonCharacter->InitializeFromHeroDefinition(HeroDefinition);
+	}
+
 	if (!GameInstance || !GameInstance->IsReturningFromCombat())
 	{
 		return;

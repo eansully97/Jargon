@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "World/Interactions/JargonInteractionTypes.h"
 #include "JargonInteractableActor.generated.h"
 
 class AJargonExplorationPlayerController;
@@ -38,6 +39,10 @@ public:
 	{
 		return bPlayerInRange;
 	}
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Interaction")
+	FJargonInteractionPromptData BuildInteractionPromptData(AJargonExplorationPlayerController* InteractingController);
+	virtual FJargonInteractionPromptData BuildInteractionPromptData_Implementation(AJargonExplorationPlayerController* InteractingController);
 
 	void NotifyInteractionPromptShown(AJargonExplorationPlayerController* InteractingController);
 	void NotifyInteractionPromptHidden(AJargonExplorationPlayerController* InteractingController);

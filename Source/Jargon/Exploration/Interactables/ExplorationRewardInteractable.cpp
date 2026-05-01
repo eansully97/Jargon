@@ -90,7 +90,7 @@ void AExplorationRewardInteractable::MarkCompletedAndDisable(AJargonExplorationP
 
 	if (InteractingController)
 	{
-		NotifyInteractionPromptHidden(InteractingController);
+		InteractingController->NotifyInteractableExitedRange(this);
 	}
 
 	ApplyCompletedState();

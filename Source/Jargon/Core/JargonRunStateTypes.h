@@ -22,7 +22,7 @@ public:
 
 	int32 GetTotalCopperValue() const
 	{
-		return (FMath::Max(0, Gold) * 100) + (FMath::Max(0, Silver) * 10) + FMath::Max(0, Copper);
+		return (FMath::Max(0, Gold) * 1000) + (FMath::Max(0, Silver) * 100) + FMath::Max(0, Copper);
 	}
 
 	bool CanAfford(const FJargonCurrencyAmount& Cost) const
@@ -45,11 +45,11 @@ public:
 		FJargonCurrencyAmount Result;
 		TotalCopper = FMath::Max(0, TotalCopper);
 
-		Result.Gold = TotalCopper / 100;
-		TotalCopper %= 100;
+		Result.Gold = TotalCopper / 1000;
+		TotalCopper %= 1000;
 
-		Result.Silver = TotalCopper / 10;
-		Result.Copper = TotalCopper % 10;
+		Result.Silver = TotalCopper / 100;
+		Result.Copper = TotalCopper % 100;
 		return Result;
 	}
 };

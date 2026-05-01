@@ -6,6 +6,8 @@
 #include "JargonCombatPresentationManager.generated.h"
 
 class AJargonCombatGameMode;
+class ABattleUnit;
+class UNiagaraComponent;
 class UJargonCombatPresentationSettings;
 
 UCLASS(Blueprintable)
@@ -15,6 +17,8 @@ class JARGON_API AJargonCombatPresentationManager : public AActor
 
 public:
 	AJargonCombatPresentationManager();
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void InitializePresentation(UJargonCombatPresentationSettings* InSettings, AJargonCombatGameMode* InCombatGameMode);
 
@@ -48,6 +52,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
 	bool IsRelicCue(const FJargonCombatCueEvent& Cue) const;
 
+	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
+	int32 GetCueTypeId(const FJargonCombatCueEvent& Cue) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
+	float GetCueDurationScale(const FJargonCombatCueEvent& Cue) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
+	float GetCueRadius(const FJargonCombatCueEvent& Cue) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
+	float GetCueValueAsFloat(const FJargonCombatCueEvent& Cue) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
+	bool HasValidSourceLocation(const FJargonCombatCueEvent& Cue) const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
+	bool HasValidTargetLocation(const FJargonCombatCueEvent& Cue) const;
+
 	UFUNCTION(BlueprintPure, Category = "Combat Presentation")
 	UJargonCombatPresentationSettings* GetPresentationSettings() const
 	{
@@ -56,8 +78,15 @@ public:
 
 protected:
 	void PlayConfiguredVFX(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const;
+	void ApplyCueParametersToNiagaraComponent(UNiagaraComponent* NiagaraComponent, const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const;
+	bool ResolveCueDirection(const FJargonCombatCueEvent& Cue, FVector& OutDirection, float& OutSourceToTargetDistance) const;
+	float ResolveSimpleVFXComponentScale(const FJargonCombatCueEvent& Cue) const;
 	void PlayConfiguredSFX(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const;
-	void SpawnFloatingText(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const;
+	void SpawnFloatingText(const FJargonCombatCueEvent& Cue, const FVector& CueLocation);
+	void SpawnFloatingTextImmediate(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const;
+	void QueueAggregatedDamageFloatingText(const FJargonCombatCueEvent& Cue, const FVector& CueLocation);
+	void FlushAggregatedDamageFloatingText();
+	bool ShouldSpawnFloatingTextForCue(const FJargonCombatCueEvent& Cue) const;
 	void DrawDebugCue(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const;
 	void DispatchBlueprintCueEvents(const FJargonCombatCueEvent& Cue);
 
@@ -77,6 +106,9 @@ protected:
 	void BP_OnStunCue(const FJargonCombatCueEvent& Cue);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
+	void BP_OnFreezeCue(const FJargonCombatCueEvent& Cue);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
 	void BP_OnUnitCue(const FJargonCombatCueEvent& Cue);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
@@ -85,10 +117,29 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
 	void BP_OnRelicTriggeredCue(const FJargonCombatCueEvent& Cue);
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
+	void BP_OnHeroClassPassiveTriggeredCue(const FJargonCombatCueEvent& Cue);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
+	void BP_OnHeroAspectTriggeredCue(const FJargonCombatCueEvent& Cue);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
+	void BP_OnElementalBonusTriggeredCue(const FJargonCombatCueEvent& Cue);
+
 protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat Presentation")
 	TObjectPtr<UJargonCombatPresentationSettings> PresentationSettings = nullptr;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat Presentation")
 	TObjectPtr<AJargonCombatGameMode> CombatGameMode = nullptr;
+
+	struct FPendingFloatingDamageCue
+	{
+		FJargonCombatCueEvent Cue;
+		FVector CueLocation = FVector::ZeroVector;
+		int32 TotalValue = 0;
+	};
+
+	TMap<TWeakObjectPtr<ABattleUnit>, FPendingFloatingDamageCue> PendingDamageFloatingTextByTarget;
+	FTimerHandle DamageFloatingTextAggregationTimerHandle;
 };

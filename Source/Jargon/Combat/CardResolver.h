@@ -9,6 +9,7 @@
 class AJargonCombatGameMode;
 class ABattleUnit;
 class AGridTile;
+struct FJargonEffectTrace;
 
 USTRUCT(BlueprintType)
 struct JARGON_API FCardResolveContext
@@ -58,11 +59,25 @@ public:
 		FCardResolveResult& OutResult
 	);
 
+	static bool ResolveCard(
+		const UCardDefinition* Card,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult,
+		FJargonEffectTrace* OutTrace
+	);
+
 private:
 	static bool ResolveEffectSpecCard(
 		const UCardDefinition* Card,
 		const FCardResolveContext& Context,
 		FCardResolveResult& OutResult
+	);
+
+	static bool ResolveEffectSpecCard(
+		const UCardDefinition* Card,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult,
+		FJargonEffectTrace* OutTrace
 	);
 
 	/**
@@ -98,6 +113,13 @@ private:
 	);
 
 	static bool ResolveApplyStunEffect(
+		const UCardDefinition* Card,
+		const FCardEffectSpec& EffectSpec,
+		const FCardResolveContext& Context,
+		FCardResolveResult& OutResult
+	);
+
+	static bool ResolveApplyFreezeEffect(
 		const UCardDefinition* Card,
 		const FCardEffectSpec& EffectSpec,
 		const FCardResolveContext& Context,

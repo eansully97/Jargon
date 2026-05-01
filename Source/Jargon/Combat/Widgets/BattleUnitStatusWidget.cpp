@@ -29,6 +29,14 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 		AttackText->SetText(FText::GetEmpty());
 		AttackText->SetColorAndOpacity(AttackReadyColor);
 		ShieldText->SetText(FText::GetEmpty());
+		if (StunText)
+		{
+			StunText->SetText(FText::GetEmpty());
+		}
+		if (FreezeText)
+		{
+			FreezeText->SetText(FText::GetEmpty());
+		}
 		return;
 	}
 
@@ -57,5 +65,21 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 	else
 	{
 		ShieldText->SetText(FText::GetEmpty());
+	}
+
+	if (StunText)
+	{
+		const int32 StunTurns = ObservedUnit->GetStunTurnsRemaining();
+		StunText->SetText(StunTurns > 0
+			? FText::FromString(TEXT("Stunned"))
+			: FText::GetEmpty());
+	}
+
+	if (FreezeText)
+	{
+		const int32 FreezeTurns = ObservedUnit->GetFreezeTurnsRemaining();
+		FreezeText->SetText(FreezeTurns > 0
+			? FText::FromString(TEXT("Frozen"))
+			: FText::GetEmpty());
 	}
 }

@@ -2,15 +2,14 @@
 
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
+#include "Data/JargonHeroDefinition.h"
+#include "JargonCharacter.h"
 #include "Town/JargonTownPlayerController.h"
 
 AJargonTownGameMode::AJargonTownGameMode()
 {
 	PlayerControllerClass = AJargonTownPlayerController::StaticClass();
-
-	// DefaultPawnClass is intentionally left for BP_TownGameMode to configure.
-	// This avoids hard references to template pawn assets while we transition
-	// toward a Jargon-owned exploration/town character.
+	DefaultPawnClass = AJargonCharacter::StaticClass();
 }
 
 void AJargonTownGameMode::BeginPlay()
@@ -24,6 +23,7 @@ void AJargonTownGameMode::BeginPlay()
 	}
 
 	JargonGI->SetTownMapName(TownMapName);
+	JargonGI->EnsureActiveHeroDefinition(DefaultHeroDefinition);
 
 	if (!JargonGI->HasActiveRun())
 	{
@@ -45,4 +45,25 @@ void AJargonTownGameMode::BeginPlay()
 	}
 
 	JargonGI->CompletePostCombatReturn();
+}
+
+void AJargonTownGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+
+	if (!NewPlayer)
+	{
+		return;
+	}
+
+	UJargonGameInstance* JargonGI = GetGameInstance<UJargonGameInstance>();
+	UJargonHeroDefinition* HeroDefinition = JargonGI
+		? JargonGI->EnsureActiveHeroDefinition(DefaultHeroDefinition)
+		: DefaultHeroDefinition.Get();
+
+	AJargonCharacter* JargonCharacter = Cast<AJargonCharacter>(NewPlayer->GetPawn());
+	if (JargonCharacter && HeroDefinition)
+	{
+		JargonCharacter->InitializeFromHeroDefinition(HeroDefinition);
+	}
 }

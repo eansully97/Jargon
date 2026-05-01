@@ -6,6 +6,7 @@
 #include "JargonTownGameMode.generated.h"
 
 class UCardPackDefinition;
+class UJargonHeroDefinition;
 
 UCLASS()
 class JARGON_API AJargonTownGameMode : public AGameModeBase
@@ -32,6 +33,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Run Setup")
 	int32 StartingCopper = 0;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Run Setup")
+	TObjectPtr<UJargonHeroDefinition> DefaultHeroDefinition = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Town")
 	FName TownMapName = TEXT("L_TownMap");
 
@@ -40,4 +44,5 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 };

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Combat/Effects/JargonEffectTypes.h"
+#include "Core/JargonHeroTypes.h"
 #include "JargonCombatCueTypes.generated.h"
 
 class ABattleTileEffect;
@@ -32,7 +33,13 @@ enum class EJargonCombatCueType : uint8
 	TileEffectExpired UMETA(DisplayName = "Tile Effect Expired"),
 	RelicTriggered UMETA(DisplayName = "Relic Triggered"),
 	TurnStart UMETA(DisplayName = "Turn Start"),
-	EnemyTurnStart UMETA(DisplayName = "Enemy Turn Start")
+	EnemyTurnStart UMETA(DisplayName = "Enemy Turn Start"),
+	ClassPassiveTriggered UMETA(DisplayName = "Class Passive Triggered"),
+	HeroAspectTriggered UMETA(DisplayName = "Hero Aspect Triggered"),
+	FreezeApplied UMETA(DisplayName = "Freeze Applied"),
+	FreezeConsumed UMETA(DisplayName = "Freeze Consumed"),
+	ElementalBonusTriggered UMETA(DisplayName = "Elemental Bonus Triggered"),
+	HeroAspectActivated UMETA(DisplayName = "Hero Aspect Activated")
 };
 
 USTRUCT(BlueprintType)
@@ -72,6 +79,24 @@ struct JARGON_API FJargonCombatCueEvent
 
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	TObjectPtr<UJargonRelicDefinition> SourceRelic = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
+	EJargonHeroClass HeroClass = EJargonHeroClass::None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
+	EJargonHeroAspect HeroAspect = EJargonHeroAspect::None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue|Element")
+	EJargonElementType ElementType = EJargonElementType::None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue|Element")
+	int32 ElementChargeCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue|Element")
+	bool bSpentElementCharges = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue|Element")
+	int32 ElementalBonusIndex = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	int32 Value = 0;

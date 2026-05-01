@@ -8,11 +8,12 @@
 
 class UCameraComponent;
 class USpringArmComponent;
+class UJargonHeroDefinition;
 
 /**
  *  A controllable top-down perspective character
  */
-UCLASS(abstract)
+UCLASS(Blueprintable)
 class AJargonCharacter : public ACharacter
 {
 	GENERATED_BODY()
@@ -43,6 +44,22 @@ public:
 
 	/** Returns the Camera Boom component **/
 	USpringArmComponent* GetCameraBoom() const { return CameraBoom.Get(); }
+
+	UFUNCTION(BlueprintCallable, Category = "Hero")
+	virtual void InitializeFromHeroDefinition(UJargonHeroDefinition* HeroDefinition);
+
+	UFUNCTION(BlueprintPure, Category = "Hero")
+	UJargonHeroDefinition* GetAppliedHeroDefinition() const
+	{
+		return AppliedHeroDefinition;
+	}
+
+protected:
+	UFUNCTION(BlueprintImplementableEvent, Category = "Hero")
+	void BP_OnHeroDefinitionApplied(UJargonHeroDefinition* HeroDefinition);
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Hero")
+	TObjectPtr<UJargonHeroDefinition> AppliedHeroDefinition = nullptr;
 
 };
 

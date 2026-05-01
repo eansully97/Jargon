@@ -75,13 +75,22 @@ FText UJargonFloatingCombatTextWidget::BuildDefaultTextForCue(const FJargonComba
 		return FText::FromString(TEXT("Shield Break"));
 
 	case EJargonCombatCueType::StunApplied:
-		return FText::FromString(TEXT("Stun"));
-
-	case EJargonCombatCueType::StunConsumed:
 		return FText::FromString(TEXT("Stunned"));
 
-	case EJargonCombatCueType::RelicTriggered:
-		return FText::FromString(TEXT("Relic"));
+	case EJargonCombatCueType::FreezeApplied:
+		return FText::FromString(TEXT("Frozen"));
+
+	case EJargonCombatCueType::ClassPassiveTriggered:
+		return FText::FromString(TEXT("Class Passive"));
+
+	case EJargonCombatCueType::HeroAspectTriggered:
+		return FText::FromString(TEXT("Hero Aspect"));
+
+	case EJargonCombatCueType::HeroAspectActivated:
+		return FText::FromString(TEXT("Hero Aspect Awakened"));
+
+	case EJargonCombatCueType::ElementalBonusTriggered:
+		return FText::FromString(TEXT("Elemental Bonus"));
 
 	default:
 		return FText::GetEmpty();

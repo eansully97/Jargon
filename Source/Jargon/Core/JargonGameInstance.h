@@ -10,6 +10,9 @@
 class UCardDefinition;
 class UCardPackDefinition;
 class UJargonRelicDefinition;
+class UJargonHeroDefinition;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActiveHeroDefinitionChangedSignature, UJargonHeroDefinition*, NewHeroDefinition);
 
 UCLASS()
 class JARGON_API UJargonGameInstance : public UGameInstance
@@ -37,6 +40,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run")
 	void ResetRunState();
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Hero")
+	void SetActiveHeroDefinition(UJargonHeroDefinition* HeroDefinition);
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Hero")
+	UJargonHeroDefinition* EnsureActiveHeroDefinition(UJargonHeroDefinition* DefaultHeroDefinition);
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Hero")
+	UJargonHeroDefinition* GetActiveHeroDefinition() const
+	{
+		return ActiveHeroDefinition;
+	}
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run")
 	bool HasActiveRun() const
@@ -149,6 +164,9 @@ public:
 		return PendingPostCombatReport;
 	}
 
+	UPROPERTY(BlueprintAssignable, Category = "Jargon|Hero")
+	FOnActiveHeroDefinitionChangedSignature OnActiveHeroDefinitionChanged;
+
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Post Combat")
 	void ClearPendingPostCombatReport();
 
@@ -255,6 +273,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Relics")
 	TArray<TObjectPtr<UJargonRelicDefinition>> RunRelics;
+
+	UPROPERTY(VisibleAnywhere, Category = "Jargon|Hero")
+	TObjectPtr<UJargonHeroDefinition> ActiveHeroDefinition = nullptr;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Post Combat")
 	bool bHasPendingPostCombatReport = false;

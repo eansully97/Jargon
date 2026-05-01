@@ -17,6 +17,7 @@ class UBattleUnitStatusWidget;
 class UAnimationAsset;
 class UMaterialInstanceDynamic;
 class ABattleUnit;
+class UJargonSummonedUnitDefinition;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBattleUnitMovementCompletedSignature, ABattleUnit*);
 
@@ -141,6 +142,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void ApplyDamage(int32 Amount);
 
+	void ApplyDamageFromSource(int32 Amount, ABattleUnit* DamageSourceUnit);
+	void ApplyDamageFromEffectContext(int32 Amount, const FJargonEffectContext& EffectContext);
+
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void ApplyHeal(int32 Amount);
 
@@ -149,6 +153,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void IncreaseMaxHealth(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
+	void SetBaseCombatStats(int32 NewMaxHP, int32 NewMoveRange, int32 NewAttackRange, int32 NewAttackDamage, bool bRestoreToFullHealth = true);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Summon")
+	void ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Definition);
 
 	UFUNCTION(BlueprintPure, Category = "Battle Unit")
 	bool CanAttackTarget(const ABattleUnit* Target) const;
@@ -190,6 +200,24 @@ public:
 	int32 GetStunTurnsRemaining() const
 	{
 		return StunTurnsRemaining;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	void ApplyFreeze(int32 Turns);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	bool ConsumeFreezeTurn();
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	bool IsFrozen() const
+	{
+		return FreezeTurnsRemaining > 0;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	int32 GetFreezeTurnsRemaining() const
+	{
+		return FreezeTurnsRemaining;
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Presentation")
@@ -257,6 +285,8 @@ protected:
 
 	void PlayDeathPresentation();
 	void FinalizeDeathAndDestroy();
+	void ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource);
+	void EmitDamageCue(int32 Value, AGridTile* CueTile, const FJargonCombatCueEvent* DamageCueSource);
 	void EmitUnitCue(EJargonCombatCueType CueType, int32 Value = 0, AGridTile* CueTile = nullptr);
 
 	UFUNCTION()
@@ -270,6 +300,9 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
 	void BP_OnStunChanged(int32 NewStunTurnsRemaining);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnFreezeChanged(int32 NewFreezeTurnsRemaining);
 	
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
@@ -288,6 +321,9 @@ protected:
 	TSubclassOf<UBattleUnitStatusWidget> StatusWidgetClass = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")
+	ETeam Team = ETeam::Enemy;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Stats", meta = (ClampMin = "1", ToolTip = "Base max HP for enemies and summons. Player hero units are overridden by HeroDefinition.", EditCondition = "Team != ETeam::Player", EditConditionHides))
 	int32 MaxHP = 5;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit")
@@ -296,17 +332,14 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit")
 	int32 TemporaryShield = 0;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")
+	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Stats", meta = (ClampMin = "0", ToolTip = "Base move range for enemies and summons. Player hero units are overridden by HeroDefinition.", EditCondition = "Team != ETeam::Player", EditConditionHides))
 	int32 MoveRange = 3;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")
+	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Stats", meta = (ClampMin = "1", ToolTip = "Base basic attack range for enemies and summons. Player hero units are overridden by HeroDefinition.", EditCondition = "Team != ETeam::Player", EditConditionHides))
 	int32 AttackRange = 1;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")
+	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Stats", meta = (ClampMin = "0", ToolTip = "Base basic attack damage for enemies and summons. Player hero units are overridden by HeroDefinition.", EditCondition = "Team != ETeam::Player", EditConditionHides))
 	int32 AttackDamage = 1;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")
-	ETeam Team = ETeam::Enemy;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true"))
 	TArray<FJargonEffectSpec> OnSummonedEffects;
@@ -328,6 +361,9 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
 	int32 StunTurnsRemaining = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
+	int32 FreezeTurnsRemaining = 0;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Status")
 	TObjectPtr<UAnimationAsset> DeathAnimation = nullptr;

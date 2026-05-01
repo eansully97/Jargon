@@ -26,8 +26,6 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 
 	if (TriggeredEffects.Num() > 0)
 	{
-		EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered, EnteringUnit);
-
 		FJargonEffectResult EffectResult;
 		const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode, EnteringUnit);
 		const bool bResolved = FJargonEffectResolver::ResolveEffects(TriggeredEffects, EffectContext, EffectResult);
@@ -38,6 +36,13 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 				*GetNameSafe(EnteringUnit));
 			return;
 		}
+
+		if (!EffectResult.bResolvedAnyEffect)
+		{
+			return;
+		}
+
+		EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered, EnteringUnit);
 
 		if (bTriggerOnce && IsValid(this))
 		{
@@ -64,7 +69,8 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 		return;
 	}
 
-	EnteringUnit->ApplyDamage(TrapDamage);
+	const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode, EnteringUnit);
+	EnteringUnit->ApplyDamageFromEffectContext(TrapDamage, EffectContext);
 
 	UE_LOG(LogTemp, Log, TEXT("Trap '%s' deals %d damage to '%s' and is consumed."),
 		*GetNameSafe(this),

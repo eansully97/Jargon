@@ -15,10 +15,23 @@ public:
 		const FJargonEffectContext& Context,
 		FJargonEffectResult& OutResult);
 
+	static bool ResolveEffects(
+		const TArray<FJargonEffectSpec>& Effects,
+		const FJargonEffectContext& Context,
+		FJargonEffectResult& OutResult,
+		FJargonEffectTrace* OutTrace);
+
 	static bool ResolveEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,
 		FJargonEffectResult& OutResult);
+
+	static bool ResolveEffect(
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		FJargonEffectResult& OutResult,
+		FJargonEffectTrace* OutTrace,
+		int32 EffectIndex = INDEX_NONE);
 
 private:
 	static bool ResolveMoveSourceEffect(
@@ -29,12 +42,16 @@ private:
 	static bool ResolvePushTargetEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,
-		FJargonEffectResult& OutResult);
+		FJargonEffectResult& OutResult,
+		FJargonEffectTrace* OutTrace = nullptr,
+		int32 EffectIndex = INDEX_NONE);
 
 	static bool ResolveSummonUnitEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,
-		FJargonEffectResult& OutResult);
+		FJargonEffectResult& OutResult,
+		FJargonEffectTrace* OutTrace = nullptr,
+		int32 EffectIndex = INDEX_NONE);
 
 	static bool ResolvePlaceTileEffect(
 		const FJargonEffectSpec& EffectSpec,
@@ -44,7 +61,9 @@ private:
 	static bool ResolveDestroyTileEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,
-		FJargonEffectResult& OutResult);
+		FJargonEffectResult& OutResult,
+		FJargonEffectTrace* OutTrace = nullptr,
+		int32 EffectIndex = INDEX_NONE);
 
 	static bool ResolveDrawCardsEffect(
 		const FJargonEffectSpec& EffectSpec,
@@ -56,14 +75,23 @@ private:
 		const FJargonEffectContext& Context,
 		FJargonEffectResult& OutResult);
 
-	static bool ResolveUnitPayloadEffect(
+	static bool ResolveGainElementChargeEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,
 		FJargonEffectResult& OutResult);
 
+	static bool ResolveUnitPayloadEffect(
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		FJargonEffectResult& OutResult,
+		FJargonEffectTrace* OutTrace = nullptr,
+		int32 EffectIndex = INDEX_NONE);
+
 	static TArray<ABattleUnit*> GatherTargetUnits(
 		const FJargonEffectSpec& EffectSpec,
-		const FJargonEffectContext& Context);
+		const FJargonEffectContext& Context,
+		FJargonEffectTrace* OutTrace = nullptr,
+		int32 EffectIndex = INDEX_NONE);
 
 	static TArray<AGridTile*> GatherTargetTiles(
 		const FJargonEffectSpec& EffectSpec,
@@ -87,6 +115,8 @@ private:
 		ABattleUnit* TargetUnit,
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context);
+
+	static bool CanTreatNoTargetsAsNoOp(const FJargonEffectContext& Context);
 
 	static bool ValidateEffectForContext(
 		const FJargonEffectSpec& EffectSpec,

@@ -64,7 +64,7 @@ protected:
 	bool bAutoRemoveAfterDelay = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Floating Combat Text", meta = (EditCondition = "bAutoRemoveAfterDelay", ClampMin = "0.05", ToolTip = "Seconds before this floating text widget removes itself when auto-remove is enabled."))
-	float AutoRemoveDelay = 1.25f;
+	float AutoRemoveDelay = 1.75f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Floating Combat Text")
 	FJargonCombatCueEvent Cue;

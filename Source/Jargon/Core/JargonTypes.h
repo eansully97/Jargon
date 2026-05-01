@@ -79,6 +79,18 @@ enum class ETeam : uint8
 };
 
 UENUM(BlueprintType)
+enum class EJargonElementType : uint8
+{
+	None = 0 UMETA(DisplayName = "None"),
+	Fire = 1 UMETA(DisplayName = "Fire"),
+	Storm = 2 UMETA(DisplayName = "Storm"),
+	Nature = 3 UMETA(DisplayName = "Nature"),
+	Radiance = 4 UMETA(DisplayName = "Radiance"),
+	Quietus = 5 UMETA(DisplayName = "Quietus"),
+	Frost = 6 UMETA(DisplayName = "Frost")
+};
+
+UENUM(BlueprintType)
 enum class ETileHighlightState : uint8
 {
 	None      UMETA(DisplayName = "None"),
