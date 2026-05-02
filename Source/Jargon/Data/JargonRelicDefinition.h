@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Combat/Effects/JargonEffectTypes.h"
+#include "Core/JargonHeroTypes.h"
 #include "Engine/DataAsset.h"
 #include "JargonRelicDefinition.generated.h"
 
+class UJargonHeroDefinition;
 class UTexture2D;
 
 UENUM(BlueprintType)
@@ -17,41 +19,54 @@ enum class EJargonRelicRarity : uint8
 };
 
 /**
- * Run-persistent boon that resolves shared Jargon effects during combat.
+ * Run-persistent Hero Boon that resolves shared Jargon effects during combat.
  *
- * Relics are current-run rewards, not permanent progression. Keep effects
- * data-authored and let FJargonEffectResolver handle the gameplay payload.
+ * The UJargonRelicDefinition name and serialized fields are retained for
+ * compatibility while the editor-facing concept moves toward Hero Boons.
  */
-UCLASS(BlueprintType)
-class JARGON_API UJargonRelicDefinition : public UDataAsset
+UCLASS(BlueprintType, meta = (DisplayName = "Jargon Hero Boon Definition"))
+class JARGON_API UJargonRelicDefinition : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Relic")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon", meta = (ToolTip = "Player-facing Hero Boon name shown when this run-scoped passive upgrade is granted or triggered."))
 	FText DisplayName;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Relic", meta = (MultiLine = "true"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon", meta = (MultiLine = "true", ToolTip = "Player-facing description for this run-scoped Hero Boon."))
 	FText Description;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Relic")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon", meta = (ToolTip = "Optional Hero Boon icon for reward and run UI."))
 	TObjectPtr<UTexture2D> Icon = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Relic")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon", meta = (DisplayName = "Boon Rarity", ToolTip = "Rarity tier for reward presentation and future boon pools."))
 	EJargonRelicRarity Rarity = EJargonRelicRarity::Common;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Relic|Effects", meta = (ToolTip = "Shared effects resolved once after combatants spawn and before the first player turn starts. The player unit is the source/self target."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Eligibility", meta = (ToolTip = "Optional hero class filter. Empty means any hero class can claim this boon."))
+	TArray<EJargonHeroClass> EligibleHeroClasses;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Eligibility", meta = (ToolTip = "Optional hero aspect-kit filter. Empty means any hero aspect kit can claim this boon. Eligibility checks aspects authored on the active Hero Definition, not the currently active combat aspect."))
+	TArray<EJargonHeroAspect> EligibleHeroAspects;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects resolved once after combatants spawn and before the first player turn starts. The player unit is the source/self target."))
 	TArray<FJargonEffectSpec> OnCombatStartEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Relic|Effects", meta = (ToolTip = "Shared effects resolved during player turn start. The player unit is the source/self target."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects resolved during player turn start. The player unit is the source/self target."))
 	TArray<FJargonEffectSpec> OnPlayerTurnStartEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Relic|Effects", meta = (ToolTip = "Shared effects resolved after an enemy dies. The player unit is the source, and the enemy death tile is the primary tile target."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects resolved after an enemy dies. The player unit is the source, and the enemy death tile is the primary tile target."))
 	TArray<FJargonEffectSpec> OnEnemyDeathEffects;
 
-	UFUNCTION(BlueprintPure, Category = "Relic")
+	UFUNCTION(BlueprintPure, Category = "Hero Boon")
 	bool HasAnyEffects() const;
 
-	UFUNCTION(BlueprintPure, Category = "Relic")
+	UFUNCTION(BlueprintPure, Category = "Hero Boon")
 	bool IsValidDefinition() const;
+
+	UFUNCTION(BlueprintPure, Category = "Hero Boon|Eligibility", meta = (ToolTip = "Returns true if this boon can be claimed by the supplied Hero Definition. Empty eligibility filters allow any hero."))
+	bool IsEligibleForHeroDefinition(const UJargonHeroDefinition* HeroDefinition) const;
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

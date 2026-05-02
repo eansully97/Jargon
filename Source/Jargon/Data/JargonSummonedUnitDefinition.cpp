@@ -1,6 +1,11 @@
 #include "Data/JargonSummonedUnitDefinition.h"
 
-#include "Combat/Units/BattleUnit.h"
+#include "Animation/AnimationAsset.h"
+
+#if WITH_EDITOR
+#include "Data/JargonDataAssetValidationHelpers.h"
+#include "Misc/DataValidation.h"
+#endif
 
 namespace
 {
@@ -57,9 +62,19 @@ FString BuildWarningsSummary(const UJargonSummonedUnitDefinition* Definition)
 		Warnings.Add(TEXT("AttackDamage < 0"));
 	}
 
-	if (!Definition->OptionalUnitClassOverride)
+	if (!Definition->IdleAnimationOverride)
 	{
-		Warnings.Add(TEXT("No OptionalUnitClassOverride; verify CombatGameMode DefaultSummonedUnitClass is assigned"));
+		Warnings.Add(TEXT("IdleAnimationOverride missing"));
+	}
+
+	if (!Definition->BasicAttackAnimationOverride)
+	{
+		Warnings.Add(TEXT("BasicAttackAnimationOverride missing"));
+	}
+
+	if (!Definition->DeathAnimationOverride)
+	{
+		Warnings.Add(TEXT("DeathAnimationOverride missing"));
 	}
 
 	return Warnings.Num() > 0 ? FString::Join(Warnings, TEXT("; ")) : TEXT("None");
@@ -69,6 +84,9 @@ FString BuildWarningsSummary(const UJargonSummonedUnitDefinition* Definition)
 bool UJargonSummonedUnitDefinition::IsValidDefinition() const
 {
 	return !DisplayName.IsEmpty()
+		&& IdleAnimationOverride
+		&& BasicAttackAnimationOverride
+		&& DeathAnimationOverride
 		&& MaxHP > 0
 		&& MoveRange >= 0
 		&& AttackRange > 0
@@ -87,14 +105,16 @@ FString UJargonSummonedUnitDefinition::GetAuditSummary() const
 		: DisplayName.ToString();
 
 	return FString::Printf(
-		TEXT("DisplayName=%s MaxHP=%d MoveRange=%d AttackRange=%d AttackDamage=%d Team=%s OptionalUnitClassOverride=%s CanMove=%s CanAttack=%s AttackExhaustedOnSpawn=%s OnSummonedEffects=%d OnTurnStartEffects=%d OnDeathEffects=%d IsValidDefinition=%s Warnings=[%s]"),
+		TEXT("DisplayName=%s IdleAnimationOverride=%s BasicAttackAnimationOverride=%s DeathAnimationOverride=%s MaxHP=%d MoveRange=%d AttackRange=%d AttackDamage=%d Team=%s CanMove=%s CanAttack=%s AttackExhaustedOnSpawn=%s OnSummonedEffects=%d OnTurnStartEffects=%d OnDeathEffects=%d IsValidDefinition=%s Warnings=[%s]"),
 		*NameText,
+		*GetNameSafe(IdleAnimationOverride.Get()),
+		*GetNameSafe(BasicAttackAnimationOverride.Get()),
+		*GetNameSafe(DeathAnimationOverride.Get()),
 		MaxHP,
 		MoveRange,
 		AttackRange,
 		AttackDamage,
 		GetTeamDebugName(Team),
-		*GetNameSafe(OptionalUnitClassOverride.Get()),
 		*BoolToAuditText(bCanMove),
 		*BoolToAuditText(bCanAttack),
 		*BoolToAuditText(bSummonEntersWithAttackExhausted),
@@ -104,3 +124,79 @@ FString UJargonSummonedUnitDefinition::GetAuditSummary() const
 		*BoolToAuditText(IsValidDefinition()),
 		*BuildWarningsSummary(this));
 }
+
+#if WITH_EDITOR
+EDataValidationResult UJargonSummonedUnitDefinition::IsDataValid(FDataValidationContext& Context) const
+{
+	Super::IsDataValid(Context);
+
+	if (DisplayName.IsEmpty())
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("DisplayName is empty."));
+	}
+
+	if (MaxHP <= 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("MaxHP must be greater than 0. Current value: %d."), MaxHP));
+	}
+
+	if (!IdleAnimationOverride)
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("IdleAnimationOverride is required for the generic summon runtime shell."));
+	}
+
+	if (!BasicAttackAnimationOverride)
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("BasicAttackAnimationOverride is required for the generic summon runtime shell."));
+	}
+
+	if (!DeathAnimationOverride)
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("DeathAnimationOverride is required for the generic summon runtime shell."));
+	}
+
+	if (MoveRange < 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("MoveRange must be >= 0. Current value: %d."), MoveRange));
+	}
+
+	if (AttackRange <= 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("AttackRange must be greater than 0. Current value: %d."), AttackRange));
+	}
+
+	if (AttackDamage < 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("AttackDamage must be >= 0. Current value: %d."), AttackDamage));
+	}
+
+	for (int32 EffectIndex = 0; EffectIndex < OnSummonedEffects.Num(); ++EffectIndex)
+	{
+		JargonDataAssetValidation::ValidateJargonEffectSpec(
+			this,
+			OnSummonedEffects[EffectIndex],
+			FString::Printf(TEXT("OnSummonedEffects effect %d"), EffectIndex),
+			Context);
+	}
+
+	for (int32 EffectIndex = 0; EffectIndex < OnTurnStartEffects.Num(); ++EffectIndex)
+	{
+		JargonDataAssetValidation::ValidateJargonEffectSpec(
+			this,
+			OnTurnStartEffects[EffectIndex],
+			FString::Printf(TEXT("OnTurnStartEffects effect %d"), EffectIndex),
+			Context);
+	}
+
+	for (int32 EffectIndex = 0; EffectIndex < OnDeathEffects.Num(); ++EffectIndex)
+	{
+		JargonDataAssetValidation::ValidateJargonEffectSpec(
+			this,
+			OnDeathEffects[EffectIndex],
+			FString::Printf(TEXT("OnDeathEffects effect %d"), EffectIndex),
+			Context);
+	}
+
+	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;
+}
+#endif

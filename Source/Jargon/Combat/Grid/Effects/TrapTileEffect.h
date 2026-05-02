@@ -16,15 +16,14 @@ public:
 
 protected:
 	/**
-	 * Optional shared-effect trap payloads. If this array is empty, the legacy DefaultTrapDamage behavior is used.
-	 * For a spike trap, use DealDamage + ExplicitUnit + EnemyToSource.
+	 * Deprecated legacy payload. New traps resolve effects from UJargonTileEffectDefinition.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trap|Effects", meta = (ToolTip = "Optional shared effects resolved when a unit enters this trap. Empty keeps the legacy trap damage fallback."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated|Trap", meta = (AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.Effects.", ToolTip = "Deprecated legacy trap effects. New traps resolve the placed tile-effect definition."))
 	TArray<FJargonEffectSpec> TriggeredEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trap|Effects", meta = (ToolTip = "Whether this trap destroys itself after successfully resolving generic TriggeredEffects or the legacy fallback damage."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated|Trap", meta = (AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.bDestroyAfterUnitEnter.", ToolTip = "Deprecated legacy destroy flag. New traps use the placed tile-effect definition."))
 	bool bTriggerOnce = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trap|Legacy Fallback", meta = (ClampMin = "0", ToolTip = "Legacy fallback damage used only when TriggeredEffects is empty. Prefer TriggeredEffects for new trap authoring."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Deprecated|Trap", meta = (ClampMin = "0", AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.Effects.", ToolTip = "Deprecated legacy fallback damage. New traps use the placed tile-effect definition."))
 	int32 DefaultTrapDamage = 1;
 };

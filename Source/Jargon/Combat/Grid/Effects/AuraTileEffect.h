@@ -14,21 +14,20 @@ public:
 
 protected:
 	/**
-	 * Optional shared-effect aura payloads. If this array is empty, the legacy AuraOperation/TargetFilter behavior is used.
-	 * For a shield aura, use ApplyShield + UnitsInRadius + FriendlyToSource and set Radius on the effect spec.
+	 * Deprecated legacy payload. New auras resolve effects from UJargonTileEffectDefinition.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Effects", meta = (ToolTip = "Optional shared effects resolved on player turn start. Empty keeps the legacy aura operation fallback."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated|Aura", meta = (AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.Effects.", ToolTip = "Deprecated legacy aura effects. New auras resolve the placed tile-effect definition."))
 	TArray<FJargonEffectSpec> AuraEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Legacy Fallback", meta = (ToolTip = "Legacy fallback operation used only when AuraEffects is empty. Prefer AuraEffects for new aura authoring."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated|Aura", meta = (AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.Effects.", ToolTip = "Deprecated legacy fallback operation. New auras use the placed tile-effect definition."))
 	EJargonTileEffectOperation AuraOperation = EJargonTileEffectOperation::ApplyShield;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Legacy Fallback", meta = (ToolTip = "Legacy fallback target filter used only when AuraEffects is empty. Prefer AuraEffects for new aura authoring."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated|Aura", meta = (AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.Effects target filters.", ToolTip = "Deprecated legacy fallback target filter. New auras use effect target filters."))
 	EJargonTileEffectTargetFilter TargetFilter = EJargonTileEffectTargetFilter::FriendlyToSource;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura|Legacy Fallback", meta = (ClampMin = "0", ToolTip = "Legacy fallback amount used only when AuraEffects is empty. Prefer AuraEffects for new aura authoring."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated|Aura", meta = (ClampMin = "0", AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.Effects.", ToolTip = "Deprecated legacy fallback amount. New auras use the placed tile-effect definition."))
 	int32 DefaultEffectValue = 1;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aura", meta = (ToolTip = "If true, this aura resolves AuraEffects or legacy fallback behavior on player turn start."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated|Aura", meta = (AdvancedDisplay, DeprecatedProperty, DeprecationMessage = "Use UJargonTileEffectDefinition.Trigger.", ToolTip = "Deprecated legacy enable flag. New auras use the placed tile-effect definition trigger."))
 	bool bApplyOnPlayerTurnStart = true;
 };

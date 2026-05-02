@@ -83,6 +83,7 @@ void ABattleUnit::BeginPlay()
 
 	InitializeDynamicMaterials();
 	RefreshMaterialFeedback();
+	PlayIdleAnimation();
 }
 
 void ABattleUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -256,12 +257,13 @@ void ABattleUnit::ResetTurnActions()
 {
 	bMoveActionUsedThisTurn = false;
 	bAttackActionUsedThisTurn = false;
+	bMovementBlockedByRootThisTurn = false;
 	RefreshStatusWidget();
 }
 
 bool ABattleUnit::ConsumeMoveAction()
 {
-	if (bIsDead || bMoveActionUsedThisTurn)
+	if (bIsDead || bMoveActionUsedThisTurn || IsRooted() || bMovementBlockedByRootThisTurn)
 	{
 		return false;
 	}
@@ -339,7 +341,7 @@ void ABattleUnit::SetCurrentTile(AGridTile* Tile)
 
 bool ABattleUnit::MoveAlongPath(const TArray<AGridTile*>& Path)
 {
-	if (bIsDead || bIsMovingAlongPath || Path.Num() < 2)
+	if (bIsDead || IsRooted() || bMovementBlockedByRootThisTurn || bIsMovingAlongPath || Path.Num() < 2)
 	{
 		return false;
 	}
@@ -422,6 +424,17 @@ void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent*
 	}
 
 	int32 RemainingDamage = Amount;
+	if (VulnerableDamageBonus > 0)
+	{
+		const int32 ConsumedVulnerableBonus = VulnerableDamageBonus;
+		VulnerableDamageBonus = 0;
+		RemainingDamage += ConsumedVulnerableBonus;
+		RefreshStatusWidget();
+		BP_OnVulnerableChanged(VulnerableDamageBonus);
+		EmitUnitCue(EJargonCombatCueType::VulnerableConsumed, ConsumedVulnerableBonus, CurrentTile);
+	}
+
+	const int32 IncomingDamage = RemainingDamage;
 	bool bShieldChanged = false;
 
 	if (TemporaryShield > 0)
@@ -440,7 +453,7 @@ void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent*
 			BP_OnShieldChanged(TemporaryShield);
 			if (TemporaryShield <= 0)
 			{
-				EmitUnitCue(EJargonCombatCueType::ShieldBroken, Amount, CurrentTile);
+				EmitUnitCue(EJargonCombatCueType::ShieldBroken, IncomingDamage, CurrentTile);
 			}
 		}
 		return;
@@ -466,7 +479,7 @@ void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent*
 		BP_OnShieldChanged(TemporaryShield);
 		if (TemporaryShield <= 0)
 		{
-			EmitUnitCue(EJargonCombatCueType::ShieldBroken, Amount - RemainingDamage, CurrentTile);
+			EmitUnitCue(EJargonCombatCueType::ShieldBroken, IncomingDamage - RemainingDamage, CurrentTile);
 		}
 	}
 
@@ -587,6 +600,11 @@ void ABattleUnit::ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Def
 		Definition->AttackDamage,
 		true);
 
+	IdleAnimation = Definition->IdleAnimationOverride;
+	BasicAttackAnimation = Definition->BasicAttackAnimationOverride;
+	DeathAnimation = Definition->DeathAnimationOverride;
+	PlayIdleAnimation();
+
 	OnSummonedEffects.Append(Definition->OnSummonedEffects);
 	OnTurnStartEffects.Append(Definition->OnTurnStartEffects);
 	OnDeathEffects.Append(Definition->OnDeathEffects);
@@ -694,15 +712,17 @@ float ABattleUnit::GetBasicAttackPresentationDuration() const
 
 void ABattleUnit::ReturnToIdleAfterBasicAttack()
 {
-	if (bIsDead)
+	PlayIdleAnimation();
+}
+
+void ABattleUnit::PlayIdleAnimation()
+{
+	if (bIsDead || !UnitMesh || !IdleAnimation)
 	{
 		return;
 	}
 
-	if (UnitMesh && IdleAnimation)
-	{
-		UnitMesh->PlayAnimation(IdleAnimation, true);
-	}
+	UnitMesh->PlayAnimation(IdleAnimation, true);
 }
 
 void ABattleUnit::PlayDeathPresentation()
@@ -998,6 +1018,85 @@ bool ABattleUnit::ConsumeFreezeTurn()
 	EmitUnitCue(EJargonCombatCueType::FreezeConsumed, 1, CurrentTile);
 
 	return true;
+}
+
+void ABattleUnit::ApplyBurn(int32 Stacks)
+{
+	const int32 SafeStacks = FMath::Max(0, Stacks);
+	if (SafeStacks <= 0 || bIsDead)
+	{
+		return;
+	}
+
+	BurnStacks += SafeStacks;
+	RefreshStatusWidget();
+	BP_OnBurnChanged(BurnStacks);
+	EmitUnitCue(EJargonCombatCueType::BurnApplied, SafeStacks, CurrentTile);
+}
+
+bool ABattleUnit::ConsumeBurnTurn()
+{
+	if (BurnStacks <= 0 || bIsDead)
+	{
+		return false;
+	}
+
+	const int32 BurnDamage = BurnStacks;
+	EmitUnitCue(EJargonCombatCueType::BurnTick, BurnDamage, CurrentTile);
+	ApplyDamage(BurnDamage);
+
+	if (!bIsDead)
+	{
+		BurnStacks = FMath::Max(0, BurnStacks - 1);
+		RefreshStatusWidget();
+		BP_OnBurnChanged(BurnStacks);
+	}
+
+	return true;
+}
+
+void ABattleUnit::ApplyRoot(int32 Turns)
+{
+	const int32 SafeTurns = FMath::Max(0, Turns);
+	if (SafeTurns <= 0 || bIsDead)
+	{
+		return;
+	}
+
+	RootTurnsRemaining = FMath::Max(RootTurnsRemaining, SafeTurns);
+	RefreshStatusWidget();
+	BP_OnRootChanged(RootTurnsRemaining);
+	EmitUnitCue(EJargonCombatCueType::RootApplied, SafeTurns, CurrentTile);
+}
+
+bool ABattleUnit::ConsumeRootTurn()
+{
+	if (RootTurnsRemaining <= 0 || bIsDead)
+	{
+		return false;
+	}
+
+	RootTurnsRemaining = FMath::Max(0, RootTurnsRemaining - 1);
+	bMoveActionUsedThisTurn = true;
+	bMovementBlockedByRootThisTurn = true;
+	RefreshStatusWidget();
+	BP_OnRootChanged(RootTurnsRemaining);
+	EmitUnitCue(EJargonCombatCueType::RootConsumed, 1, CurrentTile);
+	return true;
+}
+
+void ABattleUnit::ApplyVulnerable(int32 BonusDamage)
+{
+	const int32 SafeBonusDamage = FMath::Max(0, BonusDamage);
+	if (SafeBonusDamage <= 0 || bIsDead)
+	{
+		return;
+	}
+
+	VulnerableDamageBonus += SafeBonusDamage;
+	RefreshStatusWidget();
+	BP_OnVulnerableChanged(VulnerableDamageBonus);
+	EmitUnitCue(EJargonCombatCueType::VulnerableApplied, SafeBonusDamage, CurrentTile);
 }
 
 void ABattleUnit::SetActingHighlight(bool bInActingHighlight)

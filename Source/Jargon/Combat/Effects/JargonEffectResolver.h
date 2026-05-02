@@ -46,6 +46,13 @@ private:
 		FJargonEffectTrace* OutTrace = nullptr,
 		int32 EffectIndex = INDEX_NONE);
 
+	static bool ResolvePullTargetEffect(
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context,
+		FJargonEffectResult& OutResult,
+		FJargonEffectTrace* OutTrace = nullptr,
+		int32 EffectIndex = INDEX_NONE);
+
 	static bool ResolveSummonUnitEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,

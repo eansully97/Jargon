@@ -38,6 +38,15 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> FreezeText = nullptr;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> BurnText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RootText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> VulnerableText = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit Status")
 	FSlateColor AttackReadyColor = FSlateColor(FLinearColor(0.95f, 0.95f, 0.05f, 1.f));
 

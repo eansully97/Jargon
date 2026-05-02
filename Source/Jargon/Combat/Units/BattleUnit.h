@@ -106,7 +106,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Battle Unit|Turn")
 	bool HasMoveActionRemaining() const
 	{
-		return !bMoveActionUsedThisTurn;
+		return !bMoveActionUsedThisTurn && !IsRooted() && !bMovementBlockedByRootThisTurn;
 	}
 
 	UFUNCTION(BlueprintPure, Category = "Battle Unit|Turn")
@@ -220,6 +220,57 @@ public:
 		return FreezeTurnsRemaining;
 	}
 
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	void ApplyBurn(int32 Stacks);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	bool ConsumeBurnTurn();
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	bool IsBurning() const
+	{
+		return BurnStacks > 0;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	int32 GetBurnStacks() const
+	{
+		return BurnStacks;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	void ApplyRoot(int32 Turns);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	bool ConsumeRootTurn();
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	bool IsRooted() const
+	{
+		return RootTurnsRemaining > 0;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	int32 GetRootTurnsRemaining() const
+	{
+		return RootTurnsRemaining;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	void ApplyVulnerable(int32 BonusDamage);
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	bool IsVulnerable() const
+	{
+		return VulnerableDamageBonus > 0;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	int32 GetVulnerableDamageBonus() const
+	{
+		return VulnerableDamageBonus;
+	}
+
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Presentation")
 	void SetActingHighlight(bool bInActingHighlight);
 
@@ -283,6 +334,7 @@ protected:
 	void FinishPathMovement();
 	void StopPathMovement();
 
+	void PlayIdleAnimation();
 	void PlayDeathPresentation();
 	void FinalizeDeathAndDestroy();
 	void ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource);
@@ -303,6 +355,15 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
 	void BP_OnFreezeChanged(int32 NewFreezeTurnsRemaining);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnBurnChanged(int32 NewBurnStacks);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnRootChanged(int32 NewRootTurnsRemaining);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnVulnerableChanged(int32 NewVulnerableDamageBonus);
 	
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
@@ -365,6 +426,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
 	int32 FreezeTurnsRemaining = 0;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
+	int32 BurnStacks = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
+	int32 RootTurnsRemaining = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
+	int32 VulnerableDamageBonus = 0;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Status")
 	TObjectPtr<UAnimationAsset> DeathAnimation = nullptr;
 
@@ -388,6 +458,9 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Turn")
 	bool bAttackActionUsedThisTurn = false;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Turn")
+	bool bMovementBlockedByRootThisTurn = false;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AGridTile>> ActiveMovePath;

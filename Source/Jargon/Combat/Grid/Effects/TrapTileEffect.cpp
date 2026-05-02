@@ -5,10 +5,12 @@
 #include "Combat/Effects/JargonEffectResolver.h"
 #include "Combat/Grid/GridTile.h"
 #include "Combat/Units/BattleUnit.h"
+#include "Data/JargonTileEffectDefinition.h"
 
 void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMode, ABattleUnit* EnteringUnit)
 {
-	if (GetCardCategory() != ECardCategory::Trap)
+	UJargonTileEffectDefinition* Definition = GetTileEffectDefinition();
+	if (!Definition || Definition->Trigger != EJargonTileEffectTrigger::OnUnitEnter)
 	{
 		return;
 	}
@@ -24,58 +26,32 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 		return;
 	}
 
-	if (TriggeredEffects.Num() > 0)
+	if (Definition->Effects.Num() <= 0)
 	{
-		FJargonEffectResult EffectResult;
-		const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode, EnteringUnit);
-		const bool bResolved = FJargonEffectResolver::ResolveEffects(TriggeredEffects, EffectContext, EffectResult);
-		if (!bResolved)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Trap '%s' failed to resolve its generic triggered effects for entering unit '%s'."),
-				*GetNameSafe(this),
-				*GetNameSafe(EnteringUnit));
-			return;
-		}
-
-		if (!EffectResult.bResolvedAnyEffect)
-		{
-			return;
-		}
-
-		EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered, EnteringUnit);
-
-		if (bTriggerOnce && IsValid(this))
-		{
-			Destroy();
-		}
-
 		return;
 	}
 
-	if (EnteringUnit->GetTeam() == GetSourceTeam())
+	FJargonEffectResult EffectResult;
+	const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode, EnteringUnit);
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(Definition->Effects, EffectContext, EffectResult);
+	if (!bResolved)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Trap '%s' failed to resolve tile effect definition '%s' for entering unit '%s'."),
+			*GetNameSafe(this),
+			*GetNameSafe(Definition),
+			*GetNameSafe(EnteringUnit));
+		return;
+	}
+
+	if (!EffectResult.bResolvedAnyEffect)
 	{
 		return;
 	}
 
 	EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered, EnteringUnit);
 
-	const int32 AuthoredTrapDamage = GetEffectValue();
-	const int32 TrapDamage = AuthoredTrapDamage > 0
-		? AuthoredTrapDamage
-		: FMath::Max(0, DefaultTrapDamage);
-
-	if (TrapDamage <= 0)
+	if (Definition->bDestroyAfterUnitEnter && IsValid(this))
 	{
-		return;
+		Destroy();
 	}
-
-	const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode, EnteringUnit);
-	EnteringUnit->ApplyDamageFromEffectContext(TrapDamage, EffectContext);
-
-	UE_LOG(LogTemp, Log, TEXT("Trap '%s' deals %d damage to '%s' and is consumed."),
-		*GetNameSafe(this),
-		TrapDamage,
-		*GetNameSafe(EnteringUnit));
-
-	Destroy();
 }

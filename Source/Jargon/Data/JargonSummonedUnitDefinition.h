@@ -6,17 +6,17 @@
 #include "Engine/DataAsset.h"
 #include "JargonSummonedUnitDefinition.generated.h"
 
-class ABattleUnit;
+class UAnimationAsset;
 class UTexture2D;
 
 /**
  * Data-driven gameplay definition for a basic summoned combat unit.
  *
- * Definition-backed summon effects can spawn a generic summon unit and apply this data at runtime.
- * Existing UnitClass summon cards remain supported as the legacy/special-case path.
+ * Cards/effects choose the runtime summon Blueprint child explicitly and apply this definition's
+ * gameplay data at runtime. Mesh/presentation setup belongs on the runtime Blueprint child.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "Jargon Summoned Unit Definition"))
-class JARGON_API UJargonSummonedUnitDefinition : public UDataAsset
+class JARGON_API UJargonSummonedUnitDefinition : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 
@@ -27,11 +27,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon", meta = (MultiLine = "true", ToolTip = "Short description of this summon for authoring, UI, and logs."))
 	FText Description;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Visual", meta = (ToolTip = "Optional portrait or icon for future summon UI. Runtime mesh/animation visuals are still owned by the spawned unit Blueprint."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Visual", meta = (ToolTip = "Optional portrait or icon for future summon UI."))
 	TObjectPtr<UTexture2D> Icon = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Runtime", meta = (ToolTip = "Optional special unit class for summons that still need unique Blueprint visuals or behavior. Leave empty to use the CombatGameMode DefaultSummonedUnitClass."))
-	TSubclassOf<ABattleUnit> OptionalUnitClassOverride;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Animation", meta = (ToolTip = "Required looping idle animation applied to the generic summon runtime shell. This plays immediately after the definition is applied and after non-terminal one-shot animations."))
+	TObjectPtr<UAnimationAsset> IdleAnimationOverride = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Animation", meta = (ToolTip = "Required one-shot basic attack animation applied to the generic summon runtime shell. The unit returns to idle after it finishes."))
+	TObjectPtr<UAnimationAsset> BasicAttackAnimationOverride = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Animation", meta = (ToolTip = "Required terminal death animation applied to the generic summon runtime shell. Death does not return to idle."))
+	TObjectPtr<UAnimationAsset> DeathAnimationOverride = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Stats", meta = (ClampMin = "1", ToolTip = "Summoned unit max health. Future runtime application should restore the unit to this full health on spawn."))
 	int32 MaxHP = 2;
@@ -54,16 +60,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Combat", meta = (ToolTip = "Reserved for a later unit capability pass. Current runtime action logic does not consume this yet."))
 	bool bCanAttack = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Combat", meta = (ToolTip = "Whether this summon should enter with its attack already spent. Card effect overrides/legacy flags remain supported."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Combat", meta = (ToolTip = "Whether this summon should enter with its attack already spent. Card effects can still override this timing value explicitly."))
 	bool bSummonEntersWithAttackExhausted = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (ToolTip = "Shared effects appended to the spawned unit before OnSummonedEffects execute."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects appended to the spawned unit before OnSummonedEffects execute."))
 	TArray<FJargonEffectSpec> OnSummonedEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (ToolTip = "Shared effects appended to the spawned unit and resolved at the start of this summon side's turn."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects appended to the spawned unit and resolved at the start of this summon side's turn."))
 	TArray<FJargonEffectSpec> OnTurnStartEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (ToolTip = "Shared effects appended to the spawned unit and resolved once when this summon dies."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects appended to the spawned unit and resolved once when this summon dies."))
 	TArray<FJargonEffectSpec> OnDeathEffects;
 
 	UFUNCTION(BlueprintPure, Category = "Summon|Validation")
@@ -74,4 +80,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Summon|Debug")
 	FString GetAuditSummary() const;
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

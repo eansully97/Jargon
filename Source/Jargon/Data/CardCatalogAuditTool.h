@@ -28,7 +28,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Scan", meta = (ToolTip = "Package paths scanned recursively for UCardPackDefinition assets. Example: /Game/Jargon/Data/CardPacks"))
 	TArray<FName> PackScanPaths;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Scan", meta = (ToolTip = "Package paths scanned recursively for UJargonSummonedUnitDefinition assets. Example: /Game/Jargon/Data/SummonedUnits"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Scan", meta = (ToolTip = "Package paths scanned recursively for UJargonSummonedUnitDefinition assets. Example: /Game/Jargon/Data/Cards/SummonedDefinitions"))
 	TArray<FName> SummonedUnitScanPaths;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Output", meta = (ToolTip = "Subfolder under Project/Saved where CSV reports are written."))
@@ -36,4 +36,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Output")
 	bool bExportCsvReports = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Balance", meta = (ToolTip = "When CSV export is enabled, also writes card balance, variety matrix, and generated rules-text suggestion reports. These reports never modify card assets."))
+	bool bExportBalanceReports = true;
 };

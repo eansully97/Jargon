@@ -1,10 +1,15 @@
 #include "Data/CardCatalogAuditTool.h"
 
 #include "Core/JargonRunStateTypes.h"
+#include "Combat/Grid/Effects/BattleTileEffect.h"
 #include "Combat/Units/BattleUnit.h"
+#include "Combat/Units/SummonedBattleUnit.h"
 #include "Data/CardDefinition.h"
+#include "Data/CardScriptDefinition.h"
 #include "Data/CardPackDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
+#include "Data/JargonStatusEffectDefinition.h"
+#include "Data/JargonTileEffectDefinition.h"
 
 #if WITH_EDITOR
 #include "AssetRegistry/AssetData.h"
@@ -23,7 +28,8 @@ const FName DefaultCardScanPath(TEXT("/Game/Jargon/Data/Cards"));
 const FName LegacyCardScanPath(TEXT("/Game/Jargon/Cards"));
 const FName DefaultPackScanPath(TEXT("/Game/Jargon/Data/CardPacks"));
 const FName LegacyPackScanPath(TEXT("/Game/Jargon/CardPacks"));
-const FName DefaultSummonedUnitScanPath(TEXT("/Game/Jargon/Data/SummonedUnits"));
+const FName DefaultSummonedUnitScanPath(TEXT("/Game/Jargon/Data/Cards/SummonedDefinitions"));
+const FName LegacySummonedUnitScanPath(TEXT("/Game/Jargon/Data/SummonedUnits"));
 
 #if WITH_EDITOR
 struct FCardPackUsage
@@ -38,6 +44,7 @@ struct FCardAuditRow
 	FString AssetName;
 	FString DisplayName;
 	FString Category;
+	FString CardElement;
 	FString TargetType;
 	int32 Cost = 0;
 	int32 Range = 0;
@@ -76,7 +83,6 @@ struct FSummonAuditRow
 	int32 AttackRange = 0;
 	int32 AttackDamage = 0;
 	FString Team;
-	FString OptionalUnitClassOverride;
 	int32 OnSummonedEffectsCount = 0;
 	int32 OnTurnStartEffectsCount = 0;
 	int32 OnDeathEffectsCount = 0;
@@ -85,6 +91,133 @@ struct FSummonAuditRow
 	bool bReferencedByScannedCards = false;
 	FString Summary;
 	TArray<FString> Warnings;
+};
+
+struct FCardBalanceAuditRow
+{
+	FString AssetPath;
+	FString AssetName;
+	FString DisplayName;
+	FString Category;
+	FString TargetType;
+	int32 Cost = 0;
+	int32 BaseBalanceBudget = 0;
+	int32 ElementalBonusBudget = 0;
+	int32 ExpectedCostMin = 0;
+	int32 ExpectedCostMax = 0;
+	int32 SuggestedCost = 0;
+	FString BalanceStatus;
+	FString RoleTags;
+	FString ElementTags;
+	FString ProductionStatus;
+	FString PackStatus;
+	FString EffectsSummary;
+	TArray<FString> Warnings;
+};
+
+struct FCardDescriptionSuggestionRow
+{
+	FString AssetPath;
+	FString AssetName;
+	FString DisplayName;
+	FString CurrentDescription;
+	FString SuggestedDescription;
+	FString Status;
+	TArray<FString> Warnings;
+};
+
+struct FCardVarietyMatrixRow
+{
+	FString Element;
+	FString Role;
+	FString Category;
+	FString ProductionStatus;
+	FString PackStatus;
+	int32 CardCount = 0;
+	TArray<FString> CardNames;
+};
+
+struct FCardDesignAuditRow
+{
+	FString AssetPath;
+	FString AssetName;
+	FString DisplayName;
+	FString Category;
+	int32 Cost = 0;
+	FString ElementTags;
+	FString RoleTags;
+	FString PrimaryKeyword;
+	FString SecondaryKeywords;
+	FString OperationSummary;
+	FString DeliverySummary;
+	FString TargetFilterSummary;
+	FString PayloadSummary;
+	FString ConditionSummary;
+	FString KeywordTerms;
+	FString SuspiciousPattern;
+	FString SamenessFingerprint;
+	int32 MatchingFingerprintCount = 0;
+	int32 TacticalScore = 0;
+	FString DesignStatus;
+	TArray<FString> Warnings;
+};
+
+struct FElementIdentityAuditRow
+{
+	FString Element;
+	int32 ProductionCards = 0;
+	int32 Generators = 0;
+	int32 Payoffs = 0;
+	int32 DamageCards = 0;
+	int32 DefenseUtilityCards = 0;
+	int32 TacticalCards = 0;
+	FString UniquePrimaryKeywords;
+	FString MissingLanes;
+	FString RecommendedActions;
+};
+
+struct FPackExperienceAuditRow
+{
+	FString PackAssetPath;
+	FString PackName;
+	int32 CardCount = 0;
+	int32 UniqueRoles = 0;
+	int32 UniqueElements = 0;
+	int32 UniquePrimaryKeywords = 0;
+	float AverageCost = 0.f;
+	int32 RepeatedFingerprintGroups = 0;
+	FString RoleSpread;
+	FString ElementMix;
+	FString CostCurve;
+	FString ExperienceStatus;
+	TArray<FString> Warnings;
+};
+
+struct FCardRewritePlanRow
+{
+	FString AssetPath;
+	FString DisplayName;
+	FString CurrentIssue;
+	FString RecommendedAction;
+	FString ProposedRulesText;
+};
+
+struct FCardBalanceEstimate
+{
+	int32 BaseBudget = 0;
+	int32 ElementalBonusBudget = 0;
+	int32 ExpectedCostMin = 0;
+	int32 ExpectedCostMax = 0;
+	int32 SuggestedCost = 0;
+	TArray<FString> Warnings;
+};
+
+struct FCardAuditElementalBonusGroup
+{
+	EJargonElementType ElementType = EJargonElementType::None;
+	int32 RequiredCharges = 0;
+	bool bSpendCharges = false;
+	TArray<FJargonEffectSpec> BonusEffects;
 };
 
 FString BoolToYesNo(bool bValue)
@@ -98,7 +231,7 @@ FString TextOrFallbackName(const FText& Text, const UObject* Object)
 	return TextString.IsEmpty() ? GetNameSafe(Object) : TextString;
 }
 
-FString GetEnumDisplayName(const UEnum* Enum, int64 Value)
+FString GetAuditEnumDisplayName(const UEnum* Enum, int64 Value)
 {
 	if (!Enum)
 	{
@@ -110,27 +243,32 @@ FString GetEnumDisplayName(const UEnum* Enum, int64 Value)
 
 FString GetCardCategoryName(ECardCategory Category)
 {
-	return GetEnumDisplayName(StaticEnum<ECardCategory>(), static_cast<int64>(Category));
+	return GetAuditEnumDisplayName(StaticEnum<ECardCategory>(), static_cast<int64>(Category));
 }
 
 FString GetCardTargetTypeName(ECardTargetType TargetType)
 {
-	return GetEnumDisplayName(StaticEnum<ECardTargetType>(), static_cast<int64>(TargetType));
+	return GetAuditEnumDisplayName(StaticEnum<ECardTargetType>(), static_cast<int64>(TargetType));
 }
 
-FString GetCardEffectOperationName(ECardEffectOperation Operation)
+FString GetCardEffectOperationName(EJargonEffectOperation Operation)
 {
-	return GetEnumDisplayName(StaticEnum<ECardEffectOperation>(), static_cast<int64>(Operation));
+	return GetAuditEnumDisplayName(StaticEnum<EJargonEffectOperation>(), static_cast<int64>(Operation));
 }
 
 FString GetElementTypeName(EJargonElementType ElementType)
 {
-	return GetEnumDisplayName(StaticEnum<EJargonElementType>(), static_cast<int64>(ElementType));
+	if (ElementType == EJargonElementType::None)
+	{
+		return TEXT("Neutral");
+	}
+
+	return GetAuditEnumDisplayName(StaticEnum<EJargonElementType>(), static_cast<int64>(ElementType));
 }
 
 FString GetTeamName(ETeam Team)
 {
-	return GetEnumDisplayName(StaticEnum<ETeam>(), static_cast<int64>(Team));
+	return GetAuditEnumDisplayName(StaticEnum<ETeam>(), static_cast<int64>(Team));
 }
 
 FString GetClassDisplayName(const UClass* Class)
@@ -243,58 +381,208 @@ void LoadAssetsFromPaths(const TArray<FName>& ScanPaths, TArray<AssetType*>& Out
 	});
 }
 
-bool OperationUsesValue(ECardEffectOperation Operation)
+void BuildAuditEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects)
 {
-	switch (Operation)
+	OutEffects.Reset();
+	if (Card)
 	{
-	case ECardEffectOperation::DealDamage:
-	case ECardEffectOperation::Heal:
-	case ECardEffectOperation::ApplyShield:
-	case ECardEffectOperation::ApplyStun:
-	case ECardEffectOperation::ApplyFreeze:
-	case ECardEffectOperation::DrawCards:
-	case ECardEffectOperation::GainEnergy:
-	case ECardEffectOperation::GainElementCharge:
-	case ECardEffectOperation::ChainDamage:
-	case ECardEffectOperation::ChainHeal:
-	case ECardEffectOperation::ChainStun:
-		return true;
-
-	default:
-		return false;
+		Card->BuildBaseEffectSpecs(OutEffects);
 	}
 }
 
-bool IsChainOperation(ECardEffectOperation Operation)
+void BuildAuditElementalBonusGroups(const UCardDefinition* Card, TArray<FCardAuditElementalBonusGroup>& OutBonusGroups)
 {
-	return Operation == ECardEffectOperation::ChainDamage
-		|| Operation == ECardEffectOperation::ChainHeal
-		|| Operation == ECardEffectOperation::ChainStun;
+	OutBonusGroups.Reset();
+	if (!Card || !Card->CardScript)
+	{
+		return;
+	}
+
+	for (const FJargonCardElementalBonusScript& BonusScript : Card->CardScript->ElementalBonuses)
+	{
+		FCardAuditElementalBonusGroup AuditBonus;
+		AuditBonus.ElementType = BonusScript.ElementType;
+		AuditBonus.RequiredCharges = BonusScript.RequiredCharges;
+		AuditBonus.bSpendCharges = BonusScript.bSpendCharges;
+		BonusScript.BuildEffectSpecs(Card, AuditBonus.BonusEffects);
+		OutBonusGroups.Add(MoveTemp(AuditBonus));
+	}
 }
 
-bool IsFriendlyTargetingOperation(ECardEffectOperation Operation)
+FString GetElementalBonusAuditSummary(const FCardAuditElementalBonusGroup& BonusGroup)
 {
-	return Operation == ECardEffectOperation::Heal
-		|| Operation == ECardEffectOperation::ApplyShield
-		|| Operation == ECardEffectOperation::ChainHeal;
+	TArray<FString> EffectSummaries;
+	EffectSummaries.Reserve(BonusGroup.BonusEffects.Num());
+	for (int32 EffectIndex = 0; EffectIndex < BonusGroup.BonusEffects.Num(); ++EffectIndex)
+	{
+		const FJargonEffectSpec& EffectSpec = BonusGroup.BonusEffects[EffectIndex];
+		EffectSummaries.Add(FString::Printf(
+			TEXT("Effect %d: Operation=%s Delivery=%s Filter=%s Payload=%s"),
+			EffectIndex,
+			*JargonEffectContracts::GetOperationName(EffectSpec.Operation),
+			*JargonEffectContracts::GetDeliveryName(EffectSpec.Delivery),
+			*JargonEffectContracts::GetTargetFilterName(EffectSpec.TargetFilter),
+			*JargonEffectContracts::BuildPayloadSummary(EffectSpec)));
+	}
+
+	return FString::Printf(
+		TEXT("%s Required=%d Spend=%s Effects=[%s]"),
+		*GetElementTypeName(BonusGroup.ElementType),
+		BonusGroup.RequiredCharges,
+		*BoolToYesNo(BonusGroup.bSpendCharges),
+		*JoinStrings(EffectSummaries, TEXT("; ")));
 }
 
-bool IsHostileTargetingOperation(ECardEffectOperation Operation)
+bool OperationUsesValue(EJargonEffectOperation Operation)
 {
-	return Operation == ECardEffectOperation::DealDamage
-		|| Operation == ECardEffectOperation::ApplyStun
-		|| Operation == ECardEffectOperation::ApplyFreeze
-		|| Operation == ECardEffectOperation::PushTarget
-		|| Operation == ECardEffectOperation::PullTarget
-		|| Operation == ECardEffectOperation::ChainDamage
-		|| Operation == ECardEffectOperation::ChainStun;
+	return JargonEffectContracts::RequiresValue(Operation);
 }
 
-bool BonusGroupMixesFriendlyAndHostileEffects(const FCardElementalBonusGroup& BonusGroup)
+bool IsChainDelivery(const FJargonEffectSpec& EffectSpec)
+{
+	return EffectSpec.Delivery == EJargonEffectDelivery::ChainUnits;
+}
+
+bool IsFriendlyTargetingOperation(EJargonEffectOperation Operation)
+{
+	return Operation == EJargonEffectOperation::Heal
+		|| Operation == EJargonEffectOperation::ApplyShield;
+}
+
+bool IsHostileTargetingOperation(EJargonEffectOperation Operation)
+{
+	return Operation == EJargonEffectOperation::DealDamage
+		|| Operation == EJargonEffectOperation::ApplyStun
+		|| Operation == EJargonEffectOperation::ApplyFreeze
+		|| Operation == EJargonEffectOperation::ApplyBurn
+		|| Operation == EJargonEffectOperation::ApplyRoot
+		|| Operation == EJargonEffectOperation::ApplyVulnerable
+		|| Operation == EJargonEffectOperation::PushTarget
+		|| Operation == EJargonEffectOperation::PullTarget;
+}
+
+bool IsStatusMigrationOperation(EJargonEffectOperation Operation)
+{
+	return Operation == EJargonEffectOperation::ApplyStun
+		|| Operation == EJargonEffectOperation::ApplyFreeze
+		|| Operation == EJargonEffectOperation::ApplyBurn
+		|| Operation == EJargonEffectOperation::ApplyRoot
+		|| Operation == EJargonEffectOperation::ApplyVulnerable;
+}
+
+bool OperationSupportsRadius(const FJargonEffectSpec& EffectSpec)
+{
+	return JargonEffectContracts::SupportsRadius(EffectSpec.Operation, EffectSpec.Delivery);
+}
+
+FString GetEffectDeliverySummary(const FJargonEffectSpec& EffectSpec)
+{
+	return JargonEffectContracts::GetDeliveryName(EffectSpec.Delivery);
+}
+
+FString GetEffectTargetFilterSummary(const FJargonEffectSpec& EffectSpec)
+{
+	return JargonEffectContracts::GetTargetFilterName(EffectSpec.TargetFilter);
+}
+
+FString BuildCardEffectPayloadSummary(const FJargonEffectSpec& EffectSpec)
+{
+	TArray<FString> Fields;
+	if (OperationUsesValue(EffectSpec.Operation))
+	{
+		Fields.Add(FString::Printf(TEXT("Value=%d"), EffectSpec.Value));
+	}
+	if (OperationSupportsRadius(EffectSpec))
+	{
+		Fields.Add(FString::Printf(TEXT("Radius=%d"), EffectSpec.Radius));
+	}
+	if (IsChainDelivery(EffectSpec))
+	{
+		Fields.Add(FString::Printf(TEXT("ChainCount=%d"), EffectSpec.ChainCount));
+	}
+
+	switch (EffectSpec.Operation)
+	{
+	case EJargonEffectOperation::MoveSource:
+		Fields.Add(FString::Printf(TEXT("MoveDistance=%d"), EffectSpec.MoveDistance));
+		break;
+	case EJargonEffectOperation::PushTarget:
+		Fields.Add(FString::Printf(TEXT("PushDistance=%d"), EffectSpec.PushDistance));
+		Fields.Add(FString::Printf(TEXT("CollisionDamage=%d"), EffectSpec.CollisionDamage));
+		break;
+	case EJargonEffectOperation::PullTarget:
+		Fields.Add(FString::Printf(TEXT("PullDistance=%d"), EffectSpec.PullDistance));
+		break;
+	case EJargonEffectOperation::SummonUnit:
+		Fields.Add(FString::Printf(TEXT("SummonDefinition=%s"), EffectSpec.SummonedUnitDefinition ? TEXT("Assigned") : TEXT("None")));
+		Fields.Add(FString::Printf(TEXT("RuntimeSummonClass=%s"), EffectSpec.RuntimeSummonedUnitClass ? *GetClassDisplayName(EffectSpec.RuntimeSummonedUnitClass.Get()) : TEXT("None")));
+		break;
+	case EJargonEffectOperation::PlaceTileEffect:
+		Fields.Add(FString::Printf(TEXT("TileEffectDefinition=%s"), EffectSpec.TileEffectDefinition ? TEXT("Assigned") : TEXT("None")));
+		Fields.Add(FString::Printf(TEXT("RuntimeTileEffectClass=%s"), EffectSpec.RuntimeTileEffectClass ? *GetClassDisplayName(EffectSpec.RuntimeTileEffectClass.Get()) : TEXT("None")));
+		break;
+	case EJargonEffectOperation::GainElementCharge:
+		Fields.Add(FString::Printf(TEXT("Element=%s"), *GetElementTypeName(EffectSpec.ElementType)));
+		break;
+	default:
+		break;
+	}
+
+	return Fields.Num() > 0 ? FString::Join(Fields, TEXT(" ")) : TEXT("None");
+}
+
+FString BuildConditionSummary(const TArray<FCardAuditElementalBonusGroup>& BonusGroups)
+{
+	TArray<FString> Conditions;
+	for (const FCardAuditElementalBonusGroup& BonusGroup : BonusGroups)
+	{
+		Conditions.Add(FString::Printf(
+			TEXT("%s>=%d Spend=%s Effects=%d"),
+			*GetElementTypeName(BonusGroup.ElementType),
+			BonusGroup.RequiredCharges,
+			*BoolToYesNo(BonusGroup.bSpendCharges),
+			BonusGroup.BonusEffects.Num()));
+	}
+	return Conditions.Num() > 0 ? FString::Join(Conditions, TEXT("; ")) : TEXT("None");
+}
+
+void AddEffectArchitectureWarnings(const FJargonEffectSpec& EffectSpec, TArray<FString>& OutWarnings)
+{
+	const FString OperationName = GetCardEffectOperationName(EffectSpec.Operation);
+	if (OperationName.Contains(TEXT("If")) ||
+		OperationName.Contains(TEXT("Per")) ||
+		OperationName.Contains(TEXT("Ignoring")) ||
+		OperationName.Contains(TEXT("When")) ||
+		OperationName.Contains(TEXT("While")) ||
+		OperationName.Contains(TEXT("With")) ||
+		OperationName.Contains(TEXT("Without")))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Architecture: operation '%s' looks one-off. Prefer primitive operation + delivery/filter/payload/condition."), *OperationName));
+	}
+
+	if (IsStatusMigrationOperation(EffectSpec.Operation))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Migration: direct status operation '%s' should become ApplyStatus + StatusEffectDefinition."), *OperationName));
+	}
+	if (!OperationUsesValue(EffectSpec.Operation) && EffectSpec.Value != 1)
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Payload: '%s' ignores Value=%d."), *OperationName, EffectSpec.Value));
+	}
+	if (!OperationSupportsRadius(EffectSpec) && EffectSpec.Radius > 0)
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Payload: '%s' ignores Radius=%d."), *OperationName, EffectSpec.Radius));
+	}
+	if (!IsChainDelivery(EffectSpec) && EffectSpec.ChainCount != 3)
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Payload: '%s' ignores ChainCount=%d."), *OperationName, EffectSpec.ChainCount));
+	}
+}
+
+bool BonusGroupMixesFriendlyAndHostileEffects(const FCardAuditElementalBonusGroup& BonusGroup)
 {
 	bool bHasFriendlyOperation = false;
 	bool bHasHostileOperation = false;
-	for (const FCardEffectSpec& BonusEffect : BonusGroup.BonusEffects)
+	for (const FJargonEffectSpec& BonusEffect : BonusGroup.BonusEffects)
 	{
 		bHasFriendlyOperation |= IsFriendlyTargetingOperation(BonusEffect.Operation);
 		bHasHostileOperation |= IsHostileTargetingOperation(BonusEffect.Operation);
@@ -333,25 +621,30 @@ void AddCardOrderingWarnings(const UCardDefinition* Card, TArray<FString>& OutSo
 		return;
 	}
 
-	for (int32 EffectIndex = 0; EffectIndex < Card->Effects.Num(); ++EffectIndex)
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	for (int32 EffectIndex = 0; EffectIndex < AuditEffects.Num(); ++EffectIndex)
 	{
-		const FCardEffectSpec& EffectSpec = Card->Effects[EffectIndex];
-		if (EffectSpec.Operation != ECardEffectOperation::MoveSelf)
+		const FJargonEffectSpec& EffectSpec = AuditEffects[EffectIndex];
+		if (EffectSpec.Operation != EJargonEffectOperation::MoveSource)
 		{
 			continue;
 		}
 
-		if (EffectIndex < Card->Effects.Num() - 1)
+		if (EffectIndex < AuditEffects.Num() - 1)
 		{
 			OutSoftWarnings.Add(FString::Printf(
-				TEXT("Warning: Effect %d MoveSelf appears before later base effects. MoveSelf can resolve asynchronously, so later base effects may be skipped for that resolve pass."),
+				TEXT("Warning: Effect %d MoveSource appears before later base effects. MoveSource can resolve asynchronously, so later base effects may be skipped for that resolve pass."),
 				EffectIndex));
 		}
 
-		if (Card->ElementalBonusGroups.Num() > 0)
+		if (AuditBonusGroups.Num() > 0)
 		{
 			OutSoftWarnings.Add(FString::Printf(
-				TEXT("Warning: Effect %d MoveSelf appears before ElementalBonusGroups. MoveSelf can resolve asynchronously, so elemental bonuses may be skipped for that resolve pass."),
+				TEXT("Warning: Effect %d MoveSource appears before CardScript elemental bonuses. MoveSource can resolve asynchronously, so elemental bonuses may be skipped for that resolve pass."),
 				EffectIndex));
 		}
 
@@ -401,11 +694,6 @@ void AddSummonDefinitionWarnings(
 		OutWarnings.Add(FString::Printf(TEXT("Invalid: AttackDamage is negative (%d)."), Definition->AttackDamage));
 	}
 
-	if (!Definition->OptionalUnitClassOverride)
-	{
-		OutWarnings.Add(TEXT("Notice: OptionalUnitClassOverride is empty; runtime must use CombatGameMode DefaultSummonedUnitClass."));
-	}
-
 	if (!bScannedByPath && bReferencedByScannedCards)
 	{
 		OutWarnings.Add(TEXT("Warning: referenced by scanned cards but outside configured summon definition scan paths."));
@@ -420,12 +708,12 @@ void AddSummonDefinitionWarnings(
 bool CardHasElementGenerator(const UCardDefinition* Card);
 
 void AddCardEffectSpecWarnings(
-	const FCardEffectSpec& EffectSpec,
+	const FJargonEffectSpec& EffectSpec,
 	const FString& EffectLabel,
 	TArray<FString>& OutFatalWarnings,
 	TArray<FString>& OutSoftWarnings)
 {
-	if (EffectSpec.Operation == ECardEffectOperation::None)
+	if (EffectSpec.Operation == EJargonEffectOperation::None)
 	{
 		OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has operation None."), *EffectLabel));
 		return;
@@ -436,85 +724,170 @@ void AddCardEffectSpecWarnings(
 		OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires Value > 0."), *EffectLabel));
 	}
 
-	if (EffectSpec.EffectRadius < 0)
+	if (EffectSpec.Radius < 0)
 	{
-		OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has negative EffectRadius."), *EffectLabel));
+		OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has negative Radius."), *EffectLabel));
 	}
 
-	if (IsChainOperation(EffectSpec.Operation) && EffectSpec.ChainCount <= 0)
+	if (IsChainDelivery(EffectSpec) && EffectSpec.ChainCount <= 0)
 	{
 		OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires ChainCount > 0."), *EffectLabel));
 	}
 
 	switch (EffectSpec.Operation)
 	{
-	case ECardEffectOperation::MoveSelf:
+	case EJargonEffectOperation::MoveSource:
 		if (EffectSpec.MoveDistance <= 0)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires MoveDistance > 0."), *EffectLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires delivery payload MoveDistance > 0."), *EffectLabel));
 		}
 		break;
 
-	case ECardEffectOperation::PushTarget:
+	case EJargonEffectOperation::PushTarget:
 		if (EffectSpec.PushDistance <= 0)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires PushDistance > 0."), *EffectLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires delivery payload PushDistance > 0."), *EffectLabel));
 		}
 
 		if (EffectSpec.CollisionDamage < 0)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has negative CollisionDamage."), *EffectLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has negative CollisionDamage payload."), *EffectLabel));
 		}
 		break;
 
-	case ECardEffectOperation::PullTarget:
+	case EJargonEffectOperation::PullTarget:
 		if (EffectSpec.PullDistance <= 0)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires PullDistance > 0."), *EffectLabel));
-		}
-		OutSoftWarnings.Add(FString::Printf(TEXT("Warning: %s uses PullTarget, which is currently deferred."), *EffectLabel));
-		break;
-
-	case ECardEffectOperation::SummonUnit:
-		if (!EffectSpec.SummonedUnitDefinition && !EffectSpec.UnitClass)
-		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has neither SummonedUnitDefinition nor UnitClass."), *EffectLabel));
-		}
-		else if (EffectSpec.SummonedUnitDefinition && EffectSpec.UnitClass)
-		{
-			OutSoftWarnings.Add(FString::Printf(TEXT("Notice: %s has both SummonedUnitDefinition and UnitClass. The definition wins; UnitClass fallback remains for migration."), *EffectLabel));
-		}
-		else if (EffectSpec.SummonedUnitDefinition)
-		{
-			OutSoftWarnings.Add(FString::Printf(TEXT("Info: %s uses the data-driven summon definition path."), *EffectLabel));
-		}
-		else
-		{
-			OutSoftWarnings.Add(FString::Printf(TEXT("Notice: %s uses the legacy UnitClass summon path."), *EffectLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires delivery payload PullDistance > 0."), *EffectLabel));
 		}
 		break;
 
-	case ECardEffectOperation::PlaceTileEffect:
-		if (!EffectSpec.TileEffectClass)
+	case EJargonEffectOperation::SummonUnit:
+		if (!EffectSpec.SummonedUnitDefinition)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has no TileEffectClass."), *EffectLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires SummonedUnitDefinition payload."), *EffectLabel));
 		}
-
-		if (EffectSpec.TileEffectDuration < 0)
+		if (!EffectSpec.RuntimeSummonedUnitClass)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has negative TileEffectDuration."), *EffectLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires RuntimeSummonedUnitClass payload."), *EffectLabel));
+		}
+		if (EffectSpec.SummonedUnitDefinition && EffectSpec.RuntimeSummonedUnitClass)
+		{
+			OutSoftWarnings.Add(FString::Printf(TEXT("Info: %s uses a data-driven summon definition plus explicit runtime class."), *EffectLabel));
 		}
 		break;
 
-	case ECardEffectOperation::GainElementCharge:
+	case EJargonEffectOperation::PlaceTileEffect:
+		if (!EffectSpec.TileEffectDefinition)
+		{
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires TileEffectDefinition payload."), *EffectLabel));
+		}
+		if (!EffectSpec.RuntimeTileEffectClass)
+		{
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires RuntimeTileEffectClass payload."), *EffectLabel));
+		}
+		break;
+
+	case EJargonEffectOperation::GainElementCharge:
 		if (EffectSpec.ElementType == EJargonElementType::None)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires ElementType other than None."), *EffectLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires ElementType payload other than None."), *EffectLabel));
 		}
 		break;
 
 	default:
 		break;
+	}
+}
+
+void AddCardScriptKeywordDiagnostics(
+	const UCardDefinition* Card,
+	TArray<FString>& OutFatalWarnings,
+	TArray<FString>& OutSoftWarnings)
+{
+	if (!Card)
+	{
+		return;
+	}
+
+	const UJargonCardScript* Script = Card->CardScript;
+	if (!Script)
+	{
+		return;
+	}
+
+	auto CheckKeyword = [&OutFatalWarnings, &OutSoftWarnings](const UJargonCardAction* Action, const FString& Label)
+	{
+		if (!Action)
+		{
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s is null."), *Label));
+			return;
+		}
+
+		const FString Summary = Action->GetActionSummary();
+		if (Summary.Contains(TEXT("MissingDefinition")))
+		{
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s is missing a required Data Asset payload (%s)."), *Label, *Summary));
+		}
+
+		if (Summary.Len() > 180)
+		{
+			OutSoftWarnings.Add(FString::Printf(TEXT("Review: %s collapsed keyword summary is long/noisy; consider simplifying the payload or display name (%s)."), *Label, *Summary));
+		}
+
+		if (const UJargonCardStatusAction* StatusAction = Cast<UJargonCardStatusAction>(Action))
+		{
+			if (!StatusAction->StatusEffectDefinition)
+			{
+				OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires StatusEffectDefinition payload."), *Label));
+			}
+		}
+		else if (const UJargonCardSummonAction* SummonAction = Cast<UJargonCardSummonAction>(Action))
+		{
+			if (!SummonAction->SummonedUnitDefinition)
+			{
+				OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires SummonedUnitDefinition payload."), *Label));
+			}
+			if (!SummonAction->RuntimeSummonedUnitClass)
+			{
+				OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires RuntimeSummonedUnitClass payload."), *Label));
+			}
+		}
+		else if (const UJargonCardPlaceTileEffectAction* TileEffectAction = Cast<UJargonCardPlaceTileEffectAction>(Action))
+		{
+			if (!TileEffectAction->TileEffectDefinition)
+			{
+				OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires TileEffectDefinition payload."), *Label));
+			}
+			if (!TileEffectAction->RuntimeTileEffectClass)
+			{
+				OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires RuntimeTileEffectClass payload."), *Label));
+			}
+		}
+	};
+
+	for (int32 ActionIndex = 0; ActionIndex < Script->Actions.Num(); ++ActionIndex)
+	{
+		CheckKeyword(
+			Script->Actions[ActionIndex],
+			FString::Printf(TEXT("CardScript keyword %d"), ActionIndex));
+	}
+
+	for (int32 BonusIndex = 0; BonusIndex < Script->ElementalBonuses.Num(); ++BonusIndex)
+	{
+		const FJargonCardElementalBonusScript& BonusScript = Script->ElementalBonuses[BonusIndex];
+		if (BonusScript.Actions.Num() <= 0)
+		{
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: elemental bonus %d has no keyword entries."), BonusIndex));
+			continue;
+		}
+
+		for (int32 ActionIndex = 0; ActionIndex < BonusScript.Actions.Num(); ++ActionIndex)
+		{
+			CheckKeyword(
+				BonusScript.Actions[ActionIndex],
+				FString::Printf(TEXT("Elemental bonus %d keyword %d"), BonusIndex, ActionIndex));
+		}
 	}
 }
 
@@ -554,49 +927,55 @@ void AddCardIntrinsicWarnings(
 		OutSoftWarnings.Add(TEXT("Warning: missing CardArt."));
 	}
 
-	if (Card->Effects.Num() == 0)
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+	AddCardScriptKeywordDiagnostics(Card, OutFatalWarnings, OutSoftWarnings);
+
+	if (AuditEffects.Num() == 0)
 	{
-		OutFatalWarnings.Add(TEXT("Invalid: no Effects authored."));
-		if (Card->ElementalBonusGroups.Num() > 0)
+		OutFatalWarnings.Add(TEXT("Invalid: no CardScript base keyword entries authored."));
+		if (AuditBonusGroups.Num() > 0)
 		{
-			OutSoftWarnings.Add(TEXT("Warning: ElementalBonusGroups are optional bonuses and cannot replace base Effects[]."));
+			OutSoftWarnings.Add(TEXT("Warning: CardScript elemental bonuses are optional and cannot replace base keywords."));
 		}
 	}
 	else
 	{
-		for (int32 EffectIndex = 0; EffectIndex < Card->Effects.Num(); ++EffectIndex)
+		for (int32 EffectIndex = 0; EffectIndex < AuditEffects.Num(); ++EffectIndex)
 		{
-			const FCardEffectSpec& EffectSpec = Card->Effects[EffectIndex];
+			const FJargonEffectSpec& EffectSpec = AuditEffects[EffectIndex];
 			const FString EffectLabel = FString::Printf(TEXT("Effect %d (%s)"), EffectIndex, *GetCardEffectOperationName(EffectSpec.Operation));
 			AddCardEffectSpecWarnings(EffectSpec, EffectLabel, OutFatalWarnings, OutSoftWarnings);
 		}
 	}
 
-	for (int32 BonusIndex = 0; BonusIndex < Card->ElementalBonusGroups.Num(); ++BonusIndex)
+	for (int32 BonusIndex = 0; BonusIndex < AuditBonusGroups.Num(); ++BonusIndex)
 	{
-		const FCardElementalBonusGroup& BonusGroup = Card->ElementalBonusGroups[BonusIndex];
+		const FCardAuditElementalBonusGroup& BonusGroup = AuditBonusGroups[BonusIndex];
 		const FString BonusMode = BonusGroup.bSpendCharges ? TEXT("Spend") : TEXT("Check");
 		const FString BonusLabel = FString::Printf(TEXT("ElementalBonus %d (%s)"), BonusIndex, *BonusMode);
 
 		if (BonusGroup.ElementType == EJargonElementType::None)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires ElementType other than None."), *BonusLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires ElementType payload other than None."), *BonusLabel));
 		}
 
 		if (BonusGroup.RequiredCharges <= 0)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires RequiredCharges > 0. Element bonuses are optional, but their authored requirement must still be meaningful."), *BonusLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires RequiredCharges payload > 0. Element bonuses are optional, but their authored requirement must still be meaningful."), *BonusLabel));
 		}
 
 		if (BonusGroup.BonusEffects.Num() <= 0)
 		{
-			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has no BonusEffects."), *BonusLabel));
+			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s has no bonus keywords."), *BonusLabel));
 			continue;
 		}
 
 		for (int32 BonusEffectIndex = 0; BonusEffectIndex < BonusGroup.BonusEffects.Num(); ++BonusEffectIndex)
 		{
-			const FCardEffectSpec& BonusEffectSpec = BonusGroup.BonusEffects[BonusEffectIndex];
+			const FJargonEffectSpec& BonusEffectSpec = BonusGroup.BonusEffects[BonusEffectIndex];
 			const FString EffectLabel = FString::Printf(
 				TEXT("%s Effect %d (%s)"),
 				*BonusLabel,
@@ -636,19 +1015,24 @@ bool CardHasElementGenerator(const UCardDefinition* Card)
 		return false;
 	}
 
-	for (const FCardEffectSpec& EffectSpec : Card->Effects)
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	for (const FJargonEffectSpec& EffectSpec : AuditEffects)
 	{
-		if (EffectSpec.Operation == ECardEffectOperation::GainElementCharge)
+		if (EffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
 		{
 			return true;
 		}
 	}
 
-	for (const FCardElementalBonusGroup& BonusGroup : Card->ElementalBonusGroups)
+	for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
 	{
-		for (const FCardEffectSpec& BonusEffectSpec : BonusGroup.BonusEffects)
+		for (const FJargonEffectSpec& BonusEffectSpec : BonusGroup.BonusEffects)
 		{
-			if (BonusEffectSpec.Operation == ECardEffectOperation::GainElementCharge)
+			if (BonusEffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
 			{
 				return true;
 			}
@@ -660,17 +1044,27 @@ bool CardHasElementGenerator(const UCardDefinition* Card)
 
 FString BuildEffectSummary(const UCardDefinition* Card)
 {
-	if (!Card || Card->Effects.Num() == 0)
+	if (!Card)
+	{
+		return TEXT("None");
+	}
+
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	if (AuditEffects.Num() == 0)
 	{
 		return TEXT("None");
 	}
 
 	TArray<FString> EffectSummaries;
-	EffectSummaries.Reserve(Card->Effects.Num());
+	EffectSummaries.Reserve(AuditEffects.Num());
 
-	for (int32 EffectIndex = 0; EffectIndex < Card->Effects.Num(); ++EffectIndex)
+	for (int32 EffectIndex = 0; EffectIndex < AuditEffects.Num(); ++EffectIndex)
 	{
-		const FCardEffectSpec& EffectSpec = Card->Effects[EffectIndex];
+		const FJargonEffectSpec& EffectSpec = AuditEffects[EffectIndex];
 		EffectSummaries.Add(FString::Printf(
 			TEXT("Effect %d: %s"),
 			EffectIndex,
@@ -678,20 +1072,20 @@ FString BuildEffectSummary(const UCardDefinition* Card)
 	}
 
 	const FString BaseEffectSummary = JoinStrings(EffectSummaries, TEXT("; "));
-	if (Card->ElementalBonusGroups.Num() <= 0)
+	if (AuditBonusGroups.Num() <= 0)
 	{
 		return BaseEffectSummary;
 	}
 
 	TArray<FString> BonusSummaries;
-	BonusSummaries.Reserve(Card->ElementalBonusGroups.Num());
-	for (int32 BonusIndex = 0; BonusIndex < Card->ElementalBonusGroups.Num(); ++BonusIndex)
+	BonusSummaries.Reserve(AuditBonusGroups.Num());
+	for (int32 BonusIndex = 0; BonusIndex < AuditBonusGroups.Num(); ++BonusIndex)
 	{
-		const FCardElementalBonusGroup& BonusGroup = Card->ElementalBonusGroups[BonusIndex];
+		const FCardAuditElementalBonusGroup& BonusGroup = AuditBonusGroups[BonusIndex];
 		BonusSummaries.Add(FString::Printf(
 			TEXT("Bonus %d: %s"),
 			BonusIndex,
-			*Card->GetElementalBonusAuditSummary(BonusGroup)));
+			*GetElementalBonusAuditSummary(BonusGroup)));
 	}
 
 	return FString::Printf(TEXT("%s | Bonuses: %s"), *BaseEffectSummary, *JoinStrings(BonusSummaries, TEXT("; ")));
@@ -710,6 +1104,1346 @@ FString BuildPackSummaryForCard(const TArray<FCardPackUsage>& PackUsages)
 	return JoinStrings(PackParts, TEXT("; "));
 }
 
+void AddUniqueString(TArray<FString>& Values, const FString& Value)
+{
+	if (!Value.IsEmpty())
+	{
+		Values.AddUnique(Value);
+	}
+}
+
+FString GetPluralSuffix(int32 Count)
+{
+	return Count == 1 ? TEXT("") : TEXT("s");
+}
+
+FString GetEffectValueText(int32 Value)
+{
+	return FString::FromInt(FMath::Max(0, Value));
+}
+
+FString GetSummonDisplayName(const FJargonEffectSpec& EffectSpec)
+{
+	if (EffectSpec.SummonedUnitDefinition)
+	{
+		const FString SummonName = EffectSpec.SummonedUnitDefinition->DisplayName.ToString().TrimStartAndEnd();
+		if (!SummonName.IsEmpty())
+		{
+			return SummonName;
+		}
+
+		return GetNameSafe(EffectSpec.SummonedUnitDefinition.Get());
+	}
+
+	return TEXT("a unit");
+}
+
+FString GetTileEffectDisplayName(const FJargonEffectSpec& EffectSpec)
+{
+	if (EffectSpec.TileEffectDefinition)
+	{
+		const FString TileEffectName = EffectSpec.TileEffectDefinition->DisplayName.ToString().TrimStartAndEnd();
+		if (!TileEffectName.IsEmpty())
+		{
+			return TileEffectName;
+		}
+
+		return GetNameSafe(EffectSpec.TileEffectDefinition.Get());
+	}
+
+	return TEXT("a tile effect");
+}
+
+FString BuildRulesTextForEffect(const FJargonEffectSpec& EffectSpec)
+{
+	const bool bChainDelivery = IsChainDelivery(EffectSpec);
+	if (bChainDelivery)
+	{
+		const FString ChainPrefix = FString::Printf(
+			TEXT("Chain to up to %d target%s, "),
+			FMath::Max(0, EffectSpec.ChainCount),
+			*GetPluralSuffix(EffectSpec.ChainCount));
+
+		if (EffectSpec.Operation == EJargonEffectOperation::DealDamage)
+		{
+			return FString::Printf(TEXT("%sdealing %s damage each."), *ChainPrefix, *GetEffectValueText(EffectSpec.Value));
+		}
+		if (EffectSpec.Operation == EJargonEffectOperation::Heal)
+		{
+			return FString::Printf(TEXT("%shealing %s HP each."), *ChainPrefix, *GetEffectValueText(EffectSpec.Value));
+		}
+		if (EffectSpec.Operation == EJargonEffectOperation::ApplyStatus)
+		{
+			const FString StatusName = EffectSpec.StatusEffectDefinition
+				? EffectSpec.StatusEffectDefinition->DisplayName.ToString().TrimStartAndEnd()
+				: TEXT("Status");
+			return FString::Printf(TEXT("%sapplying %s %s each."), *ChainPrefix, *GetEffectValueText(EffectSpec.Value), *StatusName);
+		}
+	}
+
+	switch (EffectSpec.Operation)
+	{
+	case EJargonEffectOperation::DealDamage:
+		return FString::Printf(TEXT("Deal %s damage."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::Heal:
+		return FString::Printf(TEXT("Heal %s HP."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::ApplyShield:
+		return FString::Printf(TEXT("Apply %s Shield."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::ApplyStun:
+		return FString::Printf(TEXT("Apply %s Stun."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::ApplyFreeze:
+		return FString::Printf(TEXT("Apply %s Freeze."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::ApplyBurn:
+		return FString::Printf(TEXT("Apply %s Burn."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::ApplyRoot:
+		return FString::Printf(TEXT("Apply %s Root."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::ApplyVulnerable:
+		return FString::Printf(TEXT("Apply Vulnerable +%s."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::ApplyStatus:
+		return FString::Printf(
+			TEXT("Apply %s %s."),
+			*GetEffectValueText(EffectSpec.Value),
+			EffectSpec.StatusEffectDefinition ? *EffectSpec.StatusEffectDefinition->DisplayName.ToString() : TEXT("Status"));
+
+	case EJargonEffectOperation::MoveSource:
+		return FString::Printf(TEXT("Move up to %d tile%s."), FMath::Max(0, EffectSpec.MoveDistance), *GetPluralSuffix(EffectSpec.MoveDistance));
+
+	case EJargonEffectOperation::PushTarget:
+		if (EffectSpec.CollisionDamage > 0)
+		{
+			return FString::Printf(
+				TEXT("Push the target %d tile%s. Collision deals %d damage."),
+				FMath::Max(0, EffectSpec.PushDistance),
+				*GetPluralSuffix(EffectSpec.PushDistance),
+				FMath::Max(0, EffectSpec.CollisionDamage));
+		}
+		return FString::Printf(TEXT("Push the target %d tile%s."), FMath::Max(0, EffectSpec.PushDistance), *GetPluralSuffix(EffectSpec.PushDistance));
+
+	case EJargonEffectOperation::PullTarget:
+		return FString::Printf(TEXT("Pull the target %d tile%s."), FMath::Max(0, EffectSpec.PullDistance), *GetPluralSuffix(EffectSpec.PullDistance));
+
+	case EJargonEffectOperation::SummonUnit:
+		return FString::Printf(TEXT("Summon %s."), *GetSummonDisplayName(EffectSpec));
+
+	case EJargonEffectOperation::PlaceTileEffect:
+		return FString::Printf(TEXT("Place %s."), *GetTileEffectDisplayName(EffectSpec));
+
+	case EJargonEffectOperation::DrawCards:
+		return FString::Printf(TEXT("Draw %s card%s."), *GetEffectValueText(EffectSpec.Value), *GetPluralSuffix(EffectSpec.Value));
+
+	case EJargonEffectOperation::GainEnergy:
+		return FString::Printf(TEXT("Gain %s Energy."), *GetEffectValueText(EffectSpec.Value));
+
+	case EJargonEffectOperation::DestroyTileEffect:
+		return TEXT("Destroy a tile effect.");
+
+	case EJargonEffectOperation::GainElementCharge:
+		return FString::Printf(
+			TEXT("Gain %s %s charge%s."),
+			*GetEffectValueText(EffectSpec.Value),
+			*GetElementTypeName(EffectSpec.ElementType),
+			*GetPluralSuffix(EffectSpec.Value));
+
+	default:
+		return FString::Printf(TEXT("%s."), *GetCardEffectOperationName(EffectSpec.Operation));
+	}
+}
+
+FString BuildRulesTextForEffects(const TArray<FJargonEffectSpec>& Effects)
+{
+	TArray<FString> Parts;
+	Parts.Reserve(Effects.Num());
+	for (const FJargonEffectSpec& EffectSpec : Effects)
+	{
+		if (EffectSpec.Operation != EJargonEffectOperation::None)
+		{
+			Parts.Add(BuildRulesTextForEffect(EffectSpec));
+		}
+	}
+
+	return JoinStrings(Parts, TEXT(" "));
+}
+
+FString BuildRulesTextForBonusGroup(const FCardAuditElementalBonusGroup& BonusGroup)
+{
+	const FString BonusPrefix = FString::Printf(
+		TEXT("%s %d %s charge%s:"),
+		BonusGroup.bSpendCharges ? TEXT("Spend") : TEXT("If you have"),
+		FMath::Max(0, BonusGroup.RequiredCharges),
+		*GetElementTypeName(BonusGroup.ElementType),
+		*GetPluralSuffix(BonusGroup.RequiredCharges));
+
+	const FString BonusEffects = BuildRulesTextForEffects(BonusGroup.BonusEffects);
+	return BonusEffects.IsEmpty()
+		? BonusPrefix
+		: FString::Printf(TEXT("%s %s"), *BonusPrefix, *BonusEffects);
+}
+
+FString BuildSuggestedRulesTextForCard(const UCardDefinition* Card)
+{
+	if (!Card)
+	{
+		return FString();
+	}
+
+	TArray<FString> Parts;
+	if (Card->CardScript)
+	{
+		const FString ScriptRules = Card->CardScript->GetRulesText();
+		if (!ScriptRules.IsEmpty())
+		{
+			Parts.Add(ScriptRules);
+		}
+		return JoinStrings(Parts, TEXT(" "));
+	}
+
+	return JoinStrings(Parts, TEXT(" "));
+}
+
+FString NormalizeDescriptionForComparison(FString Description)
+{
+	Description.TrimStartAndEndInline();
+	Description.ReplaceInline(TEXT("\r"), TEXT(" "));
+	Description.ReplaceInline(TEXT("\n"), TEXT(" "));
+	while (Description.Contains(TEXT("  ")))
+	{
+		Description.ReplaceInline(TEXT("  "), TEXT(" "));
+	}
+	return Description.ToLower();
+}
+
+FString GetRulesKeywordForOperation(EJargonEffectOperation Operation)
+{
+	switch (Operation)
+	{
+	case EJargonEffectOperation::DealDamage:
+		return TEXT("damage");
+
+	case EJargonEffectOperation::Heal:
+		return TEXT("heal");
+
+	case EJargonEffectOperation::ApplyShield:
+		return TEXT("shield");
+
+	case EJargonEffectOperation::ApplyStun:
+		return TEXT("stun");
+
+	case EJargonEffectOperation::ApplyFreeze:
+		return TEXT("freeze");
+
+	case EJargonEffectOperation::ApplyBurn:
+		return TEXT("burn");
+
+	case EJargonEffectOperation::ApplyRoot:
+		return TEXT("root");
+
+	case EJargonEffectOperation::ApplyVulnerable:
+		return TEXT("vulnerable");
+
+	case EJargonEffectOperation::ApplyStatus:
+		return TEXT("status");
+
+	case EJargonEffectOperation::MoveSource:
+		return TEXT("move");
+
+	case EJargonEffectOperation::PushTarget:
+		return TEXT("push");
+
+	case EJargonEffectOperation::PullTarget:
+		return TEXT("pull");
+
+	case EJargonEffectOperation::SummonUnit:
+		return TEXT("summon");
+
+	case EJargonEffectOperation::PlaceTileEffect:
+		return TEXT("place");
+
+	case EJargonEffectOperation::DrawCards:
+		return TEXT("draw");
+
+	case EJargonEffectOperation::GainEnergy:
+		return TEXT("energy");
+
+	case EJargonEffectOperation::DestroyTileEffect:
+		return TEXT("destroy");
+
+	case EJargonEffectOperation::GainElementCharge:
+		return TEXT("gain");
+
+	default:
+		return FString();
+	}
+}
+
+void AddDescriptionWarningsForEffect(const FJargonEffectSpec& EffectSpec, const FString& NormalizedDescription, const FString& EffectLabel, TArray<FString>& OutWarnings)
+{
+	const FString Keyword = GetRulesKeywordForOperation(EffectSpec.Operation);
+	if (!Keyword.IsEmpty() && !NormalizedDescription.Contains(Keyword))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Review: description may omit '%s' for %s."), *Keyword, *EffectLabel));
+	}
+
+	if (OperationUsesValue(EffectSpec.Operation) && EffectSpec.Value > 0 && !NormalizedDescription.Contains(FString::FromInt(EffectSpec.Value)))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Review: description may omit value %d for %s."), EffectSpec.Value, *EffectLabel));
+	}
+
+	if (EffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
+	{
+		const FString ElementName = GetElementTypeName(EffectSpec.ElementType).ToLower();
+		if (!ElementName.IsEmpty() && !NormalizedDescription.Contains(ElementName))
+		{
+			OutWarnings.Add(FString::Printf(TEXT("Review: description may omit element '%s' for %s."), *GetElementTypeName(EffectSpec.ElementType), *EffectLabel));
+		}
+		if (!NormalizedDescription.Contains(TEXT("charge")) && !NormalizedDescription.Contains(TEXT("element")))
+		{
+			OutWarnings.Add(FString::Printf(TEXT("Review: description may omit element charge wording for %s."), *EffectLabel));
+		}
+	}
+}
+
+FCardDescriptionSuggestionRow BuildDescriptionSuggestionRow(const UCardDefinition* Card)
+{
+	FCardDescriptionSuggestionRow Row;
+	if (!Card)
+	{
+		Row.Status = TEXT("Invalid");
+		Row.Warnings.Add(TEXT("Invalid: null card."));
+		return Row;
+	}
+
+	Row.AssetPath = Card->GetPathName();
+	Row.AssetName = Card->GetName();
+	Row.DisplayName = TextOrFallbackName(Card->DisplayName, Card);
+	Row.CurrentDescription = Card->Description.ToString().TrimStartAndEnd();
+	Row.SuggestedDescription = BuildSuggestedRulesTextForCard(Card);
+
+	const FString NormalizedCurrent = NormalizeDescriptionForComparison(Row.CurrentDescription);
+	const FString NormalizedSuggested = NormalizeDescriptionForComparison(Row.SuggestedDescription);
+
+	if (Row.CurrentDescription.IsEmpty())
+	{
+		Row.Status = TEXT("Missing");
+		Row.Warnings.Add(TEXT("Warning: Description is empty."));
+	}
+	else if (!Row.SuggestedDescription.IsEmpty() && NormalizedCurrent == NormalizedSuggested)
+	{
+		Row.Status = TEXT("Matches");
+	}
+	else
+	{
+		Row.Status = TEXT("Review");
+		Row.Warnings.Add(TEXT("Review: authored Description differs from generated rules-first suggestion."));
+	}
+
+	if (NormalizedCurrent.Contains(TEXT("light")) || NormalizedCurrent.Contains(TEXT("shadow")))
+	{
+		Row.Warnings.Add(TEXT("Review: description may use legacy element wording. Use Radiance or Quietus."));
+	}
+	if (NormalizedCurrent.Contains(TEXT("mana")))
+	{
+		Row.Warnings.Add(TEXT("Review: description mentions Mana. Use Energy."));
+	}
+	if (NormalizedCurrent.Contains(TEXT("armor")))
+	{
+		Row.Warnings.Add(TEXT("Review: description mentions Armor. Use Shield."));
+	}
+
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	for (int32 EffectIndex = 0; EffectIndex < AuditEffects.Num(); ++EffectIndex)
+	{
+		AddDescriptionWarningsForEffect(
+			AuditEffects[EffectIndex],
+			NormalizedCurrent,
+			FString::Printf(TEXT("Effect %d"), EffectIndex),
+			Row.Warnings);
+	}
+
+	for (int32 BonusIndex = 0; BonusIndex < AuditBonusGroups.Num(); ++BonusIndex)
+	{
+		const FCardAuditElementalBonusGroup& BonusGroup = AuditBonusGroups[BonusIndex];
+		const FString ElementName = GetElementTypeName(BonusGroup.ElementType).ToLower();
+		if (!ElementName.IsEmpty() && !NormalizedCurrent.Contains(ElementName))
+		{
+			Row.Warnings.Add(FString::Printf(TEXT("Review: description may omit bonus element '%s'."), *GetElementTypeName(BonusGroup.ElementType)));
+		}
+		if (!NormalizedCurrent.Contains(FString::FromInt(BonusGroup.RequiredCharges)))
+		{
+			Row.Warnings.Add(FString::Printf(TEXT("Review: description may omit bonus required charge count %d."), BonusGroup.RequiredCharges));
+		}
+
+		for (int32 BonusEffectIndex = 0; BonusEffectIndex < BonusGroup.BonusEffects.Num(); ++BonusEffectIndex)
+		{
+			AddDescriptionWarningsForEffect(
+				BonusGroup.BonusEffects[BonusEffectIndex],
+				NormalizedCurrent,
+				FString::Printf(TEXT("ElementalBonus %d Effect %d"), BonusIndex, BonusEffectIndex),
+				Row.Warnings);
+		}
+	}
+
+	return Row;
+}
+
+int32 EstimateEffectBudget(const FJargonEffectSpec& EffectSpec)
+{
+	switch (EffectSpec.Operation)
+	{
+	case EJargonEffectOperation::DealDamage:
+		return FMath::Max(0, EffectSpec.Value) + FMath::Max(0, EffectSpec.Radius);
+
+	case EJargonEffectOperation::Heal:
+	case EJargonEffectOperation::ApplyShield:
+		return FMath::Max(0, EffectSpec.Value) + FMath::Max(0, EffectSpec.Radius);
+
+	case EJargonEffectOperation::ApplyStun:
+	case EJargonEffectOperation::ApplyFreeze:
+	case EJargonEffectOperation::ApplyRoot:
+		return (FMath::Max(0, EffectSpec.Value) * 2) + FMath::Max(0, EffectSpec.Radius);
+
+	case EJargonEffectOperation::ApplyBurn:
+		return FMath::Max(0, EffectSpec.Value) + FMath::Max(0, EffectSpec.Radius);
+
+	case EJargonEffectOperation::ApplyVulnerable:
+		return FMath::Max(0, EffectSpec.Value) + 1 + FMath::Max(0, EffectSpec.Radius);
+
+	case EJargonEffectOperation::MoveSource:
+		return FMath::Max(0, EffectSpec.MoveDistance);
+
+	case EJargonEffectOperation::PushTarget:
+		return FMath::Max(0, EffectSpec.PushDistance) + FMath::Max(0, EffectSpec.CollisionDamage);
+
+	case EJargonEffectOperation::PullTarget:
+		return FMath::Max(0, EffectSpec.PullDistance);
+
+	case EJargonEffectOperation::SummonUnit:
+		return 5;
+
+	case EJargonEffectOperation::PlaceTileEffect:
+		return 2 + FMath::Max(0, EffectSpec.Radius);
+
+	case EJargonEffectOperation::DrawCards:
+	case EJargonEffectOperation::GainEnergy:
+		return FMath::Max(0, EffectSpec.Value) * 2;
+
+	case EJargonEffectOperation::ApplyStatus:
+		return FMath::Max(0, EffectSpec.Value) * (IsChainDelivery(EffectSpec) ? FMath::Max(1, EffectSpec.ChainCount) : 1);
+
+	case EJargonEffectOperation::DestroyTileEffect:
+		return 1 + FMath::Max(0, EffectSpec.Radius);
+
+	case EJargonEffectOperation::GainElementCharge:
+		return FMath::Max(0, EffectSpec.Value);
+
+	default:
+		return 0;
+	}
+}
+
+int32 EstimateEffectsBudget(const TArray<FJargonEffectSpec>& Effects)
+{
+	int32 Budget = 0;
+	for (const FJargonEffectSpec& EffectSpec : Effects)
+	{
+		Budget += EstimateEffectBudget(EffectSpec);
+	}
+	return Budget;
+}
+
+void GetExpectedCostBandForBudget(int32 Budget, int32& OutMinCost, int32& OutMaxCost, int32& OutSuggestedCost)
+{
+	if (Budget <= 1)
+	{
+		OutMinCost = 0;
+		OutMaxCost = 1;
+		OutSuggestedCost = 0;
+	}
+	else if (Budget <= 4)
+	{
+		OutMinCost = 1;
+		OutMaxCost = 1;
+		OutSuggestedCost = 1;
+	}
+	else if (Budget <= 7)
+	{
+		OutMinCost = 1;
+		OutMaxCost = 2;
+		OutSuggestedCost = 2;
+	}
+	else if (Budget <= 11)
+	{
+		OutMinCost = 2;
+		OutMaxCost = 3;
+		OutSuggestedCost = 2;
+	}
+	else
+	{
+		OutMinCost = 3;
+		OutMaxCost = 4;
+		OutSuggestedCost = 3;
+	}
+}
+
+bool CardHasDirectHostileValueAbove(const UCardDefinition* Card, int32 Value)
+{
+	if (!Card)
+	{
+		return false;
+	}
+
+	TArray<FJargonEffectSpec> AuditEffects;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+
+	for (const FJargonEffectSpec& EffectSpec : AuditEffects)
+	{
+		if ((EffectSpec.Operation == EJargonEffectOperation::DealDamage ||
+			EffectSpec.Operation == EJargonEffectOperation::ApplyStun ||
+			EffectSpec.Operation == EJargonEffectOperation::ApplyFreeze ||
+			EffectSpec.Operation == EJargonEffectOperation::ApplyBurn ||
+			EffectSpec.Operation == EJargonEffectOperation::ApplyRoot ||
+			EffectSpec.Operation == EJargonEffectOperation::ApplyVulnerable) &&
+			EffectSpec.Value > Value)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+FCardBalanceEstimate EstimateCardBalance(const UCardDefinition* Card)
+{
+	FCardBalanceEstimate Estimate;
+	if (!Card)
+	{
+		Estimate.Warnings.Add(TEXT("Invalid: null card."));
+		return Estimate;
+	}
+
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	Estimate.BaseBudget = EstimateEffectsBudget(AuditEffects);
+	for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
+	{
+		const int32 BonusBudget = EstimateEffectsBudget(BonusGroup.BonusEffects);
+		Estimate.ElementalBonusBudget += BonusBudget;
+		if (BonusBudget > (BonusGroup.RequiredCharges * 2) + 2)
+		{
+			Estimate.Warnings.Add(FString::Printf(
+				TEXT("Balance: elemental bonus %s Required=%d has high payoff budget %d. Verify charge requirement or payoff size."),
+				*GetElementTypeName(BonusGroup.ElementType),
+				BonusGroup.RequiredCharges,
+				BonusBudget));
+		}
+	}
+
+	GetExpectedCostBandForBudget(Estimate.BaseBudget, Estimate.ExpectedCostMin, Estimate.ExpectedCostMax, Estimate.SuggestedCost);
+
+	if (Card->Cost < Estimate.ExpectedCostMin)
+	{
+		Estimate.Warnings.Add(FString::Printf(
+			TEXT("Balance: likely undercosted. Cost=%d, expected tactical low-number band=%d-%d."),
+			Card->Cost,
+			Estimate.ExpectedCostMin,
+			Estimate.ExpectedCostMax));
+	}
+	else if (Card->Cost > Estimate.ExpectedCostMax)
+	{
+		Estimate.Warnings.Add(FString::Printf(
+			TEXT("Balance: likely overcosted. Cost=%d, expected tactical low-number band=%d-%d."),
+			Card->Cost,
+			Estimate.ExpectedCostMin,
+			Estimate.ExpectedCostMax));
+	}
+
+	if (Card->Cost == 0 && CardHasDirectHostileValueAbove(Card, 1))
+	{
+		Estimate.Warnings.Add(TEXT("Balance: 0-cost cards should usually be setup, movement, light utility, or small element generation; review direct hostile impact."));
+	}
+
+	if (Card->Cost > 3)
+	{
+		Estimate.Warnings.Add(TEXT("Balance: cost above 3 should be rare in the current tactical low-number curve."));
+	}
+
+	return Estimate;
+}
+
+TArray<FString> BuildRoleTagsForCard(const UCardDefinition* Card)
+{
+	TArray<FString> RoleTags;
+	if (!Card)
+	{
+		return RoleTags;
+	}
+
+	const auto AddRoleForEffect = [&RoleTags](const FJargonEffectSpec& EffectSpec)
+	{
+		switch (EffectSpec.Operation)
+		{
+		case EJargonEffectOperation::DealDamage:
+			AddUniqueString(RoleTags, TEXT("Damage"));
+			break;
+
+		case EJargonEffectOperation::ApplyBurn:
+			AddUniqueString(RoleTags, TEXT("Damage"));
+			AddUniqueString(RoleTags, TEXT("Burn"));
+			AddUniqueString(RoleTags, TEXT("Damage Over Time"));
+			break;
+
+		case EJargonEffectOperation::Heal:
+			AddUniqueString(RoleTags, TEXT("Healing"));
+			break;
+
+		case EJargonEffectOperation::ApplyShield:
+			AddUniqueString(RoleTags, TEXT("Defense"));
+			break;
+
+		case EJargonEffectOperation::ApplyStun:
+		case EJargonEffectOperation::ApplyFreeze:
+		case EJargonEffectOperation::ApplyRoot:
+		case EJargonEffectOperation::ApplyStatus:
+		case EJargonEffectOperation::PushTarget:
+		case EJargonEffectOperation::PullTarget:
+		case EJargonEffectOperation::DestroyTileEffect:
+			AddUniqueString(RoleTags, TEXT("Control"));
+			break;
+
+		case EJargonEffectOperation::ApplyVulnerable:
+			AddUniqueString(RoleTags, TEXT("Damage Setup"));
+			AddUniqueString(RoleTags, TEXT("Control"));
+			break;
+
+		case EJargonEffectOperation::MoveSource:
+			AddUniqueString(RoleTags, TEXT("Mobility"));
+			break;
+
+		case EJargonEffectOperation::DrawCards:
+			AddUniqueString(RoleTags, TEXT("Draw"));
+			break;
+
+		case EJargonEffectOperation::GainEnergy:
+			AddUniqueString(RoleTags, TEXT("Energy"));
+			break;
+
+		case EJargonEffectOperation::GainElementCharge:
+			AddUniqueString(RoleTags, TEXT("Generator"));
+			break;
+
+		case EJargonEffectOperation::SummonUnit:
+			AddUniqueString(RoleTags, TEXT("Summon"));
+			break;
+
+		case EJargonEffectOperation::PlaceTileEffect:
+			AddUniqueString(RoleTags, TEXT("Tile Effect"));
+			break;
+
+		default:
+			break;
+		}
+	};
+
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	for (const FJargonEffectSpec& EffectSpec : AuditEffects)
+	{
+		AddRoleForEffect(EffectSpec);
+	}
+
+	if (AuditBonusGroups.Num() > 0)
+	{
+		AddUniqueString(RoleTags, TEXT("Element Payoff"));
+		for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
+		{
+			for (const FJargonEffectSpec& BonusEffect : BonusGroup.BonusEffects)
+			{
+				AddRoleForEffect(BonusEffect);
+			}
+		}
+	}
+
+	if (Card->Category == ECardCategory::Summon)
+	{
+		AddUniqueString(RoleTags, TEXT("Summon"));
+	}
+	if (Card->Category == ECardCategory::Trap)
+	{
+		AddUniqueString(RoleTags, TEXT("Trap"));
+	}
+	if (Card->Category == ECardCategory::Aura)
+	{
+		AddUniqueString(RoleTags, TEXT("Aura"));
+	}
+
+	if (RoleTags.Num() == 0)
+	{
+		RoleTags.Add(TEXT("Unclassified"));
+	}
+
+	RoleTags.Sort();
+	return RoleTags;
+}
+
+TArray<FString> BuildElementTagsForCard(const UCardDefinition* Card)
+{
+	TArray<FString> ElementTags;
+	if (!Card)
+	{
+		return ElementTags;
+	}
+
+	const auto AddElementFromEffect = [&ElementTags](const FJargonEffectSpec& EffectSpec)
+	{
+		if (EffectSpec.Operation == EJargonEffectOperation::GainElementCharge && EffectSpec.ElementType != EJargonElementType::None)
+		{
+			AddUniqueString(ElementTags, GetElementTypeName(EffectSpec.ElementType));
+		}
+	};
+
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	for (const FJargonEffectSpec& EffectSpec : AuditEffects)
+	{
+		AddElementFromEffect(EffectSpec);
+	}
+
+	for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
+	{
+		if (BonusGroup.ElementType != EJargonElementType::None)
+		{
+			AddUniqueString(ElementTags, GetElementTypeName(BonusGroup.ElementType));
+		}
+
+		for (const FJargonEffectSpec& BonusEffect : BonusGroup.BonusEffects)
+		{
+			AddElementFromEffect(BonusEffect);
+		}
+	}
+
+	if (ElementTags.Num() == 0)
+	{
+		ElementTags.Add(TEXT("Neutral"));
+	}
+
+	ElementTags.Sort();
+	return ElementTags;
+}
+
+void AddKeywordsForEffect(const FJargonEffectSpec& EffectSpec, TArray<FString>& InOutKeywords)
+{
+	const FString Keyword = GetCardEffectOperationName(EffectSpec.Operation);
+	if (!Keyword.IsEmpty() && Keyword != TEXT("None"))
+	{
+		AddUniqueString(InOutKeywords, Keyword);
+	}
+}
+
+TArray<FString> BuildKeywordListForCard(const UCardDefinition* Card)
+{
+	TArray<FString> Keywords;
+	if (!Card)
+	{
+		return Keywords;
+	}
+
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	for (const FJargonEffectSpec& EffectSpec : AuditEffects)
+	{
+		AddKeywordsForEffect(EffectSpec, Keywords);
+	}
+
+	for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
+	{
+		for (const FJargonEffectSpec& BonusEffect : BonusGroup.BonusEffects)
+		{
+			AddKeywordsForEffect(BonusEffect, Keywords);
+		}
+	}
+
+	Keywords.Sort();
+	return Keywords;
+}
+
+FString BuildCardSamenessFingerprint(const UCardDefinition* Card)
+{
+	if (!Card)
+	{
+		return TEXT("Invalid");
+	}
+
+	const TArray<FString> RoleTags = BuildRoleTagsForCard(Card);
+	const TArray<FString> ElementTags = BuildElementTagsForCard(Card);
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+	const FString PrimaryOperation = AuditEffects.Num() > 0
+		? GetCardEffectOperationName(AuditEffects[0].Operation)
+		: TEXT("None");
+
+	return FString::Printf(
+		TEXT("%s|%s|Cost%d|Range%d|%s|Roles=%s|Elements=%s|Bonus%d"),
+		*GetCardCategoryName(Card->Category),
+		*GetCardTargetTypeName(Card->TargetType),
+		Card->Cost,
+		Card->Range,
+		*PrimaryOperation,
+		*JoinStrings(RoleTags, TEXT("+")),
+		*JoinStrings(ElementTags, TEXT("+")),
+		AuditBonusGroups.Num());
+}
+
+int32 GetCardTacticalScore(const UCardDefinition* Card)
+{
+	if (!Card)
+	{
+		return 0;
+	}
+
+	const auto ScoreEffect = [](const FJargonEffectSpec& EffectSpec)
+	{
+		switch (EffectSpec.Operation)
+		{
+		case EJargonEffectOperation::MoveSource:
+		case EJargonEffectOperation::PushTarget:
+		case EJargonEffectOperation::PullTarget:
+		case EJargonEffectOperation::PlaceTileEffect:
+		case EJargonEffectOperation::DestroyTileEffect:
+			return 2;
+
+		case EJargonEffectOperation::ApplyStun:
+		case EJargonEffectOperation::ApplyFreeze:
+		case EJargonEffectOperation::ApplyBurn:
+		case EJargonEffectOperation::ApplyRoot:
+		case EJargonEffectOperation::ApplyVulnerable:
+		case EJargonEffectOperation::ApplyStatus:
+			return 2;
+
+		case EJargonEffectOperation::SummonUnit:
+		case EJargonEffectOperation::DrawCards:
+		case EJargonEffectOperation::GainEnergy:
+		case EJargonEffectOperation::GainElementCharge:
+			return 1;
+
+		default:
+			return 0;
+		}
+	};
+
+	int32 Score = 0;
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	for (const FJargonEffectSpec& EffectSpec : AuditEffects)
+	{
+		Score += ScoreEffect(EffectSpec);
+		if (EffectSpec.Radius > 0)
+		{
+			Score++;
+		}
+	}
+
+	for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
+	{
+		Score++;
+		for (const FJargonEffectSpec& BonusEffect : BonusGroup.BonusEffects)
+		{
+			Score += ScoreEffect(BonusEffect);
+		}
+	}
+
+	return Score;
+}
+
+FCardDesignAuditRow BuildCardDesignAuditRow(
+	const UCardDefinition* Card,
+	const TMap<FString, int32>& FingerprintCounts)
+{
+	FCardDesignAuditRow Row;
+	if (!Card)
+	{
+		Row.DesignStatus = TEXT("Invalid");
+		Row.Warnings.Add(TEXT("Invalid: null card."));
+		return Row;
+	}
+
+	const TArray<FString> RoleTags = BuildRoleTagsForCard(Card);
+	const TArray<FString> ElementTags = BuildElementTagsForCard(Card);
+	const TArray<FString> Keywords = BuildKeywordListForCard(Card);
+	TArray<FJargonEffectSpec> AuditEffects;
+	TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+	BuildAuditEffectSpecs(Card, AuditEffects);
+	BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+	Row.AssetPath = Card->GetPathName();
+	Row.AssetName = Card->GetName();
+	Row.DisplayName = TextOrFallbackName(Card->DisplayName, Card);
+	Row.Category = GetCardCategoryName(Card->Category);
+	Row.Cost = Card->Cost;
+	Row.ElementTags = JoinStrings(ElementTags, TEXT("; "));
+	Row.RoleTags = JoinStrings(RoleTags, TEXT("; "));
+	Row.PrimaryKeyword = AuditEffects.Num() > 0 ? GetCardEffectOperationName(AuditEffects[0].Operation) : TEXT("None");
+	Row.SamenessFingerprint = BuildCardSamenessFingerprint(Card);
+	Row.TacticalScore = GetCardTacticalScore(Card);
+	Row.KeywordTerms = JoinStrings(Keywords, TEXT("; "));
+	Row.ConditionSummary = BuildConditionSummary(AuditBonusGroups);
+
+	TArray<FString> OperationParts;
+	TArray<FString> DeliveryParts;
+	TArray<FString> FilterParts;
+	TArray<FString> PayloadParts;
+	TArray<FString> ArchitectureWarnings;
+	for (int32 EffectIndex = 0; EffectIndex < AuditEffects.Num(); ++EffectIndex)
+	{
+		const FJargonEffectSpec& EffectSpec = AuditEffects[EffectIndex];
+		OperationParts.Add(FString::Printf(TEXT("%d:%s"), EffectIndex, *GetCardEffectOperationName(EffectSpec.Operation)));
+		DeliveryParts.Add(FString::Printf(TEXT("%d:%s"), EffectIndex, *GetEffectDeliverySummary(EffectSpec)));
+		FilterParts.Add(FString::Printf(TEXT("%d:%s"), EffectIndex, *GetEffectTargetFilterSummary(EffectSpec)));
+		PayloadParts.Add(FString::Printf(TEXT("%d:%s"), EffectIndex, *BuildCardEffectPayloadSummary(EffectSpec)));
+		AddEffectArchitectureWarnings(EffectSpec, ArchitectureWarnings);
+	}
+	Row.OperationSummary = JoinStrings(OperationParts, TEXT("; "));
+	Row.DeliverySummary = JoinStrings(DeliveryParts, TEXT("; "));
+	Row.TargetFilterSummary = JoinStrings(FilterParts, TEXT("; "));
+	Row.PayloadSummary = JoinStrings(PayloadParts, TEXT("; "));
+	Row.SuspiciousPattern = JoinStrings(ArchitectureWarnings, TEXT("; "));
+	Row.Warnings.Append(ArchitectureWarnings);
+
+	TArray<FString> SecondaryKeywords = Keywords;
+	SecondaryKeywords.Remove(Row.PrimaryKeyword);
+	Row.SecondaryKeywords = JoinStrings(SecondaryKeywords, TEXT("; "));
+
+	if (const int32* Count = FingerprintCounts.Find(Row.SamenessFingerprint))
+	{
+		Row.MatchingFingerprintCount = *Count;
+		if (*Count >= 3)
+		{
+			Row.Warnings.Add(FString::Printf(TEXT("Sameness: %d cards share this tactical fingerprint."), *Count));
+		}
+	}
+
+	if (Row.TacticalScore <= 1 && (Row.PrimaryKeyword == TEXT("Deal Damage") || Row.PrimaryKeyword == TEXT("Gain Element Charge")))
+	{
+		Row.Warnings.Add(TEXT("Boring pattern: low tactical score with a simple damage/generator primary keyword."));
+	}
+
+	if (Keywords.Num() <= 1 && AuditBonusGroups.Num() <= 0 && Card->Category == ECardCategory::Spell)
+	{
+		Row.Warnings.Add(TEXT("Boring pattern: single-keyword spell with no elemental payoff or tactical rider."));
+	}
+
+	if (RoleTags.Num() == 1 && RoleTags.Contains(TEXT("Damage")))
+	{
+		Row.Warnings.Add(TEXT("Boring pattern: pure damage card. Consider status, movement, targeting, or element interaction."));
+	}
+
+	Row.DesignStatus = Row.Warnings.Num() > 0 ? TEXT("Review") : TEXT("Distinct");
+	return Row;
+}
+
+FCardBalanceAuditRow BuildCardBalanceAuditRow(
+	const UCardDefinition* Card,
+	bool bUsedInPacks,
+	const FString& PackSummary)
+{
+	FCardBalanceAuditRow Row;
+	if (!Card)
+	{
+		Row.BalanceStatus = TEXT("Invalid");
+		Row.Warnings.Add(TEXT("Invalid: null card."));
+		return Row;
+	}
+
+	const FCardBalanceEstimate Estimate = EstimateCardBalance(Card);
+	const TArray<FString> RoleTags = BuildRoleTagsForCard(Card);
+	const TArray<FString> ElementTags = BuildElementTagsForCard(Card);
+	const bool bLooksDebug = IsLikelyDebugPathOrName(Card->GetPathName(), Card->GetName());
+
+	Row.AssetPath = Card->GetPathName();
+	Row.AssetName = Card->GetName();
+	Row.DisplayName = TextOrFallbackName(Card->DisplayName, Card);
+	Row.Category = GetCardCategoryName(Card->Category);
+	Row.TargetType = GetCardTargetTypeName(Card->TargetType);
+	Row.Cost = Card->Cost;
+	Row.BaseBalanceBudget = Estimate.BaseBudget;
+	Row.ElementalBonusBudget = Estimate.ElementalBonusBudget;
+	Row.ExpectedCostMin = Estimate.ExpectedCostMin;
+	Row.ExpectedCostMax = Estimate.ExpectedCostMax;
+	Row.SuggestedCost = Estimate.SuggestedCost;
+	Row.BalanceStatus = Estimate.Warnings.Num() > 0 ? TEXT("Review") : TEXT("OnCurve");
+	Row.RoleTags = JoinStrings(RoleTags, TEXT("; "));
+	Row.ElementTags = JoinStrings(ElementTags, TEXT("; "));
+	Row.ProductionStatus = bLooksDebug ? TEXT("Debug") : TEXT("Production");
+	Row.PackStatus = bUsedInPacks ? TEXT("InPack") : TEXT("NotInPack");
+	Row.EffectsSummary = Card->GetAuditSummary();
+	Row.Warnings = Estimate.Warnings;
+	if (bUsedInPacks && !PackSummary.IsEmpty())
+	{
+		Row.PackStatus = FString::Printf(TEXT("InPack: %s"), *PackSummary);
+	}
+
+	return Row;
+}
+
+void AddVarietyMatrixEntriesForCard(
+	const UCardDefinition* Card,
+	bool bUsedInPacks,
+	TMap<FString, FCardVarietyMatrixRow>& InOutRows)
+{
+	if (!Card)
+	{
+		return;
+	}
+
+	const TArray<FString> RoleTags = BuildRoleTagsForCard(Card);
+	const TArray<FString> ElementTags = BuildElementTagsForCard(Card);
+	const FString Category = GetCardCategoryName(Card->Category);
+	const FString ProductionStatus = IsLikelyDebugPathOrName(Card->GetPathName(), Card->GetName()) ? TEXT("Debug") : TEXT("Production");
+	const FString PackStatus = bUsedInPacks ? TEXT("InPack") : TEXT("NotInPack");
+	const FString DisplayName = TextOrFallbackName(Card->DisplayName, Card);
+
+	for (const FString& ElementTag : ElementTags)
+	{
+		for (const FString& RoleTag : RoleTags)
+		{
+			const FString Key = FString::Printf(TEXT("%s|%s|%s|%s|%s"), *ElementTag, *RoleTag, *Category, *ProductionStatus, *PackStatus);
+			FCardVarietyMatrixRow& Row = InOutRows.FindOrAdd(Key);
+			Row.Element = ElementTag;
+			Row.Role = RoleTag;
+			Row.Category = Category;
+			Row.ProductionStatus = ProductionStatus;
+			Row.PackStatus = PackStatus;
+			Row.CardCount++;
+			Row.CardNames.AddUnique(DisplayName);
+		}
+	}
+}
+
+int32 CountProductionElementRoleCards(const TArray<FCardBalanceAuditRow>& BalanceRows, const FString& ElementName, const TArray<FString>& AcceptedRoles)
+{
+	int32 Count = 0;
+	for (const FCardBalanceAuditRow& Row : BalanceRows)
+	{
+		if (Row.ProductionStatus != TEXT("Production") || !Row.ElementTags.Contains(ElementName))
+		{
+			continue;
+		}
+
+		for (const FString& AcceptedRole : AcceptedRoles)
+		{
+			if (Row.RoleTags.Contains(AcceptedRole))
+			{
+				Count++;
+				break;
+			}
+		}
+	}
+	return Count;
+}
+
+void AddVarietyGapWarnings(const TArray<FCardBalanceAuditRow>& BalanceRows, TArray<FString>& OutWarnings)
+{
+	const TArray<FString> Elements =
+	{
+		TEXT("Fire"),
+		TEXT("Frost"),
+		TEXT("Storm"),
+		TEXT("Nature"),
+		TEXT("Radiance"),
+		TEXT("Quietus")
+	};
+
+	for (const FString& ElementName : Elements)
+	{
+		const TArray<FString> GeneratorRoles = { TEXT("Generator") };
+		const TArray<FString> PayoffRoles = { TEXT("Element Payoff") };
+		const TArray<FString> DamageRoles = { TEXT("Damage") };
+		const TArray<FString> DefenseUtilityRoles = { TEXT("Defense"), TEXT("Healing"), TEXT("Control"), TEXT("Draw"), TEXT("Energy") };
+		const TArray<FString> TacticalRoles = { TEXT("Mobility"), TEXT("Control"), TEXT("Summon"), TEXT("Trap"), TEXT("Aura"), TEXT("Tile Effect") };
+		const int32 GeneratorCount = CountProductionElementRoleCards(BalanceRows, ElementName, GeneratorRoles);
+		const int32 PayoffCount = CountProductionElementRoleCards(BalanceRows, ElementName, PayoffRoles);
+		const int32 DamageCount = CountProductionElementRoleCards(BalanceRows, ElementName, DamageRoles);
+		const int32 DefenseUtilityCount = CountProductionElementRoleCards(BalanceRows, ElementName, DefenseUtilityRoles);
+		const int32 TacticalCount = CountProductionElementRoleCards(BalanceRows, ElementName, TacticalRoles);
+
+		if (GeneratorCount < 2)
+		{
+			OutWarnings.Add(FString::Printf(TEXT("Variety: %s has %d production generator card(s); target is at least 2."), *ElementName, GeneratorCount));
+		}
+		if (PayoffCount < 2)
+		{
+			OutWarnings.Add(FString::Printf(TEXT("Variety: %s has %d production payoff card(s); target is at least 2."), *ElementName, PayoffCount));
+		}
+		if (DamageCount < 1)
+		{
+			OutWarnings.Add(FString::Printf(TEXT("Variety: %s has no production damage card."), *ElementName));
+		}
+		if (DefenseUtilityCount < 1)
+		{
+			OutWarnings.Add(FString::Printf(TEXT("Variety: %s has no production defense/utility card."), *ElementName));
+		}
+		if (TacticalCount < 1)
+		{
+			OutWarnings.Add(FString::Printf(TEXT("Variety: %s has no production tactical card."), *ElementName));
+		}
+	}
+}
+
+TArray<FElementIdentityAuditRow> BuildElementIdentityRows(
+	const TArray<FCardBalanceAuditRow>& BalanceRows,
+	const TArray<FCardDesignAuditRow>& DesignRows)
+{
+	const TArray<FString> Elements =
+	{
+		TEXT("Fire"),
+		TEXT("Frost"),
+		TEXT("Storm"),
+		TEXT("Nature"),
+		TEXT("Radiance"),
+		TEXT("Quietus")
+	};
+
+	TArray<FElementIdentityAuditRow> Rows;
+	Rows.Reserve(Elements.Num());
+
+	for (const FString& ElementName : Elements)
+	{
+		FElementIdentityAuditRow Row;
+		Row.Element = ElementName;
+
+		TArray<FString> PrimaryKeywords;
+		for (const FCardBalanceAuditRow& BalanceRow : BalanceRows)
+		{
+			if (BalanceRow.ProductionStatus != TEXT("Production") || !BalanceRow.ElementTags.Contains(ElementName))
+			{
+				continue;
+			}
+
+			Row.ProductionCards++;
+			if (BalanceRow.RoleTags.Contains(TEXT("Generator")))
+			{
+				Row.Generators++;
+			}
+			if (BalanceRow.RoleTags.Contains(TEXT("Element Payoff")))
+			{
+				Row.Payoffs++;
+			}
+			if (BalanceRow.RoleTags.Contains(TEXT("Damage")))
+			{
+				Row.DamageCards++;
+			}
+			if (BalanceRow.RoleTags.Contains(TEXT("Defense")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Healing")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Control")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Draw")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Energy")))
+			{
+				Row.DefenseUtilityCards++;
+			}
+			if (BalanceRow.RoleTags.Contains(TEXT("Mobility")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Control")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Summon")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Trap")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Aura")) ||
+				BalanceRow.RoleTags.Contains(TEXT("Tile Effect")))
+			{
+				Row.TacticalCards++;
+			}
+		}
+
+		for (const FCardDesignAuditRow& DesignRow : DesignRows)
+		{
+			if (DesignRow.ElementTags.Contains(ElementName) && !DesignRow.PrimaryKeyword.IsEmpty())
+			{
+				AddUniqueString(PrimaryKeywords, DesignRow.PrimaryKeyword);
+			}
+		}
+		PrimaryKeywords.Sort();
+		Row.UniquePrimaryKeywords = JoinStrings(PrimaryKeywords, TEXT("; "));
+
+		TArray<FString> MissingLanes;
+		if (Row.Generators < 2)
+		{
+			MissingLanes.Add(TEXT("needs more generators"));
+		}
+		if (Row.Payoffs < 2)
+		{
+			MissingLanes.Add(TEXT("needs more payoffs"));
+		}
+		if (Row.DamageCards < 1)
+		{
+			MissingLanes.Add(TEXT("needs damage"));
+		}
+		if (Row.DefenseUtilityCards < 1)
+		{
+			MissingLanes.Add(TEXT("needs defense/utility"));
+		}
+		if (Row.TacticalCards < 1)
+		{
+			MissingLanes.Add(TEXT("needs tactical cards"));
+		}
+
+		Row.MissingLanes = MissingLanes.Num() > 0 ? JoinStrings(MissingLanes, TEXT("; ")) : TEXT("None");
+		Row.RecommendedActions = MissingLanes.Num() > 0
+			? FString::Printf(TEXT("Add or rewrite %s cards to cover: %s."), *ElementName, *Row.MissingLanes)
+			: FString::Printf(TEXT("%s has baseline generator/payoff/tactical coverage."), *ElementName);
+
+		Rows.Add(Row);
+	}
+
+	return Rows;
+}
+
+TArray<FPackExperienceAuditRow> BuildPackExperienceRows(const TArray<UCardPackDefinition*>& Packs)
+{
+	TArray<FPackExperienceAuditRow> Rows;
+	Rows.Reserve(Packs.Num());
+
+	for (const UCardPackDefinition* Pack : Packs)
+	{
+		if (!Pack)
+		{
+			continue;
+		}
+
+		FPackExperienceAuditRow Row;
+		Row.PackAssetPath = Pack->GetPathName();
+		Row.PackName = TextOrFallbackName(Pack->DisplayName, Pack);
+		Row.CardCount = Pack->CardPool.Num();
+
+		TArray<FString> Roles;
+		TArray<FString> Elements;
+		TArray<FString> PrimaryKeywords;
+		TMap<FString, int32> FingerprintCounts;
+		TMap<int32, int32> CostCounts;
+		TMap<FString, int32> RoleCounts;
+		TMap<FString, int32> ElementCounts;
+		int32 TotalCost = 0;
+		int32 ValidCards = 0;
+
+		for (const FWeightedCardPackEntry& Entry : Pack->CardPool)
+		{
+			const UCardDefinition* Card = Entry.CardDefinition.Get();
+			if (!Card)
+			{
+				continue;
+			}
+
+			ValidCards++;
+			TotalCost += Card->Cost;
+			CostCounts.FindOrAdd(Card->Cost)++;
+			FingerprintCounts.FindOrAdd(BuildCardSamenessFingerprint(Card))++;
+
+			TArray<FJargonEffectSpec> AuditEffects;
+			BuildAuditEffectSpecs(Card, AuditEffects);
+			const FString PrimaryKeyword = AuditEffects.Num() > 0
+				? GetCardEffectOperationName(AuditEffects[0].Operation)
+				: TEXT("None");
+			AddUniqueString(PrimaryKeywords, PrimaryKeyword);
+
+			for (const FString& Role : BuildRoleTagsForCard(Card))
+			{
+				AddUniqueString(Roles, Role);
+				RoleCounts.FindOrAdd(Role)++;
+			}
+
+			for (const FString& Element : BuildElementTagsForCard(Card))
+			{
+				AddUniqueString(Elements, Element);
+				ElementCounts.FindOrAdd(Element)++;
+			}
+		}
+
+		Row.UniqueRoles = Roles.Num();
+		Row.UniqueElements = Elements.Num();
+		Row.UniquePrimaryKeywords = PrimaryKeywords.Num();
+		Row.AverageCost = ValidCards > 0 ? static_cast<float>(TotalCost) / static_cast<float>(ValidCards) : 0.f;
+
+		for (const TPair<FString, int32>& Pair : FingerprintCounts)
+		{
+			if (Pair.Value > 1)
+			{
+				Row.RepeatedFingerprintGroups++;
+			}
+		}
+
+		const auto BuildStringCountSummary = [](const TMap<FString, int32>& CountMap)
+		{
+			TArray<FString> Parts;
+			for (const TPair<FString, int32>& Pair : CountMap)
+			{
+				Parts.Add(FString::Printf(TEXT("%s=%d"), *Pair.Key, Pair.Value));
+			}
+			Parts.Sort();
+			return JoinStrings(Parts, TEXT("; "));
+		};
+		const auto BuildCostCountSummary = [](const TMap<int32, int32>& CountMap)
+		{
+			TArray<FString> Parts;
+			for (const TPair<int32, int32>& Pair : CountMap)
+			{
+				Parts.Add(FString::Printf(TEXT("%d=%d"), Pair.Key, Pair.Value));
+			}
+			Parts.Sort();
+			return JoinStrings(Parts, TEXT("; "));
+		};
+
+		Row.RoleSpread = BuildStringCountSummary(RoleCounts);
+		Row.ElementMix = BuildStringCountSummary(ElementCounts);
+		Row.CostCurve = BuildCostCountSummary(CostCounts);
+
+	if (ValidCards > 0 && Row.UniquePrimaryKeywords < 4)
+	{
+		Row.Warnings.Add(TEXT("Pack monotony: fewer than four unique primary keywords."));
+	}
+		if (ValidCards > 0 && Row.UniqueElements < 2)
+		{
+			Row.Warnings.Add(TEXT("Pack monotony: narrow element mix."));
+		}
+		if (Row.RepeatedFingerprintGroups > 0)
+		{
+			Row.Warnings.Add(FString::Printf(TEXT("Pack monotony: %d repeated tactical fingerprint group(s)."), Row.RepeatedFingerprintGroups));
+		}
+
+		Row.ExperienceStatus = Row.Warnings.Num() > 0 ? TEXT("Review") : TEXT("Varied");
+		Rows.Add(Row);
+	}
+
+	Rows.Sort([](const FPackExperienceAuditRow& Left, const FPackExperienceAuditRow& Right)
+	{
+		return Left.PackName < Right.PackName;
+	});
+
+	return Rows;
+}
+
 void AppendCardCsvLine(const FCardAuditRow& Row, FString& Csv)
 {
 	TArray<FString> Fields;
@@ -717,6 +2451,7 @@ void AppendCardCsvLine(const FCardAuditRow& Row, FString& Csv)
 	Fields.Add(CsvEscape(Row.AssetName));
 	Fields.Add(CsvEscape(Row.DisplayName));
 	Fields.Add(CsvEscape(Row.Category));
+	Fields.Add(CsvEscape(Row.CardElement));
 	Fields.Add(CsvEscape(Row.TargetType));
 	Fields.Add(CsvEscapeInt(Row.Cost));
 	Fields.Add(CsvEscapeInt(Row.Range));
@@ -729,6 +2464,129 @@ void AppendCardCsvLine(const FCardAuditRow& Row, FString& Csv)
 	Fields.Add(CsvEscape(Row.PackSummary));
 	Fields.Add(CsvEscape(Row.ValidationStatus));
 	Fields.Add(CsvEscape(JoinStrings(Row.Warnings)));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendCardBalanceCsvLine(const FCardBalanceAuditRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.AssetPath));
+	Fields.Add(CsvEscape(Row.AssetName));
+	Fields.Add(CsvEscape(Row.DisplayName));
+	Fields.Add(CsvEscape(Row.Category));
+	Fields.Add(CsvEscape(Row.TargetType));
+	Fields.Add(CsvEscapeInt(Row.Cost));
+	Fields.Add(CsvEscapeInt(Row.BaseBalanceBudget));
+	Fields.Add(CsvEscapeInt(Row.ElementalBonusBudget));
+	Fields.Add(CsvEscapeInt(Row.ExpectedCostMin));
+	Fields.Add(CsvEscapeInt(Row.ExpectedCostMax));
+	Fields.Add(CsvEscapeInt(Row.SuggestedCost));
+	Fields.Add(CsvEscape(Row.BalanceStatus));
+	Fields.Add(CsvEscape(Row.RoleTags));
+	Fields.Add(CsvEscape(Row.ElementTags));
+	Fields.Add(CsvEscape(Row.ProductionStatus));
+	Fields.Add(CsvEscape(Row.PackStatus));
+	Fields.Add(CsvEscape(Row.EffectsSummary));
+	Fields.Add(CsvEscape(JoinStrings(Row.Warnings)));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendDescriptionSuggestionCsvLine(const FCardDescriptionSuggestionRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.AssetPath));
+	Fields.Add(CsvEscape(Row.AssetName));
+	Fields.Add(CsvEscape(Row.DisplayName));
+	Fields.Add(CsvEscape(Row.CurrentDescription));
+	Fields.Add(CsvEscape(Row.SuggestedDescription));
+	Fields.Add(CsvEscape(Row.Status));
+	Fields.Add(CsvEscape(JoinStrings(Row.Warnings)));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendVarietyMatrixCsvLine(const FCardVarietyMatrixRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.Element));
+	Fields.Add(CsvEscape(Row.Role));
+	Fields.Add(CsvEscape(Row.Category));
+	Fields.Add(CsvEscape(Row.ProductionStatus));
+	Fields.Add(CsvEscape(Row.PackStatus));
+	Fields.Add(CsvEscapeInt(Row.CardCount));
+	Fields.Add(CsvEscape(JoinStrings(Row.CardNames, TEXT("; "))));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendCardDesignCsvLine(const FCardDesignAuditRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.AssetPath));
+	Fields.Add(CsvEscape(Row.AssetName));
+	Fields.Add(CsvEscape(Row.DisplayName));
+	Fields.Add(CsvEscape(Row.Category));
+	Fields.Add(CsvEscapeInt(Row.Cost));
+	Fields.Add(CsvEscape(Row.ElementTags));
+	Fields.Add(CsvEscape(Row.RoleTags));
+	Fields.Add(CsvEscape(Row.PrimaryKeyword));
+	Fields.Add(CsvEscape(Row.SecondaryKeywords));
+	Fields.Add(CsvEscape(Row.OperationSummary));
+	Fields.Add(CsvEscape(Row.DeliverySummary));
+	Fields.Add(CsvEscape(Row.TargetFilterSummary));
+	Fields.Add(CsvEscape(Row.PayloadSummary));
+	Fields.Add(CsvEscape(Row.ConditionSummary));
+	Fields.Add(CsvEscape(Row.KeywordTerms));
+	Fields.Add(CsvEscape(Row.SuspiciousPattern));
+	Fields.Add(CsvEscape(Row.SamenessFingerprint));
+	Fields.Add(CsvEscapeInt(Row.MatchingFingerprintCount));
+	Fields.Add(CsvEscapeInt(Row.TacticalScore));
+	Fields.Add(CsvEscape(Row.DesignStatus));
+	Fields.Add(CsvEscape(JoinStrings(Row.Warnings)));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendElementIdentityCsvLine(const FElementIdentityAuditRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.Element));
+	Fields.Add(CsvEscapeInt(Row.ProductionCards));
+	Fields.Add(CsvEscapeInt(Row.Generators));
+	Fields.Add(CsvEscapeInt(Row.Payoffs));
+	Fields.Add(CsvEscapeInt(Row.DamageCards));
+	Fields.Add(CsvEscapeInt(Row.DefenseUtilityCards));
+	Fields.Add(CsvEscapeInt(Row.TacticalCards));
+	Fields.Add(CsvEscape(Row.UniquePrimaryKeywords));
+	Fields.Add(CsvEscape(Row.MissingLanes));
+	Fields.Add(CsvEscape(Row.RecommendedActions));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendPackExperienceCsvLine(const FPackExperienceAuditRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.PackAssetPath));
+	Fields.Add(CsvEscape(Row.PackName));
+	Fields.Add(CsvEscapeInt(Row.CardCount));
+	Fields.Add(CsvEscapeInt(Row.UniqueRoles));
+	Fields.Add(CsvEscapeInt(Row.UniqueElements));
+	Fields.Add(CsvEscapeInt(Row.UniquePrimaryKeywords));
+	Fields.Add(CsvEscape(FString::Printf(TEXT("%.2f"), Row.AverageCost)));
+	Fields.Add(CsvEscapeInt(Row.RepeatedFingerprintGroups));
+	Fields.Add(CsvEscape(Row.RoleSpread));
+	Fields.Add(CsvEscape(Row.ElementMix));
+	Fields.Add(CsvEscape(Row.CostCurve));
+	Fields.Add(CsvEscape(Row.ExperienceStatus));
+	Fields.Add(CsvEscape(JoinStrings(Row.Warnings)));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendCardRewritePlanCsvLine(const FCardRewritePlanRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.AssetPath));
+	Fields.Add(CsvEscape(Row.DisplayName));
+	Fields.Add(CsvEscape(Row.CurrentIssue));
+	Fields.Add(CsvEscape(Row.RecommendedAction));
+	Fields.Add(CsvEscape(Row.ProposedRulesText));
 	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
 }
 
@@ -758,7 +2616,6 @@ void AppendSummonCsvLine(const FSummonAuditRow& Row, FString& Csv)
 	Fields.Add(CsvEscapeInt(Row.AttackRange));
 	Fields.Add(CsvEscapeInt(Row.AttackDamage));
 	Fields.Add(CsvEscape(Row.Team));
-	Fields.Add(CsvEscape(Row.OptionalUnitClassOverride));
 	Fields.Add(CsvEscapeInt(Row.OnSummonedEffectsCount));
 	Fields.Add(CsvEscapeInt(Row.OnTurnStartEffectsCount));
 	Fields.Add(CsvEscapeInt(Row.OnDeathEffectsCount));
@@ -792,7 +2649,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		{ DefaultPackScanPath, LegacyPackScanPath });
 	const TArray<FName> EffectiveSummonedUnitScanPaths = GetEffectiveScanPaths(
 		SummonedUnitScanPaths,
-		{ DefaultSummonedUnitScanPath });
+		{ DefaultSummonedUnitScanPath, LegacySummonedUnitScanPath });
 
 	TArray<UCardDefinition*> Cards;
 	TArray<UCardPackDefinition*> Packs;
@@ -871,19 +2728,24 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			}
 		};
 
-		for (const FCardEffectSpec& EffectSpec : Card->Effects)
+		TArray<FJargonEffectSpec> AuditEffects;
+		TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+		BuildAuditEffectSpecs(Card, AuditEffects);
+		BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+		for (const FJargonEffectSpec& EffectSpec : AuditEffects)
 		{
-			if (EffectSpec.Operation == ECardEffectOperation::SummonUnit)
+			if (EffectSpec.Operation == EJargonEffectOperation::SummonUnit)
 			{
 				AddReferencedSummonDefinition(EffectSpec.SummonedUnitDefinition.Get());
 			}
 		}
 
-		for (const FCardElementalBonusGroup& BonusGroup : Card->ElementalBonusGroups)
+		for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
 		{
-			for (const FCardEffectSpec& BonusEffect : BonusGroup.BonusEffects)
+			for (const FJargonEffectSpec& BonusEffect : BonusGroup.BonusEffects)
 			{
-				if (BonusEffect.Operation == ECardEffectOperation::SummonUnit)
+				if (BonusEffect.Operation == EJargonEffectOperation::SummonUnit)
 				{
 					AddReferencedSummonDefinition(BonusEffect.SummonedUnitDefinition.Get());
 				}
@@ -893,9 +2755,27 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 
 	TArray<FCardAuditRow> CardRows;
 	CardRows.Reserve(Cards.Num());
+	TArray<FCardBalanceAuditRow> BalanceRows;
+	BalanceRows.Reserve(Cards.Num());
+	TArray<FCardDescriptionSuggestionRow> DescriptionRows;
+	DescriptionRows.Reserve(Cards.Num());
+	TArray<FCardDesignAuditRow> DesignRows;
+	DesignRows.Reserve(Cards.Num());
+	TArray<FCardRewritePlanRow> RewriteRows;
+	RewriteRows.Reserve(Cards.Num());
+	TMap<FString, FCardVarietyMatrixRow> VarietyRowsByKey;
 	TMap<const UCardDefinition*, bool> CardFatalStatusByCard;
+	TMap<FString, int32> FingerprintCounts;
 	int32 ElementGeneratorCardCount = 0;
 	int32 ElementalBonusCardCount = 0;
+
+	for (const UCardDefinition* Card : Cards)
+	{
+		if (Card && !IsLikelyDebugPathOrName(Card->GetPathName(), Card->GetName()))
+		{
+			FingerprintCounts.FindOrAdd(BuildCardSamenessFingerprint(Card))++;
+		}
+	}
 
 	for (const UCardDefinition* Card : Cards)
 	{
@@ -909,15 +2789,20 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		Row.AssetName = Card->GetName();
 		Row.DisplayName = TextOrFallbackName(Card->DisplayName, Card);
 		Row.Category = GetCardCategoryName(Card->Category);
+		Row.CardElement = GetElementTypeName(Card->CardElement);
 		Row.TargetType = GetCardTargetTypeName(Card->TargetType);
 		Row.Cost = Card->Cost;
 		Row.Range = Card->Range;
 		Row.bHasArt = Card->CardArt != nullptr;
 		Row.bDescriptionEmpty = Card->Description.ToString().TrimStartAndEnd().IsEmpty();
-		Row.EffectsCount = Card->Effects.Num();
+		TArray<FJargonEffectSpec> AuditEffects;
+		TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+		BuildAuditEffectSpecs(Card, AuditEffects);
+		BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+		Row.EffectsCount = AuditEffects.Num();
 		Row.EffectsSummary = BuildEffectSummary(Card);
-		Row.PrimaryOperation = Card->Effects.Num() > 0
-			? GetCardEffectOperationName(Card->Effects[0].Operation)
+		Row.PrimaryOperation = AuditEffects.Num() > 0
+			? GetCardEffectOperationName(AuditEffects[0].Operation)
 			: TEXT("None");
 
 		if (CardHasElementGenerator(Card))
@@ -925,7 +2810,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			ElementGeneratorCardCount++;
 		}
 
-		if (Card->ElementalBonusGroups.Num() > 0)
+		if (AuditBonusGroups.Num() > 0)
 		{
 			ElementalBonusCardCount++;
 		}
@@ -954,6 +2839,31 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			SoftWarnings.Add(TEXT("Warning: card is not included in any scanned pack."));
 		}
 
+		BalanceRows.Add(BuildCardBalanceAuditRow(Card, Row.bUsedInPacks, Row.PackSummary));
+		FCardDescriptionSuggestionRow DescriptionRow = BuildDescriptionSuggestionRow(Card);
+		DescriptionRows.Add(DescriptionRow);
+		if (DescriptionRow.Status == TEXT("Missing"))
+		{
+			SoftWarnings.Add(TEXT("Warning: Description is missing; generated rules-first keyword text is available in CardDescriptionSuggestions.csv."));
+		}
+		else if (DescriptionRow.Status == TEXT("Review"))
+		{
+			SoftWarnings.Add(TEXT("Review: authored Description differs from generated rules-first keyword text. See CardDescriptionSuggestions.csv."));
+		}
+		FCardDesignAuditRow DesignRow = BuildCardDesignAuditRow(Card, FingerprintCounts);
+		DesignRows.Add(DesignRow);
+		if (!IsLikelyDebugPathOrName(Card->GetPathName(), Card->GetName()) && DesignRow.Warnings.Num() > 0)
+		{
+			FCardRewritePlanRow RewriteRow;
+			RewriteRow.AssetPath = Card->GetPathName();
+			RewriteRow.DisplayName = Row.DisplayName;
+			RewriteRow.CurrentIssue = JoinStrings(DesignRow.Warnings);
+			RewriteRow.RecommendedAction = TEXT("Review for a clearer element lane, tactical rider, or rules-first wording.");
+			RewriteRow.ProposedRulesText = BuildSuggestedRulesTextForCard(Card);
+			RewriteRows.Add(RewriteRow);
+		}
+		AddVarietyMatrixEntriesForCard(Card, Row.bUsedInPacks, VarietyRowsByKey);
+
 		Row.bHasFatalWarnings = FatalWarnings.Num() > 0;
 		Row.Warnings.Append(FatalWarnings);
 		Row.Warnings.Append(SoftWarnings);
@@ -979,6 +2889,83 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 
 		return Left.DisplayName < Right.DisplayName;
 	});
+
+	BalanceRows.Sort([](const FCardBalanceAuditRow& Left, const FCardBalanceAuditRow& Right)
+	{
+		if (Left.BalanceStatus != Right.BalanceStatus)
+		{
+			return Left.BalanceStatus > Right.BalanceStatus;
+		}
+
+		if (Left.Category != Right.Category)
+		{
+			return Left.Category < Right.Category;
+		}
+
+		if (Left.Cost != Right.Cost)
+		{
+			return Left.Cost < Right.Cost;
+		}
+
+		return Left.DisplayName < Right.DisplayName;
+	});
+
+	DescriptionRows.Sort([](const FCardDescriptionSuggestionRow& Left, const FCardDescriptionSuggestionRow& Right)
+	{
+		if (Left.Status != Right.Status)
+		{
+			return Left.Status > Right.Status;
+		}
+
+		return Left.DisplayName < Right.DisplayName;
+	});
+
+	DesignRows.Sort([](const FCardDesignAuditRow& Left, const FCardDesignAuditRow& Right)
+	{
+		if (Left.DesignStatus != Right.DesignStatus)
+		{
+			return Left.DesignStatus > Right.DesignStatus;
+		}
+		if (Left.TacticalScore != Right.TacticalScore)
+		{
+			return Left.TacticalScore < Right.TacticalScore;
+		}
+		return Left.DisplayName < Right.DisplayName;
+	});
+
+	RewriteRows.Sort([](const FCardRewritePlanRow& Left, const FCardRewritePlanRow& Right)
+	{
+		return Left.DisplayName < Right.DisplayName;
+	});
+
+	TArray<FCardVarietyMatrixRow> VarietyRows;
+	VarietyRowsByKey.GenerateValueArray(VarietyRows);
+	VarietyRows.Sort([](const FCardVarietyMatrixRow& Left, const FCardVarietyMatrixRow& Right)
+	{
+		if (Left.Element != Right.Element)
+		{
+			return Left.Element < Right.Element;
+		}
+		if (Left.Role != Right.Role)
+		{
+			return Left.Role < Right.Role;
+		}
+		if (Left.Category != Right.Category)
+		{
+			return Left.Category < Right.Category;
+		}
+		if (Left.ProductionStatus != Right.ProductionStatus)
+		{
+			return Left.ProductionStatus < Right.ProductionStatus;
+		}
+		return Left.PackStatus < Right.PackStatus;
+	});
+
+	TArray<FString> VarietyGapWarnings;
+	AddVarietyGapWarnings(BalanceRows, VarietyGapWarnings);
+
+	const TArray<FElementIdentityAuditRow> ElementIdentityRows = BuildElementIdentityRows(BalanceRows, DesignRows);
+	const TArray<FPackExperienceAuditRow> PackExperienceRows = BuildPackExperienceRows(Packs);
 
 	TArray<FPackAuditRow> PackRows;
 	PackRows.Reserve(Packs.Num());
@@ -1108,7 +3095,6 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		Row.AttackRange = Definition->AttackRange;
 		Row.AttackDamage = Definition->AttackDamage;
 		Row.Team = GetTeamName(Definition->Team);
-		Row.OptionalUnitClassOverride = GetClassDisplayName(Definition->OptionalUnitClassOverride.Get());
 		Row.OnSummonedEffectsCount = Definition->OnSummonedEffects.Num();
 		Row.OnTurnStartEffectsCount = Definition->OnTurnStartEffects.Num();
 		Row.OnDeathEffectsCount = Definition->OnDeathEffects.Num();
@@ -1162,6 +3148,47 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		}
 	}
 
+	int32 BalanceReviewCount = 0;
+	for (const FCardBalanceAuditRow& Row : BalanceRows)
+	{
+		if (Row.BalanceStatus == TEXT("Review"))
+		{
+			BalanceReviewCount++;
+		}
+	}
+
+	int32 DescriptionReviewCount = 0;
+	int32 DescriptionMissingCount = 0;
+	for (const FCardDescriptionSuggestionRow& Row : DescriptionRows)
+	{
+		if (Row.Status == TEXT("Missing"))
+		{
+			DescriptionMissingCount++;
+		}
+		else if (Row.Status == TEXT("Review"))
+		{
+			DescriptionReviewCount++;
+		}
+	}
+
+	int32 DesignReviewCount = 0;
+	for (const FCardDesignAuditRow& Row : DesignRows)
+	{
+		if (Row.DesignStatus == TEXT("Review"))
+		{
+			DesignReviewCount++;
+		}
+	}
+
+	int32 PackExperienceReviewCount = 0;
+	for (const FPackExperienceAuditRow& Row : PackExperienceRows)
+	{
+		if (Row.ExperienceStatus == TEXT("Review"))
+		{
+			PackExperienceReviewCount++;
+		}
+	}
+
 	UE_LOG(LogCardCatalogAudit, Display, TEXT("=== Card Catalog Audit ==="));
 	UE_LOG(LogCardCatalogAudit, Display, TEXT("Card paths: %s"), *JoinStrings([&EffectiveCardScanPaths]()
 	{
@@ -1194,6 +3221,14 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 	UE_LOG(LogCardCatalogAudit, Display, TEXT("Packs found: %d | Packs with warnings: %d"), PackRows.Num(), PackWarningCount);
 	UE_LOG(LogCardCatalogAudit, Display, TEXT("Summon definitions found/referenced: %d | Invalid: %d | Warning: %d"), SummonRows.Num(), SummonInvalidCount, SummonWarningCount);
 	UE_LOG(LogCardCatalogAudit, Display, TEXT("Element content: Generators=%d | Bonus Cards=%d"), ElementGeneratorCardCount, ElementalBonusCardCount);
+	UE_LOG(LogCardCatalogAudit, Display, TEXT("Balance review: Cards=%d | Review=%d | VarietyRows=%d | VarietyGaps=%d"), BalanceRows.Num(), BalanceReviewCount, VarietyRows.Num(), VarietyGapWarnings.Num());
+	UE_LOG(LogCardCatalogAudit, Display, TEXT("Description review: Cards=%d | Review=%d | Missing=%d"), DescriptionRows.Num(), DescriptionReviewCount, DescriptionMissingCount);
+	UE_LOG(LogCardCatalogAudit, Display, TEXT("Design review: Cards=%d | Review=%d | ElementIdentityRows=%d | PackExperienceReview=%d | RewriteRows=%d"),
+		DesignRows.Num(),
+		DesignReviewCount,
+		ElementIdentityRows.Num(),
+		PackExperienceReviewCount,
+		RewriteRows.Num());
 	if (Cards.Num() > 0 && ElementGeneratorCardCount == 0)
 	{
 		UE_LOG(LogCardCatalogAudit, Warning, TEXT("Element charge backend exists, but no scanned card currently gains element charges."));
@@ -1201,6 +3236,10 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 	if (Cards.Num() > 0 && ElementalBonusCardCount == 0)
 	{
 		UE_LOG(LogCardCatalogAudit, Warning, TEXT("ElementalBonusGroups exist, but no scanned card currently uses them."));
+	}
+	for (const FString& VarietyGapWarning : VarietyGapWarnings)
+	{
+		UE_LOG(LogCardCatalogAudit, Warning, TEXT("%s"), *VarietyGapWarning);
 	}
 
 	for (const FCardAuditRow& Row : CardRows)
@@ -1243,7 +3282,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		const FString Status = Row.bIsValidDefinition
 			? (Row.Warnings.Num() > 0 ? TEXT("Warning") : TEXT("Valid"))
 			: TEXT("Invalid");
-		UE_LOG(LogCardCatalogAudit, Display, TEXT("[Summon][%s] %s | HP=%d Move=%d AttackRange=%d AttackDamage=%d Team=%s OptionalClass=%s Referenced=%s"),
+		UE_LOG(LogCardCatalogAudit, Display, TEXT("[Summon][%s] %s | HP=%d Move=%d AttackRange=%d AttackDamage=%d Team=%s Referenced=%s"),
 			*Status,
 			*Row.DisplayName,
 			Row.MaxHP,
@@ -1251,7 +3290,6 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			Row.AttackRange,
 			Row.AttackDamage,
 			*Row.Team,
-			*Row.OptionalUnitClassOverride,
 			Row.bReferencedByScannedCards ? TEXT("Yes") : TEXT("No"));
 
 		if (Row.Warnings.Num() > 0)
@@ -1267,7 +3305,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		IFileManager::Get().MakeDirectory(*OutputDirectory, true);
 
 		FString CardCsv;
-		CardCsv += TEXT("CardAssetPath,CardAssetName,DisplayName,Category,TargetType,Cost,Range,HasArt,DescriptionEmpty,EffectsCount,EffectsSummary,PrimaryOperation,UsedInPacks,PackSummary,ValidationStatus,Warnings") LINE_TERMINATOR;
+		CardCsv += TEXT("CardAssetPath,CardAssetName,DisplayName,Category,CardElement,TargetType,Cost,Range,HasArt,DescriptionEmpty,EffectsCount,EffectsSummary,PrimaryOperation,UsedInPacks,PackSummary,ValidationStatus,Warnings") LINE_TERMINATOR;
 		for (const FCardAuditRow& Row : CardRows)
 		{
 			AppendCardCsvLine(Row, CardCsv);
@@ -1281,19 +3319,95 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		}
 
 		FString SummonCsv;
-		SummonCsv += TEXT("SummonAssetPath,SummonAssetName,DisplayName,MaxHP,MoveRange,AttackRange,AttackDamage,Team,OptionalUnitClassOverride,OnSummonedEffectsCount,OnTurnStartEffectsCount,OnDeathEffectsCount,IsValidDefinition,ScannedByPath,ReferencedByScannedCards,Summary,Warnings") LINE_TERMINATOR;
+		SummonCsv += TEXT("SummonAssetPath,SummonAssetName,DisplayName,MaxHP,MoveRange,AttackRange,AttackDamage,Team,OnSummonedEffectsCount,OnTurnStartEffectsCount,OnDeathEffectsCount,IsValidDefinition,ScannedByPath,ReferencedByScannedCards,Summary,Warnings") LINE_TERMINATOR;
 		for (const FSummonAuditRow& Row : SummonRows)
 		{
 			AppendSummonCsvLine(Row, SummonCsv);
 		}
 
+		FString BalanceCsv;
+		FString VarietyCsv;
+		FString DescriptionCsv;
+		FString DesignCsv;
+		FString ElementIdentityCsv;
+		FString PackExperienceCsv;
+		FString RewritePlanCsv;
+		if (bExportBalanceReports)
+		{
+			BalanceCsv += TEXT("CardAssetPath,CardAssetName,DisplayName,Category,TargetType,Cost,BaseBalanceBudget,ElementalBonusBudget,ExpectedCostMin,ExpectedCostMax,SuggestedCost,BalanceStatus,RoleTags,ElementTags,ProductionStatus,PackStatus,EffectsSummary,Warnings") LINE_TERMINATOR;
+			for (const FCardBalanceAuditRow& Row : BalanceRows)
+			{
+				AppendCardBalanceCsvLine(Row, BalanceCsv);
+			}
+
+			VarietyCsv += TEXT("Element,Role,Category,ProductionStatus,PackStatus,CardCount,Cards") LINE_TERMINATOR;
+			for (const FCardVarietyMatrixRow& Row : VarietyRows)
+			{
+				AppendVarietyMatrixCsvLine(Row, VarietyCsv);
+			}
+
+			DescriptionCsv += TEXT("CardAssetPath,CardAssetName,DisplayName,CurrentDescription,SuggestedDescription,Status,Warnings") LINE_TERMINATOR;
+			for (const FCardDescriptionSuggestionRow& Row : DescriptionRows)
+			{
+				AppendDescriptionSuggestionCsvLine(Row, DescriptionCsv);
+			}
+
+	DesignCsv += TEXT("CardAssetPath,CardAssetName,DisplayName,Category,Cost,ElementTags,RoleTags,PrimaryKeyword,SecondaryKeywords,OperationSummary,DeliverySummary,TargetFilterSummary,PayloadSummary,ConditionSummary,KeywordTerms,SuspiciousPattern,SamenessFingerprint,MatchingFingerprintCount,TacticalScore,DesignStatus,Warnings") LINE_TERMINATOR;
+			for (const FCardDesignAuditRow& Row : DesignRows)
+			{
+				AppendCardDesignCsvLine(Row, DesignCsv);
+			}
+
+			ElementIdentityCsv += TEXT("Element,ProductionCards,Generators,Payoffs,DamageCards,DefenseUtilityCards,TacticalCards,UniquePrimaryKeywords,MissingLanes,RecommendedActions") LINE_TERMINATOR;
+			for (const FElementIdentityAuditRow& Row : ElementIdentityRows)
+			{
+				AppendElementIdentityCsvLine(Row, ElementIdentityCsv);
+			}
+
+			PackExperienceCsv += TEXT("PackAssetPath,PackName,CardCount,UniqueRoles,UniqueElements,UniquePrimaryKeywords,AverageCost,RepeatedFingerprintGroups,RoleSpread,ElementMix,CostCurve,ExperienceStatus,Warnings") LINE_TERMINATOR;
+			for (const FPackExperienceAuditRow& Row : PackExperienceRows)
+			{
+				AppendPackExperienceCsvLine(Row, PackExperienceCsv);
+			}
+
+			RewritePlanCsv += TEXT("CardAssetPath,DisplayName,CurrentIssue,RecommendedAction,ProposedRulesText") LINE_TERMINATOR;
+			for (const FCardRewritePlanRow& Row : RewriteRows)
+			{
+				AppendCardRewritePlanCsvLine(Row, RewritePlanCsv);
+			}
+		}
+
 		const FString CardCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardCatalog.csv"));
 		const FString PackCsvPath = FPaths::Combine(OutputDirectory, TEXT("PackAudit.csv"));
 		const FString SummonCsvPath = FPaths::Combine(OutputDirectory, TEXT("SummonDefinitions.csv"));
+		const FString BalanceCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardBalanceAudit.csv"));
+		const FString VarietyCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardVarietyMatrix.csv"));
+		const FString DescriptionCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardDescriptionSuggestions.csv"));
+		const FString DesignCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardDesignAudit.csv"));
+		const FString ElementIdentityCsvPath = FPaths::Combine(OutputDirectory, TEXT("ElementIdentityAudit.csv"));
+		const FString PackExperienceCsvPath = FPaths::Combine(OutputDirectory, TEXT("PackExperienceAudit.csv"));
+		const FString RewritePlanCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardRewritePlan.csv"));
 
 		const bool bSavedCardCsv = FFileHelper::SaveStringToFile(CardCsv, *CardCsvPath);
 		const bool bSavedPackCsv = FFileHelper::SaveStringToFile(PackCsv, *PackCsvPath);
 		const bool bSavedSummonCsv = FFileHelper::SaveStringToFile(SummonCsv, *SummonCsvPath);
+		bool bSavedBalanceCsv = false;
+		bool bSavedVarietyCsv = false;
+		bool bSavedDescriptionCsv = false;
+		bool bSavedDesignCsv = false;
+		bool bSavedElementIdentityCsv = false;
+		bool bSavedPackExperienceCsv = false;
+		bool bSavedRewritePlanCsv = false;
+		if (bExportBalanceReports)
+		{
+			bSavedBalanceCsv = FFileHelper::SaveStringToFile(BalanceCsv, *BalanceCsvPath);
+			bSavedVarietyCsv = FFileHelper::SaveStringToFile(VarietyCsv, *VarietyCsvPath);
+			bSavedDescriptionCsv = FFileHelper::SaveStringToFile(DescriptionCsv, *DescriptionCsvPath);
+			bSavedDesignCsv = FFileHelper::SaveStringToFile(DesignCsv, *DesignCsvPath);
+			bSavedElementIdentityCsv = FFileHelper::SaveStringToFile(ElementIdentityCsv, *ElementIdentityCsvPath);
+			bSavedPackExperienceCsv = FFileHelper::SaveStringToFile(PackExperienceCsv, *PackExperienceCsvPath);
+			bSavedRewritePlanCsv = FFileHelper::SaveStringToFile(RewritePlanCsv, *RewritePlanCsvPath);
+		}
 
 		if (bSavedCardCsv)
 		{
@@ -1320,6 +3434,72 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		else
 		{
 			UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write summon definition audit CSV: %s"), *SummonCsvPath);
+		}
+
+		if (bExportBalanceReports)
+		{
+			if (bSavedBalanceCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote card balance audit CSV: %s"), *BalanceCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card balance audit CSV: %s"), *BalanceCsvPath);
+			}
+
+			if (bSavedVarietyCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote card variety matrix CSV: %s"), *VarietyCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card variety matrix CSV: %s"), *VarietyCsvPath);
+			}
+
+			if (bSavedDescriptionCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote card description suggestions CSV: %s"), *DescriptionCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card description suggestions CSV: %s"), *DescriptionCsvPath);
+			}
+
+			if (bSavedDesignCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote card design audit CSV: %s"), *DesignCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card design audit CSV: %s"), *DesignCsvPath);
+			}
+
+			if (bSavedElementIdentityCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote element identity audit CSV: %s"), *ElementIdentityCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write element identity audit CSV: %s"), *ElementIdentityCsvPath);
+			}
+
+			if (bSavedPackExperienceCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote pack experience audit CSV: %s"), *PackExperienceCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write pack experience audit CSV: %s"), *PackExperienceCsvPath);
+			}
+
+			if (bSavedRewritePlanCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote card rewrite plan CSV: %s"), *RewritePlanCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card rewrite plan CSV: %s"), *RewritePlanCsvPath);
+			}
 		}
 	}
 #else

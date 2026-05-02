@@ -13,6 +13,32 @@ FJargonCurrencyAmount CombineCurrencyAmounts(const FJargonCurrencyAmount& First,
 {
 	return FJargonCurrencyAmount::FromTotalCopper(First.GetTotalCopperValue() + Second.GetTotalCopperValue());
 }
+
+bool CardCollectionContains(const TArray<TObjectPtr<UCardDefinition>>& CardCollection, const UCardDefinition* Card)
+{
+	if (!Card)
+	{
+		return false;
+	}
+
+	for (const TObjectPtr<UCardDefinition>& ExistingCard : CardCollection)
+	{
+		if (ExistingCard.Get() == Card)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void AddUniqueCardToCollection(TArray<TObjectPtr<UCardDefinition>>& CardCollection, UCardDefinition* Card)
+{
+	if (Card && !CardCollectionContains(CardCollection, Card))
+	{
+		CardCollection.Add(Card);
+	}
+}
 }
 
 UJargonGameInstance::UJargonGameInstance()
@@ -79,13 +105,15 @@ void UJargonGameInstance::StartNewRun(const TArray<UCardDefinition*>& InitialDec
 	SetRunDeckInternal(InitialDeck);
 	RunCurrencies = StartingCurrency;
 	NormalizeRunCurrencies();
+	RefreshRunReserveCardsFromAvailableShopPacks();
 	bHasActiveRun = true;
 
 	UE_LOG(
 		LogJargon,
 		Log,
-		TEXT("StartNewRun initialized active deck with %d cards and reserve with %d cards."),
+		TEXT("StartNewRun initialized active deck with %d cards, owned copies with %d cards, and reserve catalog with %d cards."),
 		ActiveRunDeck.Num(),
+		RunOwnedCards.Num(),
 		RunReserveCards.Num()
 	);
 }
@@ -112,15 +140,16 @@ void UJargonGameInstance::EnsureRunInitializedFromSeedDeck(const TArray<TObjectP
 	}
 
 	SetRunDeckInternal(SeedCards);
-	RunReserveCards.Reset();
 	RunCurrencies = FJargonCurrencyAmount();
 	bHasActiveRun = ActiveRunDeck.Num() > 0;
+	RefreshRunReserveCardsFromAvailableShopPacks();
 }
 
 void UJargonGameInstance::ResetRunState()
 {
 	bHasActiveRun = false;
 	ActiveRunDeck.Reset();
+	RunOwnedCards.Reset();
 	RunReserveCards.Reset();
 	RunRelics.Reset();
 	RunCurrencies = FJargonCurrencyAmount();
@@ -167,9 +196,23 @@ TArray<UCardDefinition*> UJargonGameInstance::GetRunReserveCards() const
 
 TArray<UCardDefinition*> UJargonGameInstance::GetOwnedRunCards() const
 {
-	TArray<UCardDefinition*> OwnedCards = ConvertCardArray(ActiveRunDeck);
-	OwnedCards.Append(ConvertCardArray(RunReserveCards));
-	return OwnedCards;
+	return ConvertCardArray(RunOwnedCards);
+}
+
+int32 UJargonGameInstance::GetRunDeckElementCount() const
+{
+	return CountUniqueNonNeutralElements(ActiveRunDeck);
+}
+
+bool UJargonGameInstance::WouldRunDeckRespectElementLimitWithCard(const UCardDefinition* Card) const
+{
+	TArray<TObjectPtr<UCardDefinition>> CandidateDeck = ActiveRunDeck;
+	if (Card)
+	{
+		CandidateDeck.Add(const_cast<UCardDefinition*>(Card));
+	}
+
+	return DoesCardCollectionRespectElementLimit(CandidateDeck);
 }
 
 bool UJargonGameInstance::CanAffordCurrency(const FJargonCurrencyAmount& Cost) const
@@ -197,6 +240,11 @@ TArray<UJargonRelicDefinition*> UJargonGameInstance::GetRunRelics() const
 	}
 
 	return Relics;
+}
+
+TArray<UJargonRelicDefinition*> UJargonGameInstance::GetRunBoons() const
+{
+	return GetRunRelics();
 }
 
 bool UJargonGameInstance::AddRunRelic(UJargonRelicDefinition* RelicDefinition)
@@ -228,6 +276,11 @@ bool UJargonGameInstance::AddRunRelic(UJargonRelicDefinition* RelicDefinition)
 	return true;
 }
 
+bool UJargonGameInstance::AddRunBoon(UJargonRelicDefinition* BoonDefinition)
+{
+	return AddRunRelic(BoonDefinition);
+}
+
 bool UJargonGameInstance::HasRunRelic(const UJargonRelicDefinition* RelicDefinition) const
 {
 	if (!RelicDefinition)
@@ -244,6 +297,11 @@ bool UJargonGameInstance::HasRunRelic(const UJargonRelicDefinition* RelicDefinit
 	}
 
 	return false;
+}
+
+bool UJargonGameInstance::HasRunBoon(const UJargonRelicDefinition* BoonDefinition) const
+{
+	return HasRunRelic(BoonDefinition);
 }
 
 bool UJargonGameInstance::TrySpendCurrency(const FJargonCurrencyAmount& Cost)
@@ -268,7 +326,26 @@ bool UJargonGameInstance::MoveCardFromReserveToDeck(UCardDefinition* Card)
 		return false;
 	}
 
-	constexpr int32 MaxCopiesPerCard = 3;
+	const int32 MaxDeckSize = GetMaxRunDeckSize();
+	if (ActiveRunDeck.Num() >= MaxDeckSize)
+	{
+		UE_LOG(LogJargon, Log, TEXT("MoveCardFromReserveToDeck rejected. Deck has %d cards and max deck size is %d."),
+			ActiveRunDeck.Num(),
+			MaxDeckSize);
+		return false;
+	}
+
+	if (!WouldRunDeckRespectElementLimitWithCard(Card))
+	{
+		UE_LOG(LogJargon, Log, TEXT("MoveCardFromReserveToDeck rejected. Adding '%s' would exceed the max unique non-neutral deck element count. Current=%d Max=%d CardElement=%s"),
+			*GetNameSafe(Card),
+			GetRunDeckElementCount(),
+			GetMaxRunDeckElements(),
+			*Card->GetCardElementDisplayText().ToString());
+		return false;
+	}
+
+	const int32 MaxCopiesPerCard = GetMaxCopiesPerDeckCard();
 	const int32 CurrentDeckCopies = CountCardCopiesInCollection(ActiveRunDeck, Card);
 
 	if (CurrentDeckCopies >= MaxCopiesPerCard)
@@ -280,18 +357,24 @@ bool UJargonGameInstance::MoveCardFromReserveToDeck(UCardDefinition* Card)
 		return false;
 	}
 
-	if (!RemoveCardFromCollection(RunReserveCards, Card))
+	const int32 OwnedCopies = CountCardCopiesInCollection(RunOwnedCards, Card);
+	const int32 AvailableOwnedCopies = FMath::Max(0, OwnedCopies - CurrentDeckCopies);
+	if (AvailableOwnedCopies <= 0)
 	{
-		UE_LOG(LogJargon, Warning, TEXT("MoveCardFromReserveToDeck could not find card '%s' in reserve."),
-			*GetNameSafe(Card));
+		UE_LOG(LogJargon, Log, TEXT("MoveCardFromReserveToDeck rejected. No owned reserve copies of '%s' are available. Owned=%d Deck=%d"),
+			*GetNameSafe(Card),
+			OwnedCopies,
+			CurrentDeckCopies);
 		return false;
 	}
 
 	ActiveRunDeck.Add(Card);
+	AddUniqueCardToCollection(RunReserveCards, Card);
 
-	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from reserve to deck. Deck=%d Reserve=%d"),
+	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from owned reserve to deck. Deck=%d Owned=%d ReserveCatalog=%d"),
 		*GetNameSafe(Card),
 		ActiveRunDeck.Num(),
+		RunOwnedCards.Num(),
 		RunReserveCards.Num());
 
 	return true;
@@ -314,11 +397,12 @@ bool UJargonGameInstance::MoveCardFromDeckToReserve(UCardDefinition* Card)
 		return false;
 	}
 
-	RunReserveCards.Add(Card);
+	AddUniqueCardToCollection(RunReserveCards, Card);
 
-	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from deck to reserve. Deck=%d Reserve=%d"),
+	UE_LOG(LogJargon, Log, TEXT("Moved card '%s' from deck to owned reserve. Deck=%d Owned=%d ReserveCatalog=%d"),
 		*GetNameSafe(Card),
 		ActiveRunDeck.Num(),
+		RunOwnedCards.Num(),
 		RunReserveCards.Num());
 
 	return true;
@@ -352,6 +436,40 @@ TArray<UCardPackDefinition*> UJargonGameInstance::GetAvailableCardPackOffers() c
 	}
 
 	return PackOffers;
+}
+
+void UJargonGameInstance::RefreshRunReserveCardsFromAvailableShopPacks()
+{
+	TArray<TObjectPtr<UCardDefinition>> NewReserveCatalog;
+
+	const TArray<UCardPackDefinition*> PackOffers = GetAvailableCardPackOffers();
+	for (const UCardPackDefinition* PackOffer : PackOffers)
+	{
+		if (!PackOffer)
+		{
+			continue;
+		}
+
+		for (const FWeightedCardPackEntry& CardEntry : PackOffer->CardPool)
+		{
+			if (CardEntry.IsValid() && CardEntry.CardDefinition->IsValidDefinition())
+			{
+				AddUniqueCardToCollection(NewReserveCatalog, CardEntry.CardDefinition.Get());
+			}
+		}
+	}
+
+	for (UCardDefinition* Card : ActiveRunDeck)
+	{
+		AddUniqueCardToCollection(NewReserveCatalog, Card);
+	}
+
+	for (UCardDefinition* Card : RunOwnedCards)
+	{
+		AddUniqueCardToCollection(NewReserveCatalog, Card);
+	}
+
+	RunReserveCards = MoveTemp(NewReserveCatalog);
 }
 
 bool UJargonGameInstance::PurchaseCardPack(
@@ -397,11 +515,14 @@ bool UJargonGameInstance::PurchaseCardPack(
 	{
 		if (GrantedCard)
 		{
-			RunReserveCards.Add(GrantedCard);
+			RunOwnedCards.Add(GrantedCard);
+			AddUniqueCardToCollection(RunReserveCards, GrantedCard);
 		}
 	}
 
-	UE_LOG(LogJargon, Log, TEXT("Purchased pack '%s'. Granted=%d Deck=%d Reserve=%d"), *GetNameSafe(PackDefinition), OutGrantedCards.Num(), ActiveRunDeck.Num(), RunReserveCards.Num());
+	RefreshRunReserveCardsFromAvailableShopPacks();
+
+	UE_LOG(LogJargon, Log, TEXT("Purchased pack '%s'. Granted=%d Deck=%d Owned=%d ReserveCatalog=%d"), *GetNameSafe(PackDefinition), OutGrantedCards.Num(), ActiveRunDeck.Num(), RunOwnedCards.Num(), RunReserveCards.Num());
 
 	return true;
 }
@@ -543,16 +664,54 @@ bool UJargonGameInstance::RemoveCardFromCollection(TArray<TObjectPtr<UCardDefini
 	return CardCollection.RemoveSingle(Card) > 0;
 }
 
+int32 UJargonGameInstance::CountUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const
+{
+	TSet<EJargonElementType> UniqueElements;
+
+	for (const TObjectPtr<UCardDefinition>& Card : CardCollection)
+	{
+		if (!Card || Card->CardElement == EJargonElementType::None)
+		{
+			continue;
+		}
+
+		UniqueElements.Add(Card->CardElement);
+	}
+
+	return UniqueElements.Num();
+}
+
+bool UJargonGameInstance::DoesCardCollectionRespectElementLimit(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const
+{
+	return CountUniqueNonNeutralElements(CardCollection) <= GetMaxRunDeckElements();
+}
+
 void UJargonGameInstance::SetRunDeckInternal(const TArray<UCardDefinition*>& InitialDeck)
 {
 	ActiveRunDeck.Reset();
+	RunOwnedCards.Reset();
 
 	for (UCardDefinition* Card : InitialDeck)
 	{
 		if (Card)
 		{
 			ActiveRunDeck.Add(Card);
+			RunOwnedCards.Add(Card);
 		}
+	}
+
+	if (ActiveRunDeck.Num() > GetMaxRunDeckSize())
+	{
+		UE_LOG(LogJargon, Warning, TEXT("Run deck initialized with %d cards, exceeding MaxRunDeckSize=%d. Existing contents are preserved, but additional deck adds are blocked until the deck is under the limit."),
+			ActiveRunDeck.Num(),
+			GetMaxRunDeckSize());
+	}
+
+	if (!DoesCardCollectionRespectElementLimit(ActiveRunDeck))
+	{
+		UE_LOG(LogJargon, Warning, TEXT("Run deck initialized with %d unique non-neutral elements, exceeding MaxRunDeckElements=%d. Existing contents are preserved, but additional deck adds are blocked until the deck is under the limit."),
+			GetRunDeckElementCount(),
+			GetMaxRunDeckElements());
 	}
 }
 

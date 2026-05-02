@@ -1,4 +1,4 @@
-﻿// JargonCombatGameMode.cpp
+// JargonCombatGameMode.cpp
 
 #include "Combat/JargonCombatGameMode.h"
 
@@ -13,6 +13,7 @@
 #include "Data/JargonHeroDefinition.h"
 #include "Data/JargonRelicDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
+#include "Data/JargonTileEffectDefinition.h"
 #include "Exploration/Encounters/EncounterTypes.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -24,7 +25,6 @@
 #include "Units/BattleUnit.h"
 #include "Units/EnemyBattleUnit.h"
 #include "Units/PlayerBattleUnit.h"
-#include "Units/SummonedBattleUnit.h"
 
 namespace
 {
@@ -76,151 +76,27 @@ void ResolveRunRelicEffects(
 	}
 }
 
-FJargonEffectSpec MakeClassEffect(
-	EJargonEffectOperation Operation,
-	EJargonEffectDelivery Delivery,
-	EJargonEffectTargetFilter TargetFilter,
-	int32 Value,
-	int32 Radius = 0,
-	EJargonElementType ElementType = EJargonElementType::None)
-{
-	FJargonEffectSpec EffectSpec;
-	EffectSpec.Operation = Operation;
-	EffectSpec.Delivery = Delivery;
-	EffectSpec.TargetFilter = TargetFilter;
-	EffectSpec.Value = Value;
-	EffectSpec.Radius = Radius;
-	EffectSpec.ElementType = ElementType;
-	return EffectSpec;
-}
-
-struct FHeroClassDefinition
-{
-	EJargonHeroClass HeroClass = EJargonHeroClass::None;
-	FText DisplayName;
-	FText Description;
-	FText OnCombatStartName;
-	FText OnPlayerTurnStartName;
-	TArray<FJargonEffectSpec> OnCombatStartEffects;
-	TArray<FJargonEffectSpec> OnPlayerTurnStartEffects;
-};
-
-struct FHeroAspectDefinition
-{
-	EJargonHeroClass RequiredClass = EJargonHeroClass::None;
-	EJargonElementType RequiredElement = EJargonElementType::None;
-	int32 RequiredCharges = 0;
-	EJargonHeroAspect Aspect = EJargonHeroAspect::None;
-	FText DisplayName;
-	FText Description;
-	FText OnPlayerTurnStartName;
-	FText OnEnemyDeathName;
-	TArray<FJargonEffectSpec> OnPlayerTurnStartEffects;
-	TArray<FJargonEffectSpec> OnEnemyDeathEffects;
-};
-
-TArray<FHeroClassDefinition> BuildHeroClassDefinitions()
-{
-	TArray<FHeroClassDefinition> Definitions;
-	Definitions.Reserve(3);
-
-	{
-		FHeroClassDefinition Definition;
-		Definition.HeroClass = EJargonHeroClass::Mage;
-		Definition.DisplayName = FText::FromString(TEXT("Mage"));
-		Definition.Description = FText::FromString(TEXT("Element-focused caster that builds combat charges and shifts into volatile aspect forms."));
-		Definition.OnPlayerTurnStartName = FText::FromString(TEXT("Mage: Gather Storm"));
-		Definition.OnPlayerTurnStartEffects.Add(MakeClassEffect(
-			EJargonEffectOperation::GainElementCharge,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			1,
-			0,
-			EJargonElementType::Storm));
-		Definitions.Add(MoveTemp(Definition));
-	}
-
-	{
-		FHeroClassDefinition Definition;
-		Definition.HeroClass = EJargonHeroClass::Rogue;
-		Definition.DisplayName = FText::FromString(TEXT("Rogue"));
-		Definition.Description = FText::FromString(TEXT("Mobile skirmisher that survives through timing, positioning, and dangerous death-aspect payoffs."));
-		Definition.OnPlayerTurnStartName = FText::FromString(TEXT("Rogue: Slip Guard"));
-		Definition.OnPlayerTurnStartEffects.Add(MakeClassEffect(
-			EJargonEffectOperation::ApplyShield,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			1));
-		Definitions.Add(MoveTemp(Definition));
-	}
-
-	{
-		FHeroClassDefinition Definition;
-		Definition.HeroClass = EJargonHeroClass::Paladin;
-		Definition.DisplayName = FText::FromString(TEXT("Paladin"));
-		Definition.Description = FText::FromString(TEXT("Frontline protector that turns Radiance influence into team defense and steady board presence."));
-		Definition.OnCombatStartName = FText::FromString(TEXT("Paladin: Oath Guard"));
-		Definition.OnCombatStartEffects.Add(MakeClassEffect(
-			EJargonEffectOperation::ApplyShield,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			2));
-		Definition.OnPlayerTurnStartName = FText::FromString(TEXT("Paladin: Guard Allies"));
-		Definition.OnPlayerTurnStartEffects.Add(MakeClassEffect(
-			EJargonEffectOperation::ApplyShield,
-			EJargonEffectDelivery::UnitsInRadius,
-			EJargonEffectTargetFilter::FriendlyToSource,
-			1,
-			1));
-		Definitions.Add(MoveTemp(Definition));
-	}
-
-	return Definitions;
-}
-
-const TArray<FHeroClassDefinition>& GetHeroClassDefinitions()
-{
-	static const TArray<FHeroClassDefinition> Definitions = BuildHeroClassDefinitions();
-	return Definitions;
-}
-
-const FHeroClassDefinition* FindHeroClassDefinition(EJargonHeroClass HeroClass)
-{
-	const TArray<FHeroClassDefinition>& Definitions = GetHeroClassDefinitions();
-	return Definitions.FindByPredicate([HeroClass](const FHeroClassDefinition& Definition)
-	{
-		return Definition.HeroClass == HeroClass;
-	});
-}
-
-FJargonHeroClassInfo MakeHeroClassInfo(const FHeroClassDefinition& Definition, EJargonHeroClass ActiveHeroClass)
-{
-	FJargonHeroClassInfo Info;
-	Info.HeroClass = Definition.HeroClass;
-	Info.DisplayName = Definition.DisplayName;
-	Info.Description = Definition.Description;
-	Info.bHasCombatStartPassive = Definition.OnCombatStartEffects.Num() > 0;
-	Info.CombatStartPassiveName = Definition.OnCombatStartName;
-	Info.bHasPlayerTurnStartPassive = Definition.OnPlayerTurnStartEffects.Num() > 0;
-	Info.PlayerTurnStartPassiveName = Definition.OnPlayerTurnStartName;
-	Info.bIsActive = ActiveHeroClass == Definition.HeroClass;
-	return Info;
-}
-
 FText GetHeroClassDisplayText(EJargonHeroClass HeroClass)
 {
-	if (const FHeroClassDefinition* Definition = FindHeroClassDefinition(HeroClass))
-	{
-		return Definition->DisplayName;
-	}
-
 	const UEnum* HeroClassEnum = StaticEnum<EJargonHeroClass>();
 	return HeroClassEnum
 		? HeroClassEnum->GetDisplayNameTextByValue(static_cast<int64>(HeroClass))
 		: FText::FromString(TEXT("Hero Class"));
 }
 
-FText GetElementDisplayText(EJargonElementType ElementType)
+FText GetHeroDisplayText(const UJargonHeroDefinition* HeroDefinition)
+{
+	if (!HeroDefinition)
+	{
+		return FText::GetEmpty();
+	}
+
+	return !HeroDefinition->DisplayName.IsEmpty()
+		? HeroDefinition->DisplayName
+		: GetHeroClassDisplayText(HeroDefinition->HeroClass);
+}
+
+FText GetCombatGameModeElementDisplayText(EJargonElementType ElementType)
 {
 	const UEnum* ElementEnum = StaticEnum<EJargonElementType>();
 	return ElementEnum
@@ -228,524 +104,88 @@ FText GetElementDisplayText(EJargonElementType ElementType)
 		: FText::FromString(TEXT("Element"));
 }
 
-TArray<FHeroAspectDefinition> BuildHeroAspectDefinitions(int32 DefaultRequiredCharges)
+FText GetHeroAspectEnumDisplayText(EJargonHeroAspect HeroAspect)
 {
-	const int32 RequiredCharges = FMath::Max(1, DefaultRequiredCharges);
-
-	TArray<FHeroAspectDefinition> Definitions;
-	Definitions.Reserve(18);
-
-	auto SingleEffect = [](FJargonEffectSpec Effect)
-	{
-		TArray<FJargonEffectSpec> Effects;
-		Effects.Add(Effect);
-		return Effects;
-	};
-
-	auto TwoEffects = [](FJargonEffectSpec FirstEffect, FJargonEffectSpec SecondEffect)
-	{
-		TArray<FJargonEffectSpec> Effects;
-		Effects.Add(FirstEffect);
-		Effects.Add(SecondEffect);
-		return Effects;
-	};
-
-	auto AddAspect = [&Definitions, RequiredCharges](
-		EJargonHeroClass HeroClass,
-		EJargonElementType Element,
-		EJargonHeroAspect Aspect,
-		const TCHAR* DisplayName,
-		const TCHAR* Description,
-		const TCHAR* PlayerTurnStartName,
-		TArray<FJargonEffectSpec>&& PlayerTurnStartEffects,
-		const TCHAR* EnemyDeathName = nullptr,
-		TArray<FJargonEffectSpec>&& EnemyDeathEffects = TArray<FJargonEffectSpec>())
-	{
-		FHeroAspectDefinition Definition;
-		Definition.RequiredClass = HeroClass;
-		Definition.RequiredElement = Element;
-		Definition.RequiredCharges = RequiredCharges;
-		Definition.Aspect = Aspect;
-		Definition.DisplayName = FText::FromString(DisplayName);
-		Definition.Description = FText::FromString(Description);
-		if (PlayerTurnStartName)
-		{
-			Definition.OnPlayerTurnStartName = FText::FromString(PlayerTurnStartName);
-		}
-		Definition.OnPlayerTurnStartEffects = MoveTemp(PlayerTurnStartEffects);
-		if (EnemyDeathName)
-		{
-			Definition.OnEnemyDeathName = FText::FromString(EnemyDeathName);
-		}
-		Definition.OnEnemyDeathEffects = MoveTemp(EnemyDeathEffects);
-		Definitions.Add(MoveTemp(Definition));
-	};
-
-	AddAspect(
-		EJargonHeroClass::Mage,
-		EJargonElementType::Fire,
-		EJargonHeroAspect::Pyromancer,
-		TEXT("Pyromancer"),
-		TEXT("Mage aspect while Fire is dominant. Feeds Fire charges to keep burn payoffs online."),
-		TEXT("Pyromancer: Stoke Flame"),
-		SingleEffect(MakeClassEffect(
-			EJargonEffectOperation::GainElementCharge,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			1,
-			0,
-			EJargonElementType::Fire)));
-
-	AddAspect(
-		EJargonHeroClass::Mage,
-		EJargonElementType::Frost,
-		EJargonHeroAspect::Cryomancer,
-		TEXT("Cryomancer"),
-		TEXT("Mage aspect while Frost is dominant. Turns frozen focus into a personal ward."),
-		TEXT("Cryomancer: Frost Ward"),
-		SingleEffect(MakeClassEffect(
-			EJargonEffectOperation::ApplyShield,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			1)));
-
-	AddAspect(
-		EJargonHeroClass::Mage,
-		EJargonElementType::Storm,
-		EJargonHeroAspect::Stormcaller,
-		TEXT("Stormcaller"),
-		TEXT("Mage aspect while Storm is dominant. Pulls additional Storm charge into the combat loop."),
-		TEXT("Stormcaller: Gather Storm"),
-		SingleEffect(MakeClassEffect(
-			EJargonEffectOperation::GainElementCharge,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			1,
-			0,
-			EJargonElementType::Storm)));
-
-	AddAspect(
-		EJargonHeroClass::Mage,
-		EJargonElementType::Nature,
-		EJargonHeroAspect::Wildheart,
-		TEXT("Wildheart"),
-		TEXT("Mage aspect while Nature is dominant. Converts nature influence into self-renewal."),
-		TEXT("Wildheart: Renew"),
-		SingleEffect(MakeClassEffect(
-			EJargonEffectOperation::Heal,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			1)));
-
-	AddAspect(
-		EJargonHeroClass::Mage,
-		EJargonElementType::Radiance,
-		EJargonHeroAspect::Lightweaver,
-		TEXT("Lightweaver"),
-		TEXT("Mage aspect while Radiance is dominant. Bends Radiance into a close protective veil."),
-		TEXT("Lightweaver: Veil"),
-		SingleEffect(MakeClassEffect(
-			EJargonEffectOperation::ApplyShield,
-			EJargonEffectDelivery::UnitsInRadius,
-			EJargonEffectTargetFilter::FriendlyToSource,
-			1,
-			1)));
-
-	AddAspect(
-		EJargonHeroClass::Mage,
-		EJargonElementType::Quietus,
-		EJargonHeroAspect::Necromancer,
-		TEXT("Necromancer"),
-		TEXT("Mage aspect while Quietus is dominant. Harvests Quietus whenever an enemy falls."),
-		nullptr,
-		TArray<FJargonEffectSpec>(),
-		TEXT("Necromancer: Gather Quietus"),
-		SingleEffect(MakeClassEffect(
-			EJargonEffectOperation::GainElementCharge,
-			EJargonEffectDelivery::Self,
-			EJargonEffectTargetFilter::SourceOnly,
-			1,
-			0,
-			EJargonElementType::Quietus)));
-
-	AddAspect(
-		EJargonHeroClass::Rogue,
-		EJargonElementType::Fire,
-		EJargonHeroAspect::Ashblade,
-		TEXT("Ashblade"),
-		TEXT("Rogue aspect while Fire is dominant. Keeps a thin guard while feeding Fire payoffs."),
-		TEXT("Ashblade: Ember Step"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Fire)));
-
-	AddAspect(
-		EJargonHeroClass::Rogue,
-		EJargonElementType::Frost,
-		EJargonHeroAspect::Frostknife,
-		TEXT("Frostknife"),
-		TEXT("Rogue aspect while Frost is dominant. Turns Frost focus into a defensive opening."),
-		TEXT("Frostknife: Cold Read"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Frost)));
-
-	AddAspect(
-		EJargonHeroClass::Rogue,
-		EJargonElementType::Storm,
-		EJargonHeroAspect::Tempest,
-		TEXT("Tempest"),
-		TEXT("Rogue aspect while Storm is dominant. Keeps momentum through a light guard and extra Storm."),
-		TEXT("Tempest: Quick Current"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Storm)));
-
-	AddAspect(
-		EJargonHeroClass::Rogue,
-		EJargonElementType::Nature,
-		EJargonHeroAspect::Venomshade,
-		TEXT("Venomshade"),
-		TEXT("Rogue aspect while Nature is dominant. Converts Nature influence into quiet recovery."),
-		TEXT("Venomshade: Green Vein"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::Heal,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Nature)));
-
-	AddAspect(
-		EJargonHeroClass::Rogue,
-		EJargonElementType::Radiance,
-		EJargonHeroAspect::Inquisitor,
-		TEXT("Inquisitor"),
-		TEXT("Rogue aspect while Radiance is dominant. Turns Radiance into a precise personal ward."),
-		TEXT("Inquisitor: Bright Edge"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Radiance)));
-
-	AddAspect(
-		EJargonHeroClass::Rogue,
-		EJargonElementType::Quietus,
-		EJargonHeroAspect::Reaper,
-		TEXT("Reaper"),
-		TEXT("Rogue aspect while Quietus is dominant. Converts enemy deaths into defense and more Quietus."),
-		nullptr,
-		TArray<FJargonEffectSpec>(),
-		TEXT("Reaper: Death Guard"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Quietus)));
-
-	AddAspect(
-		EJargonHeroClass::Paladin,
-		EJargonElementType::Fire,
-		EJargonHeroAspect::Sunbreaker,
-		TEXT("Sunbreaker"),
-		TEXT("Paladin aspect while Fire is dominant. Carries Fire through a protective front line."),
-		TEXT("Sunbreaker: Burning Oath"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::UnitsInRadius,
-				EJargonEffectTargetFilter::FriendlyToSource,
-				1,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Fire)));
-
-	AddAspect(
-		EJargonHeroClass::Paladin,
-		EJargonElementType::Frost,
-		EJargonHeroAspect::Frostwarden,
-		TEXT("Frostwarden"),
-		TEXT("Paladin aspect while Frost is dominant. Turns Frost influence into team protection."),
-		TEXT("Frostwarden: Hold Fast"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::UnitsInRadius,
-				EJargonEffectTargetFilter::FriendlyToSource,
-				1,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Frost)));
-
-	AddAspect(
-		EJargonHeroClass::Paladin,
-		EJargonElementType::Storm,
-		EJargonHeroAspect::Stormguard,
-		TEXT("Stormguard"),
-		TEXT("Paladin aspect while Storm is dominant. Shields the line while carrying Storm forward."),
-		TEXT("Stormguard: Charged Guard"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::UnitsInRadius,
-				EJargonEffectTargetFilter::FriendlyToSource,
-				1,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Storm)));
-
-	AddAspect(
-		EJargonHeroClass::Paladin,
-		EJargonElementType::Nature,
-		EJargonHeroAspect::Oathwarden,
-		TEXT("Oathwarden"),
-		TEXT("Paladin aspect while Nature is dominant. Converts Nature influence into nearby healing."),
-		TEXT("Oathwarden: Living Vow"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::Heal,
-				EJargonEffectDelivery::UnitsInRadius,
-				EJargonEffectTargetFilter::FriendlyToSource,
-				1,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Nature)));
-
-	AddAspect(
-		EJargonHeroClass::Paladin,
-		EJargonElementType::Radiance,
-		EJargonHeroAspect::Templar,
-		TEXT("Templar"),
-		TEXT("Paladin aspect while Radiance is dominant. Holds the party together through Radiant protection."),
-		TEXT("Templar: Radiant Bulwark"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::UnitsInRadius,
-				EJargonEffectTargetFilter::FriendlyToSource,
-				1,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Radiance)));
-
-	AddAspect(
-		EJargonHeroClass::Paladin,
-		EJargonElementType::Quietus,
-		EJargonHeroAspect::Graveknight,
-		TEXT("Graveknight"),
-		TEXT("Paladin aspect while Quietus is dominant. Turns enemy deaths into a grim defensive oath."),
-		nullptr,
-		TArray<FJargonEffectSpec>(),
-		TEXT("Graveknight: Grave Oath"),
-		TwoEffects(
-			MakeClassEffect(
-				EJargonEffectOperation::ApplyShield,
-				EJargonEffectDelivery::UnitsInRadius,
-				EJargonEffectTargetFilter::FriendlyToSource,
-				1,
-				1),
-			MakeClassEffect(
-				EJargonEffectOperation::GainElementCharge,
-				EJargonEffectDelivery::Self,
-				EJargonEffectTargetFilter::SourceOnly,
-				1,
-				0,
-				EJargonElementType::Quietus)));
-
-	return Definitions;
-}
-
-const TArray<FHeroAspectDefinition>& GetHeroAspectDefinitions(int32 DefaultRequiredCharges)
-{
-	static TArray<FHeroAspectDefinition> Definitions;
-	static int32 CachedRequiredCharges = INDEX_NONE;
-
-	const int32 RequiredCharges = FMath::Max(1, DefaultRequiredCharges);
-	if (CachedRequiredCharges != RequiredCharges)
-	{
-		Definitions = BuildHeroAspectDefinitions(RequiredCharges);
-		CachedRequiredCharges = RequiredCharges;
-	}
-
-	return Definitions;
-}
-
-FJargonHeroAspectInfo MakeHeroAspectInfo(
-	const FHeroAspectDefinition& Definition,
-	int32 CurrentCharges,
-	EJargonHeroClass ActiveHeroClass,
-	EJargonHeroAspect ActiveAspect)
-{
-	FJargonHeroAspectInfo Info;
-	Info.HeroClass = Definition.RequiredClass;
-	Info.ElementType = Definition.RequiredElement;
-	Info.RequiredElement = Definition.RequiredElement;
-	Info.RequiredElementCharges = Definition.RequiredCharges;
-	Info.RequiredCharges = Definition.RequiredCharges;
-	Info.CurrentElementCharges = FMath::Max(0, CurrentCharges);
-	Info.CurrentCharges = FMath::Max(0, CurrentCharges);
-	Info.Aspect = Definition.Aspect;
-	Info.DisplayName = Definition.DisplayName;
-	Info.Description = Definition.Description;
-	Info.PassiveName = !Definition.OnPlayerTurnStartName.IsEmpty()
-		? Definition.OnPlayerTurnStartName
-		: Definition.OnEnemyDeathName;
-	if (!Definition.OnPlayerTurnStartName.IsEmpty() && !Definition.OnEnemyDeathName.IsEmpty())
-	{
-		Info.PassiveDescription = FText::Format(
-			FText::FromString(TEXT("Turn start: {0}\nEnemy death: {1}")),
-			Definition.OnPlayerTurnStartName,
-			Definition.OnEnemyDeathName);
-	}
-	else if (!Definition.OnPlayerTurnStartName.IsEmpty())
-	{
-		Info.PassiveDescription = FText::Format(
-			FText::FromString(TEXT("Turn start: {0}")),
-			Definition.OnPlayerTurnStartName);
-	}
-	else if (!Definition.OnEnemyDeathName.IsEmpty())
-	{
-		Info.PassiveDescription = FText::Format(
-			FText::FromString(TEXT("Enemy death: {0}")),
-			Definition.OnEnemyDeathName);
-	}
-	Info.bHasRequiredCharges = Info.CurrentElementCharges >= Info.RequiredElementCharges;
-	Info.bRequirementMet = Info.CurrentCharges >= Info.RequiredCharges;
-	Info.bIsActive =
-		ActiveHeroClass == Definition.RequiredClass &&
-		ActiveAspect != EJargonHeroAspect::None &&
-		ActiveAspect == Definition.Aspect;
-	return Info;
-}
-
-const FHeroAspectDefinition* FindHeroAspectDefinitionByAspect(
-	EJargonHeroClass HeroClass,
-	EJargonHeroAspect HeroAspect,
-	int32 DefaultRequiredCharges)
-{
-	const TArray<FHeroAspectDefinition>& Definitions = GetHeroAspectDefinitions(DefaultRequiredCharges);
-	return Definitions.FindByPredicate([HeroClass, HeroAspect](const FHeroAspectDefinition& Definition)
-	{
-		return Definition.RequiredClass == HeroClass && Definition.Aspect == HeroAspect;
-	});
-}
-
-const FHeroAspectDefinition* FindHeroAspectDefinitionForElement(
-	EJargonHeroClass HeroClass,
-	EJargonElementType Element,
-	int32 DefaultRequiredCharges)
-{
-	const TArray<FHeroAspectDefinition>& Definitions = GetHeroAspectDefinitions(DefaultRequiredCharges);
-	return Definitions.FindByPredicate([HeroClass, Element](const FHeroAspectDefinition& Definition)
-	{
-		return Definition.RequiredClass == HeroClass && Definition.RequiredElement == Element;
-	});
-}
-
-const FHeroAspectDefinition* FindHeroAspectDefinitionForInfluence(
-	EJargonHeroClass HeroClass,
-	EJargonElementType DominantElement,
-	int32 DominantElementCharges,
-	int32 DefaultRequiredCharges)
-{
-	const TArray<FHeroAspectDefinition>& Definitions = GetHeroAspectDefinitions(DefaultRequiredCharges);
-	return Definitions.FindByPredicate([HeroClass, DominantElement, DominantElementCharges](const FHeroAspectDefinition& Definition)
-	{
-		return Definition.RequiredClass == HeroClass &&
-			Definition.RequiredElement == DominantElement &&
-			DominantElementCharges >= Definition.RequiredCharges;
-	});
-}
-
-FText GetHeroAspectDisplayText(EJargonHeroClass HeroClass, EJargonHeroAspect HeroAspect, int32 DefaultRequiredCharges)
-{
-	if (const FHeroAspectDefinition* Definition = FindHeroAspectDefinitionByAspect(HeroClass, HeroAspect, DefaultRequiredCharges))
-	{
-		return Definition->DisplayName;
-	}
-
 	const UEnum* HeroAspectEnum = StaticEnum<EJargonHeroAspect>();
 	return HeroAspectEnum
 		? HeroAspectEnum->GetDisplayNameTextByValue(static_cast<int64>(HeroAspect))
 		: FText::FromString(TEXT("Hero Aspect"));
+}
+
+FText GetHeroAspectDisplayText(const FJargonHeroAspectDefinition* AspectDefinition, EJargonHeroAspect FallbackAspect)
+{
+	if (AspectDefinition && !AspectDefinition->DisplayName.IsEmpty())
+	{
+		return AspectDefinition->DisplayName;
+	}
+
+	const EJargonHeroAspect Aspect = AspectDefinition ? AspectDefinition->Aspect : FallbackAspect;
+	return GetHeroAspectEnumDisplayText(Aspect);
+}
+
+FJargonHeroClassInfo MakeHeroClassInfo(const UJargonHeroDefinition& HeroDefinition)
+{
+	FJargonHeroClassInfo Info;
+	Info.HeroClass = HeroDefinition.HeroClass;
+	Info.DisplayName = GetHeroDisplayText(&HeroDefinition);
+	Info.Description = HeroDefinition.Description;
+	Info.bHasCombatStartPassive = HeroDefinition.CombatStartPassive.HasEffects();
+	Info.CombatStartPassiveName = HeroDefinition.CombatStartPassive.PassiveName;
+	Info.bHasPlayerTurnStartPassive = HeroDefinition.PlayerTurnStartPassive.HasEffects();
+	Info.PlayerTurnStartPassiveName = HeroDefinition.PlayerTurnStartPassive.PassiveName;
+	Info.bIsActive = true;
+	return Info;
+}
+
+FJargonHeroAspectInfo MakeHeroAspectInfo(
+	const AJargonCombatGameMode* CombatGameMode,
+	const UJargonHeroDefinition& HeroDefinition,
+	const FJargonHeroAspectDefinition& AspectDefinition)
+{
+	const FJargonHeroRuntimeState RuntimeState = CombatGameMode ? CombatGameMode->GetHeroRuntimeState() : FJargonHeroRuntimeState();
+	const int32 CurrentCharges = CombatGameMode
+		? CombatGameMode->GetElementCharges(AspectDefinition.RequiredElement)
+		: 0;
+
+	FJargonHeroAspectInfo Info;
+	Info.HeroClass = HeroDefinition.HeroClass;
+	Info.ElementType = AspectDefinition.RequiredElement;
+	Info.RequiredElement = AspectDefinition.RequiredElement;
+	Info.RequiredElementCharges = FMath::Max(0, AspectDefinition.RequiredElementCharges);
+	Info.RequiredCharges = Info.RequiredElementCharges;
+	Info.CurrentElementCharges = FMath::Max(0, CurrentCharges);
+	Info.CurrentCharges = Info.CurrentElementCharges;
+	Info.Aspect = AspectDefinition.Aspect;
+	Info.DisplayName = GetHeroAspectDisplayText(&AspectDefinition, AspectDefinition.Aspect);
+	Info.Description = AspectDefinition.Description;
+	Info.PassiveName = !AspectDefinition.TurnStartPassiveName.IsEmpty()
+		? AspectDefinition.TurnStartPassiveName
+		: AspectDefinition.EnemyDeathPassiveName;
+	if (!AspectDefinition.TurnStartPassiveName.IsEmpty() && !AspectDefinition.EnemyDeathPassiveName.IsEmpty())
+	{
+		Info.PassiveDescription = FText::Format(
+			FText::FromString(TEXT("Turn start: {0}\nEnemy death: {1}")),
+			AspectDefinition.TurnStartPassiveName,
+			AspectDefinition.EnemyDeathPassiveName);
+	}
+	else if (!AspectDefinition.TurnStartPassiveName.IsEmpty())
+	{
+		Info.PassiveDescription = FText::Format(
+			FText::FromString(TEXT("Turn start: {0}")),
+			AspectDefinition.TurnStartPassiveName);
+	}
+	else if (!AspectDefinition.EnemyDeathPassiveName.IsEmpty())
+	{
+		Info.PassiveDescription = FText::Format(
+			FText::FromString(TEXT("Enemy death: {0}")),
+			AspectDefinition.EnemyDeathPassiveName);
+	}
+	Info.bHasRequiredCharges = Info.RequiredElementCharges > 0 && Info.CurrentElementCharges >= Info.RequiredElementCharges;
+	Info.bRequirementMet = Info.bHasRequiredCharges;
+	Info.bIsActive =
+		RuntimeState.ActiveAspect != EJargonHeroAspect::None &&
+		RuntimeState.ActiveAspect == AspectDefinition.Aspect;
+	return Info;
 }
 
 const FJargonEffectSpec* FindFirstPresentationEffect(const TArray<FJargonEffectSpec>& Effects, bool bPreferNonChargeEffect)
@@ -804,7 +244,7 @@ void ApplyPassiveCueEffectMetadata(FJargonCombatCueEvent& Cue, const TArray<FJar
 
 FText BuildElementChargeCueText(const FJargonEffectSpec& Effect)
 {
-	const FText ElementName = GetElementDisplayText(Effect.ElementType);
+	const FText ElementName = GetCombatGameModeElementDisplayText(Effect.ElementType);
 	const int32 ChargeAmount = FMath::Max(0, Effect.Value);
 	return FText::Format(
 		FText::FromString(TEXT("+{0} {1} {2}")),
@@ -814,13 +254,13 @@ FText BuildElementChargeCueText(const FJargonEffectSpec& Effect)
 }
 
 FText BuildHeroClassPassiveCueText(
-	EJargonHeroClass HeroClass,
+	const UJargonHeroDefinition* HeroDefinition,
 	const FText& PassiveName,
 	const TArray<FJargonEffectSpec>& Effects)
 {
 	if (const FJargonEffectSpec* PrimaryEffect = FindFirstPresentationEffect(Effects, false))
 	{
-		const FText ClassName = GetHeroClassDisplayText(HeroClass);
+		const FText ClassName = GetHeroDisplayText(HeroDefinition);
 		switch (PrimaryEffect->Operation)
 		{
 		case EJargonEffectOperation::GainElementCharge:
@@ -846,17 +286,16 @@ FText BuildHeroClassPassiveCueText(
 		return PassiveName;
 	}
 
-	return FText::Format(FText::FromString(TEXT("{0} Passive")), GetHeroClassDisplayText(HeroClass));
+	return FText::Format(FText::FromString(TEXT("{0} Passive")), GetHeroDisplayText(HeroDefinition));
 }
 
 FText BuildHeroAspectPassiveCueText(
-	EJargonHeroClass HeroClass,
-	EJargonHeroAspect HeroAspect,
-	int32 DefaultRequiredCharges,
+	const FJargonHeroAspectDefinition* AspectDefinition,
+	EJargonHeroAspect FallbackAspect,
 	const FText& PassiveName,
 	const TArray<FJargonEffectSpec>& Effects)
 {
-	const FText AspectName = GetHeroAspectDisplayText(HeroClass, HeroAspect, DefaultRequiredCharges);
+	const FText AspectName = GetHeroAspectDisplayText(AspectDefinition, FallbackAspect);
 	const FJargonEffectSpec* PrimaryEffect = FindFirstPresentationEffect(Effects, true);
 	if (PrimaryEffect)
 	{
@@ -900,73 +339,75 @@ FText BuildHeroAspectPassiveCueText(
 	return PassiveName.IsEmpty() ? FText::FromString(TEXT("Hero Aspect")) : PassiveName;
 }
 
-FText BuildHeroAspectActivatedCueText(
-	EJargonHeroClass HeroClass,
-	EJargonHeroAspect HeroAspect,
-	int32 DefaultRequiredCharges)
+FText BuildHeroAspectActivatedCueText(const FJargonHeroAspectDefinition* AspectDefinition, EJargonHeroAspect FallbackAspect)
 {
-	const FText AspectName = GetHeroAspectDisplayText(HeroClass, HeroAspect, DefaultRequiredCharges);
+	const FText AspectName = GetHeroAspectDisplayText(AspectDefinition, FallbackAspect);
 	return FText::Format(FText::FromString(TEXT("{0} Awakened")), AspectName);
 }
 
-TArray<FJargonEffectSpec> BuildHeroClassPassiveEffects(EJargonHeroClass HeroClass, EJargonEffectTrigger Trigger, FText& OutPassiveName)
-{
-	OutPassiveName = FText::GetEmpty();
-
-	const FHeroClassDefinition* Definition = FindHeroClassDefinition(HeroClass);
-	if (!Definition)
-	{
-		return TArray<FJargonEffectSpec>();
-	}
-
-	if (Trigger == EJargonEffectTrigger::OnCombatStart)
-	{
-		OutPassiveName = Definition->OnCombatStartName.IsEmpty()
-			? Definition->DisplayName
-			: Definition->OnCombatStartName;
-		return Definition->OnCombatStartEffects;
-	}
-
-	if (Trigger == EJargonEffectTrigger::OnTurnStart)
-	{
-		OutPassiveName = Definition->OnPlayerTurnStartName.IsEmpty()
-			? Definition->DisplayName
-			: Definition->OnPlayerTurnStartName;
-		return Definition->OnPlayerTurnStartEffects;
-	}
-
-	return TArray<FJargonEffectSpec>();
-}
-
-TArray<FJargonEffectSpec> BuildHeroAspectPassiveEffects(
-	EJargonHeroClass HeroClass,
-	EJargonHeroAspect HeroAspect,
+TArray<FJargonEffectSpec> BuildHeroClassPassiveEffects(
+	const UJargonHeroDefinition* HeroDefinition,
 	EJargonEffectTrigger Trigger,
-	int32 DefaultRequiredCharges,
 	FText& OutPassiveName)
 {
 	OutPassiveName = FText::GetEmpty();
 
-	const FHeroAspectDefinition* Definition = FindHeroAspectDefinitionByAspect(HeroClass, HeroAspect, DefaultRequiredCharges);
-	if (!Definition)
+	if (!HeroDefinition)
+	{
+		return TArray<FJargonEffectSpec>();
+	}
+
+	const FJargonHeroClassPassiveDefinition* PassiveDefinition = nullptr;
+	if (Trigger == EJargonEffectTrigger::OnCombatStart)
+	{
+		PassiveDefinition = &HeroDefinition->CombatStartPassive;
+	}
+	else if (Trigger == EJargonEffectTrigger::OnTurnStart)
+	{
+		PassiveDefinition = &HeroDefinition->PlayerTurnStartPassive;
+	}
+
+	if (!PassiveDefinition)
+	{
+		return TArray<FJargonEffectSpec>();
+	}
+
+	OutPassiveName = PassiveDefinition->PassiveName.IsEmpty()
+		? GetHeroDisplayText(HeroDefinition)
+		: PassiveDefinition->PassiveName;
+	return PassiveDefinition->Effects;
+}
+
+TArray<FJargonEffectSpec> BuildHeroAspectPassiveEffects(
+	const UJargonHeroDefinition* HeroDefinition,
+	EJargonHeroAspect HeroAspect,
+	EJargonEffectTrigger Trigger,
+	FText& OutPassiveName)
+{
+	OutPassiveName = FText::GetEmpty();
+
+	const FJargonHeroAspectDefinition* AspectDefinition = HeroDefinition
+		? HeroDefinition->FindAspectDefinitionByAspect(HeroAspect)
+		: nullptr;
+	if (!AspectDefinition)
 	{
 		return TArray<FJargonEffectSpec>();
 	}
 
 	if (Trigger == EJargonEffectTrigger::OnTurnStart)
 	{
-		OutPassiveName = Definition->OnPlayerTurnStartName.IsEmpty()
-			? Definition->DisplayName
-			: Definition->OnPlayerTurnStartName;
-		return Definition->OnPlayerTurnStartEffects;
+		OutPassiveName = AspectDefinition->TurnStartPassiveName.IsEmpty()
+			? GetHeroAspectDisplayText(AspectDefinition, HeroAspect)
+			: AspectDefinition->TurnStartPassiveName;
+		return AspectDefinition->TurnStartEffects;
 	}
 
 	if (Trigger == EJargonEffectTrigger::OnEnemyDeath)
 	{
-		OutPassiveName = Definition->OnEnemyDeathName.IsEmpty()
-			? Definition->DisplayName
-			: Definition->OnEnemyDeathName;
-		return Definition->OnEnemyDeathEffects;
+		OutPassiveName = AspectDefinition->EnemyDeathPassiveName.IsEmpty()
+			? GetHeroAspectDisplayText(AspectDefinition, HeroAspect)
+			: AspectDefinition->EnemyDeathPassiveName;
+		return AspectDefinition->EnemyDeathEffects;
 	}
 
 	return TArray<FJargonEffectSpec>();
@@ -974,7 +415,8 @@ TArray<FJargonEffectSpec> BuildHeroAspectPassiveEffects(
 
 bool TryBuildHeroAspectInfo(
 	const AJargonCombatGameMode* CombatGameMode,
-	const FHeroAspectDefinition& Definition,
+	const UJargonHeroDefinition& HeroDefinition,
+	const FJargonHeroAspectDefinition& AspectDefinition,
 	FJargonHeroAspectInfo& OutAspectInfo)
 {
 	if (!CombatGameMode)
@@ -982,13 +424,7 @@ bool TryBuildHeroAspectInfo(
 		return false;
 	}
 
-	const FJargonHeroRuntimeState RuntimeState = CombatGameMode->GetHeroRuntimeState();
-	const UJargonHeroDefinition* ActiveHeroDefinition = CombatGameMode->GetActiveHeroDefinition();
-	OutAspectInfo = MakeHeroAspectInfo(
-		Definition,
-		CombatGameMode->GetElementCharges(Definition.RequiredElement),
-		ActiveHeroDefinition ? ActiveHeroDefinition->HeroClass : EJargonHeroClass::None,
-		RuntimeState.ActiveAspect);
+	OutAspectInfo = MakeHeroAspectInfo(CombatGameMode, HeroDefinition, AspectDefinition);
 	return true;
 }
 
@@ -1018,7 +454,6 @@ AJargonCombatGameMode::AJargonCombatGameMode()
 	RuntimeHeroAspectThreshold = 5;
 	bLogCombatPacingSummary = true;
 	bHasLoggedCombatPacingSummary = false;
-	DefaultSummonedUnitClass = ASummonedBattleUnit::StaticClass();
 }
 
 void AJargonCombatGameMode::BeginPlay()
@@ -1220,32 +655,22 @@ bool AJargonCombatGameMode::GetActiveHeroClassInfo(FJargonHeroClassInfo& OutClas
 
 bool AJargonCombatGameMode::GetHeroClassInfo(EJargonHeroClass HeroClass, FJargonHeroClassInfo& OutClassInfo) const
 {
-	const FHeroClassDefinition* Definition = FindHeroClassDefinition(HeroClass);
-	if (!Definition)
+	if (!ActiveHeroDefinition || ActiveHeroDefinition->HeroClass != HeroClass)
 	{
 		OutClassInfo = FJargonHeroClassInfo();
 		return false;
 	}
 
-	OutClassInfo = MakeHeroClassInfo(
-		*Definition,
-		ActiveHeroDefinition ? ActiveHeroDefinition->HeroClass : EJargonHeroClass::None);
+	OutClassInfo = MakeHeroClassInfo(*ActiveHeroDefinition);
 	return true;
 }
 
 TArray<FJargonHeroClassInfo> AJargonCombatGameMode::GetConfiguredHeroClassInfos() const
 {
 	TArray<FJargonHeroClassInfo> Infos;
-	const TArray<FHeroClassDefinition>& Definitions = GetHeroClassDefinitions();
-	Infos.Reserve(Definitions.Num());
-
-	const EJargonHeroClass ActiveClass = ActiveHeroDefinition
-		? ActiveHeroDefinition->HeroClass
-		: EJargonHeroClass::None;
-
-	for (const FHeroClassDefinition& Definition : Definitions)
+	if (ActiveHeroDefinition)
 	{
-		Infos.Add(MakeHeroClassInfo(Definition, ActiveClass));
+		Infos.Add(MakeHeroClassInfo(*ActiveHeroDefinition));
 	}
 
 	return Infos;
@@ -1271,17 +696,14 @@ bool AJargonCombatGameMode::GetActiveHeroAspectInfo(FJargonHeroAspectInfo& OutAs
 		return false;
 	}
 
-	const FHeroAspectDefinition* Definition = FindHeroAspectDefinitionByAspect(
-		ActiveHeroDefinition->HeroClass,
-		HeroRuntimeState.ActiveAspect,
-		RuntimeHeroAspectThreshold);
+	const FJargonHeroAspectDefinition* Definition = ActiveHeroDefinition->FindAspectDefinitionByAspect(HeroRuntimeState.ActiveAspect);
 	if (!Definition)
 	{
 		OutAspectInfo = FJargonHeroAspectInfo();
 		return false;
 	}
 
-	return TryBuildHeroAspectInfo(this, *Definition, OutAspectInfo);
+	return TryBuildHeroAspectInfo(this, *ActiveHeroDefinition, *Definition, OutAspectInfo);
 }
 
 bool AJargonCombatGameMode::GetHeroAspectInfo(
@@ -1297,29 +719,37 @@ bool AJargonCombatGameMode::GetHeroAspectInfoForElement(
 	EJargonElementType Element,
 	FJargonHeroAspectInfo& OutAspectInfo) const
 {
-	const FHeroAspectDefinition* Definition = FindHeroAspectDefinitionForElement(
-		HeroClass,
-		Element,
-		RuntimeHeroAspectThreshold);
+	if (!ActiveHeroDefinition || ActiveHeroDefinition->HeroClass != HeroClass)
+	{
+		OutAspectInfo = FJargonHeroAspectInfo();
+		return false;
+	}
+
+	const FJargonHeroAspectDefinition* Definition = ActiveHeroDefinition->FindAspectDefinitionForElement(Element);
 	if (!Definition)
 	{
 		OutAspectInfo = FJargonHeroAspectInfo();
 		return false;
 	}
 
-	return TryBuildHeroAspectInfo(this, *Definition, OutAspectInfo);
+	return TryBuildHeroAspectInfo(this, *ActiveHeroDefinition, *Definition, OutAspectInfo);
 }
 
 TArray<FJargonHeroAspectInfo> AJargonCombatGameMode::GetConfiguredHeroAspectInfos() const
 {
 	TArray<FJargonHeroAspectInfo> Infos;
-	const TArray<FHeroAspectDefinition>& Definitions = GetHeroAspectDefinitions(RuntimeHeroAspectThreshold);
+	if (!ActiveHeroDefinition)
+	{
+		return Infos;
+	}
+
+	const TArray<FJargonHeroAspectDefinition>& Definitions = ActiveHeroDefinition->GetAuthoredAspectDefinitions();
 	Infos.Reserve(Definitions.Num());
 
-	for (const FHeroAspectDefinition& Definition : Definitions)
+	for (const FJargonHeroAspectDefinition& Definition : Definitions)
 	{
 		FJargonHeroAspectInfo Info;
-		if (TryBuildHeroAspectInfo(this, Definition, Info))
+		if (TryBuildHeroAspectInfo(this, *ActiveHeroDefinition, Definition, Info))
 		{
 			Infos.Add(Info);
 		}
@@ -1349,7 +779,7 @@ FText AJargonCombatGameMode::GetActiveHeroAspectPassiveName() const
 FText AJargonCombatGameMode::GetActiveHeroDominantElementDisplayName() const
 {
 	return HeroRuntimeState.DominantElement != EJargonElementType::None
-		? GetElementDisplayText(HeroRuntimeState.DominantElement)
+		? GetCombatGameModeElementDisplayText(HeroRuntimeState.DominantElement)
 		: FText::GetEmpty();
 }
 
@@ -1375,7 +805,12 @@ void AJargonCombatGameMode::RefreshHeroRuntimeStateFromElements()
 	NewState.DominantElement = NewState.bHasElementInfluence
 		? ResolveDominantElementFromCharges(HeroRuntimeState.DominantElement)
 		: EJargonElementType::None;
-	NewState.AspectThreshold = FMath::Max(1, RuntimeHeroAspectThreshold);
+	const FJargonHeroAspectDefinition* DominantAspectDefinition = ActiveHeroDefinition
+		? ActiveHeroDefinition->FindAspectDefinitionForElement(NewState.DominantElement)
+		: nullptr;
+	NewState.AspectThreshold = DominantAspectDefinition
+		? FMath::Max(0, DominantAspectDefinition->RequiredElementCharges)
+		: 0;
 	NewState.ActiveAspect = ResolveHeroAspect(
 		ActiveHeroDefinition ? ActiveHeroDefinition->HeroClass : EJargonHeroClass::None,
 		NewState.DominantElement,
@@ -1411,10 +846,10 @@ void AJargonCombatGameMode::RefreshHeroRuntimeStateFromElements()
 		AspectActivatedCue.ElementType = NewState.DominantElement;
 		AspectActivatedCue.ElementChargeCount = NewState.GetChargesForElement(NewState.DominantElement);
 		AspectActivatedCue.Value = AspectActivatedCue.ElementChargeCount;
+		const FJargonHeroAspectDefinition* ActiveAspectDefinition = ActiveHeroDefinition->FindAspectDefinitionByAspect(NewState.ActiveAspect);
 		AspectActivatedCue.TextOverride = BuildHeroAspectActivatedCueText(
-			ActiveHeroDefinition->HeroClass,
-			NewState.ActiveAspect,
-			RuntimeHeroAspectThreshold);
+			ActiveAspectDefinition,
+			NewState.ActiveAspect);
 		AspectActivatedCue.WorldLocation = PlayerTile ? PlayerTile->GetActorLocation() : PlayerUnit->GetActorLocation();
 		AspectActivatedCue.bHasWorldLocation = true;
 		EmitCombatCue(AspectActivatedCue);
@@ -1468,17 +903,23 @@ EJargonHeroAspect AJargonCombatGameMode::ResolveHeroAspect(
 {
 	if (HeroClass == EJargonHeroClass::None ||
 		DominantElement == EJargonElementType::None ||
-		DominantElementCharges < FMath::Max(1, RuntimeHeroAspectThreshold))
+		!ActiveHeroDefinition ||
+		ActiveHeroDefinition->HeroClass != HeroClass)
 	{
 		return EJargonHeroAspect::None;
 	}
 
-	const FHeroAspectDefinition* Definition = FindHeroAspectDefinitionForInfluence(
-		HeroClass,
-		DominantElement,
-		DominantElementCharges,
-		RuntimeHeroAspectThreshold);
-	return Definition ? Definition->Aspect : EJargonHeroAspect::None;
+	const FJargonHeroAspectDefinition* Definition = ActiveHeroDefinition->FindAspectDefinitionForElement(DominantElement);
+	if (!Definition ||
+		Definition->Aspect == EJargonHeroAspect::None ||
+		Definition->RequiredElement == EJargonElementType::None ||
+		Definition->RequiredElementCharges <= 0 ||
+		DominantElementCharges < Definition->RequiredElementCharges)
+	{
+		return EJargonHeroAspect::None;
+	}
+
+	return Definition->Aspect;
 }
 
 bool AJargonCombatGameMode::IsHeroRuntimeStateDifferent(
@@ -2545,6 +1986,19 @@ void AJargonCombatGameMode::StartPlayerTurn()
 		FriendlyUnit->ClearTemporaryShield();
 		FriendlyUnit->ResetTurnActions();
 
+		FriendlyUnit->ConsumeBurnTurn();
+		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+		{
+			return;
+		}
+
+		if (!IsValid(FriendlyUnit) || FriendlyUnit->IsDead())
+		{
+			continue;
+		}
+
+		FriendlyUnit->ConsumeRootTurn();
+
 		if (FriendlyUnit->ConsumeFreezeTurn())
 		{
 			UE_LOG(LogTemp, Log, TEXT("Friendly unit '%s' is frozen in stasis and loses its turn-start effects and actions this turn."),
@@ -2760,6 +2214,21 @@ bool AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
 		return false;
 	}
 
+	EnemyUnit->ResetTurnActions();
+
+	EnemyUnit->ConsumeBurnTurn();
+	if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
+	{
+		return false;
+	}
+
+	if (!IsValid(EnemyUnit) || EnemyUnit->IsDead())
+	{
+		return false;
+	}
+
+	EnemyUnit->ConsumeRootTurn();
+
 	if (EnemyUnit->ConsumeFreezeTurn())
 	{
 		UE_LOG(LogTemp, Log, TEXT("Enemy '%s' is frozen in stasis and skips its turn-start effects and action."),
@@ -2847,7 +2316,7 @@ void AJargonCombatGameMode::ExecuteHeroClassCombatStartPassive()
 
 	FText PassiveName;
 	const TArray<FJargonEffectSpec> Effects = BuildHeroClassPassiveEffects(
-		ActiveHeroDefinition->HeroClass,
+		ActiveHeroDefinition,
 		EJargonEffectTrigger::OnCombatStart,
 		PassiveName);
 	ResolveHeroClassPassiveEffects(EJargonEffectTrigger::OnCombatStart, PassiveName, Effects);
@@ -2862,7 +2331,7 @@ void AJargonCombatGameMode::ExecuteHeroClassPlayerTurnStartPassive()
 
 	FText PassiveName;
 	const TArray<FJargonEffectSpec> Effects = BuildHeroClassPassiveEffects(
-		ActiveHeroDefinition->HeroClass,
+		ActiveHeroDefinition,
 		EJargonEffectTrigger::OnTurnStart,
 		PassiveName);
 	ResolveHeroClassPassiveEffects(EJargonEffectTrigger::OnTurnStart, PassiveName, Effects);
@@ -2898,7 +2367,7 @@ void AJargonCombatGameMode::ResolveHeroClassPassiveEffects(
 	ClassPassiveCue.HeroClass = ActiveHeroDefinition->HeroClass;
 	ApplyPassiveCueEffectMetadata(ClassPassiveCue, Effects, false);
 	ClassPassiveCue.TextOverride = BuildHeroClassPassiveCueText(
-		ActiveHeroDefinition->HeroClass,
+		ActiveHeroDefinition,
 		PassiveName,
 		Effects);
 	ClassPassiveCue.WorldLocation = PlayerUnit->GetActorLocation();
@@ -2932,10 +2401,9 @@ void AJargonCombatGameMode::ExecuteHeroAspectPlayerTurnStartPassive()
 
 	FText PassiveName;
 	const TArray<FJargonEffectSpec> Effects = BuildHeroAspectPassiveEffects(
-		ActiveHeroDefinition->HeroClass,
+		ActiveHeroDefinition,
 		HeroRuntimeState.ActiveAspect,
 		EJargonEffectTrigger::OnTurnStart,
-		RuntimeHeroAspectThreshold,
 		PassiveName);
 	ResolveHeroAspectPassiveEffects(
 		EJargonEffectTrigger::OnTurnStart,
@@ -2959,10 +2427,9 @@ void AJargonCombatGameMode::ExecuteHeroAspectEnemyDeathPassive(ABattleUnit* Dead
 
 	FText PassiveName;
 	const TArray<FJargonEffectSpec> Effects = BuildHeroAspectPassiveEffects(
-		ActiveHeroDefinition->HeroClass,
+		ActiveHeroDefinition,
 		HeroRuntimeState.ActiveAspect,
 		EJargonEffectTrigger::OnEnemyDeath,
-		RuntimeHeroAspectThreshold,
 		PassiveName);
 	ResolveHeroAspectPassiveEffects(
 		EJargonEffectTrigger::OnEnemyDeath,
@@ -3008,10 +2475,10 @@ void AJargonCombatGameMode::ResolveHeroAspectPassiveEffects(
 	AspectPassiveCue.HeroAspect = HeroRuntimeState.ActiveAspect;
 	AspectPassiveCue.ElementType = HeroRuntimeState.DominantElement;
 	ApplyPassiveCueEffectMetadata(AspectPassiveCue, Effects, true);
+	const FJargonHeroAspectDefinition* AspectDefinition = ActiveHeroDefinition->FindAspectDefinitionByAspect(HeroRuntimeState.ActiveAspect);
 	AspectPassiveCue.TextOverride = BuildHeroAspectPassiveCueText(
-		ActiveHeroDefinition->HeroClass,
+		AspectDefinition,
 		HeroRuntimeState.ActiveAspect,
-		RuntimeHeroAspectThreshold,
 		PassiveName,
 		Effects);
 	AspectPassiveCue.WorldLocation = PrimaryTileTarget
@@ -3348,44 +2815,41 @@ ABattleUnit* AJargonCombatGameMode::FindPreferredEnemyTarget(ABattleUnit* EnemyU
 	return BestTarget;
 }
 
-ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClass(
-	TSubclassOf<ABattleTileEffect> TileEffectClass,
+ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromDefinition(
+	UJargonTileEffectDefinition* Definition,
+	TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass,
 	const UCardDefinition* Card,
 	const ABattleUnit* SourceUnit,
-	AGridTile* TargetTile,
-	ECardCategory EffectCategory,
-	int32 EffectValue,
-	int32 EffectRadius,
-	int32 EffectDuration)
+	AGridTile* TargetTile)
 {
-	if (!SourceUnit || !TargetTile || !TileEffectClass)
+	if (!SourceUnit)
 	{
 		return nullptr;
 	}
 
-	return SpawnPersistentTileEffectFromClassForTeam(
-		TileEffectClass,
+	return SpawnPersistentTileEffectFromDefinitionForTeam(
+		Definition,
+		RuntimeTileEffectClass,
 		Card,
 		SourceUnit->GetTeam(),
-		TargetTile,
-		EffectCategory,
-		EffectValue,
-		EffectRadius,
-		EffectDuration);
+		TargetTile);
 }
 
-ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClassForTeam(
-	TSubclassOf<ABattleTileEffect> TileEffectClass,
+ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromDefinitionForTeam(
+	UJargonTileEffectDefinition* Definition,
+	TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass,
 	const UCardDefinition* Card,
 	ETeam SourceTeam,
-	AGridTile* TargetTile,
-	ECardCategory EffectCategory,
-	int32 EffectValue,
-	int32 EffectRadius,
-	int32 EffectDuration)
+	AGridTile* TargetTile)
 {
-	if (!TargetTile || !TileEffectClass)
+	if (!Definition || !RuntimeTileEffectClass || !TargetTile)
 	{
+		return nullptr;
+	}
+
+	if (!Definition->IsValidDefinition())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Tile effect definition '%s' is invalid and cannot spawn."), *GetNameSafe(Definition));
 		return nullptr;
 	}
 
@@ -3396,57 +2860,34 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromClassForT
 	}
 
 	ABattleTileEffect* SpawnedEffect = World->SpawnActor<ABattleTileEffect>(
-		TileEffectClass,
+		RuntimeTileEffectClass,
 		TargetTile->GetActorLocation(),
-		FRotator::ZeroRotator
-	);
+		FRotator::ZeroRotator);
 
 	if (!SpawnedEffect)
 	{
 		return nullptr;
 	}
 
-	SpawnedEffect->InitializeFromCard(
+	SpawnedEffect->InitializeFromDefinition(
 		const_cast<UCardDefinition*>(Card),
 		SourceTeam,
-		EffectCategory,
-		EffectValue,
-		EffectRadius,
-		EffectDuration);
+		Definition);
 	SpawnedEffect->PlaceOnTile(TargetTile);
-	
+
 	ActiveTileEffects.Add(SpawnedEffect);
 	return SpawnedEffect;
 }
 
-ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromClass(
-	TSubclassOf<ABattleUnit> UnitClass,
-	const ABattleUnit* SourceUnit,
-	AGridTile* TargetTile,
-	bool bAttackExhaustedOnSpawn)
-{
-	if (!SourceUnit || !TargetTile || !UnitClass)
-	{
-		return nullptr;
-	}
-
-	ABattleUnit* SpawnedUnit = SpawnSummonedUnitActor(UnitClass, TargetTile);
-	return FinalizeSpawnedSummonedUnit(
-		SpawnedUnit,
-		SourceUnit,
-		TargetTile,
-		bAttackExhaustedOnSpawn,
-		false);
-}
-
 ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromDefinition(
 	UJargonSummonedUnitDefinition* Definition,
+	TSubclassOf<ABattleUnit> RuntimeSummonedUnitClass,
 	const ABattleUnit* SourceUnit,
 	AGridTile* TargetTile,
 	bool bAttackExhaustedOverride,
 	bool bUseAttackExhaustedOverride)
 {
-	if (!Definition || !SourceUnit || !TargetTile)
+	if (!Definition || !RuntimeSummonedUnitClass || !SourceUnit || !TargetTile)
 	{
 		return nullptr;
 	}
@@ -3457,18 +2898,7 @@ ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromDefinition(
 		return nullptr;
 	}
 
-	TSubclassOf<ABattleUnit> SpawnClass = Definition->OptionalUnitClassOverride
-		? Definition->OptionalUnitClassOverride
-		: DefaultSummonedUnitClass;
-
-	if (!SpawnClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Summon definition '%s' has no OptionalUnitClassOverride and CombatGameMode has no DefaultSummonedUnitClass."),
-			*GetNameSafe(Definition));
-		return nullptr;
-	}
-
-	ABattleUnit* SpawnedUnit = SpawnSummonedUnitActor(SpawnClass, TargetTile);
+	ABattleUnit* SpawnedUnit = SpawnSummonedUnitActor(RuntimeSummonedUnitClass, TargetTile);
 	if (!SpawnedUnit)
 	{
 		return nullptr;
@@ -3851,7 +3281,7 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 			UE_LOG(LogTemp, Display, TEXT("Jargon next card effect trace: no FJargonEffectResolver trace was produced. The card likely failed before base effects reached the shared resolver."));
 		}
 
-		if (CardEffectTrace.bContinuedAsynchronously && Card->ElementalBonusGroups.Num() > 0)
+		if (CardEffectTrace.bContinuedAsynchronously && Card->GetElementalBonusScriptCount() > 0)
 		{
 			UE_LOG(LogTemp, Display, TEXT("Card trace note: base effects continued asynchronously. Elemental bonus groups are skipped by CardResolver for this resolve pass."));
 		}

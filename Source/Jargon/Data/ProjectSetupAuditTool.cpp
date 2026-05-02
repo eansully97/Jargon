@@ -627,19 +627,24 @@ bool CardHasElementGenerator(const UCardDefinition* Card)
 		return false;
 	}
 
-	for (const FCardEffectSpec& Effect : Card->Effects)
+	TArray<FJargonEffectSpec> AuditEffects;
+	Card->BuildBaseEffectSpecs(AuditEffects);
+
+	for (const FJargonEffectSpec& Effect : AuditEffects)
 	{
-		if (Effect.Operation == ECardEffectOperation::GainElementCharge)
+		if (Effect.Operation == EJargonEffectOperation::GainElementCharge)
 		{
 			return true;
 		}
 	}
 
-	for (const FCardElementalBonusGroup& BonusGroup : Card->ElementalBonusGroups)
+	for (int32 BonusIndex = 0; BonusIndex < Card->GetElementalBonusScriptCount(); ++BonusIndex)
 	{
-		for (const FCardEffectSpec& Effect : BonusGroup.BonusEffects)
+		TArray<FJargonEffectSpec> BonusEffects;
+		Card->BuildElementalBonusEffectSpecs(BonusIndex, BonusEffects);
+		for (const FJargonEffectSpec& Effect : BonusEffects)
 		{
-			if (Effect.Operation == ECardEffectOperation::GainElementCharge)
+			if (Effect.Operation == EJargonEffectOperation::GainElementCharge)
 			{
 				return true;
 			}
@@ -668,7 +673,7 @@ void AuditElementContent(TArray<FProjectAuditRow>& Rows, const TArray<FName>& Ca
 			ElementGeneratorCount++;
 		}
 
-		if (Card->ElementalBonusGroups.Num() > 0)
+		if (Card->GetElementalBonusScriptCount() > 0)
 		{
 			ElementalBonusCount++;
 		}
@@ -701,7 +706,7 @@ void AuditElementContent(TArray<FProjectAuditRow>& Rows, const TArray<FName>& Ca
 			TEXT("Element Content"),
 			TEXT("Cards"),
 			TEXT("No Bonuses"),
-			TEXT("ElementalBonusGroups exist, but no scanned card currently uses them."));
+			TEXT("CardScript elemental bonuses exist, but no scanned card currently uses them."));
 	}
 }
 
@@ -811,10 +816,10 @@ UProjectSetupAuditTool::UProjectSetupAuditTool()
 	ExplorationGameModeBlueprintPath = DefaultExplorationGameModePath;
 	ExplorationPlayerControllerBlueprintPath = DefaultExplorationPlayerControllerPath;
 	CombatGameModeBlueprintPath = DefaultCombatGameModePath;
-	CardScanPaths.Add(DefaultCardScanPath);
-	CardScanPaths.Add(LegacyCardScanPath);
-	PackScanPaths.Add(DefaultPackScanPath);
-	PackScanPaths.Add(LegacyPackScanPath);
+	CardScanPaths.Add(UE::Jargon::ProjectSetupAuditToolPrivate::DefaultCardScanPath);
+	CardScanPaths.Add(UE::Jargon::ProjectSetupAuditToolPrivate::LegacyCardScanPath);
+	PackScanPaths.Add(UE::Jargon::ProjectSetupAuditToolPrivate::DefaultPackScanPath);
+	PackScanPaths.Add(UE::Jargon::ProjectSetupAuditToolPrivate::LegacyPackScanPath);
 	RelicScanPaths.Add(DefaultRelicScanPath);
 	RewardBlueprintScanPaths.Add(DefaultRewardBlueprintScanPath);
 }

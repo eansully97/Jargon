@@ -3,14 +3,20 @@
 
 #include "CardDefinition.h"
 
+#include "Combat/Grid/Effects/BattleTileEffect.h"
 #include "Combat/Units/BattleUnit.h"
+#include "Data/CardScriptDefinition.h"
+#include "Data/JargonStatusEffectDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
+#include "Data/JargonTileEffectDefinition.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Data/JargonDataAssetValidationHelpers.h"
+#include "Misc/DataValidation.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
@@ -18,6 +24,7 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCardDefinitionPrompt, Log, All);
 DEFINE_LOG_CATEGORY_STATIC(LogCardDefinitionSummonAuthoring, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(LogCardDefinitionTileEffectAuthoring, Log, All);
 
 namespace
 {
@@ -90,13 +97,13 @@ FString GetCardTargetTypeDisplayName(ECardTargetType TargetType)
 	return GetEnumDisplayName(StaticEnum<ECardTargetType>(), static_cast<int64>(TargetType));
 }
 
-FString GetCardEffectOperationDisplayName(ECardEffectOperation Operation)
-{
-	return GetEnumDisplayName(StaticEnum<ECardEffectOperation>(), static_cast<int64>(Operation));
-}
-
 FString GetElementTypeDisplayName(EJargonElementType ElementType)
 {
+	if (ElementType == EJargonElementType::None)
+	{
+		return TEXT("Neutral");
+	}
+
 	return GetEnumDisplayName(StaticEnum<EJargonElementType>(), static_cast<int64>(ElementType));
 }
 
@@ -127,6 +134,17 @@ FString DeriveSummonDefinitionAssetNameFromCardAssetName(FString CardAssetName)
 	return FString::Printf(TEXT("DA_SummonUnit_%s"), *CardAssetName);
 }
 
+FString DeriveTileEffectDefinitionAssetNameFromCardAssetName(FString CardAssetName)
+{
+	CardAssetName.RemoveFromStart(TEXT("DA_"));
+	CardAssetName.RemoveFromStart(TEXT("Card_"));
+	CardAssetName.RemoveFromStart(TEXT("Trap_"));
+	CardAssetName.RemoveFromStart(TEXT("Aura_"));
+	CardAssetName.ReplaceInline(TEXT(" "), TEXT("_"));
+
+	return FString::Printf(TEXT("DA_TileEffect_%s"), *CardAssetName);
+}
+
 FString NormalizeLongPackageFolderPath(FString FolderPath)
 {
 	FolderPath.TrimStartAndEndInline();
@@ -140,13 +158,13 @@ FString NormalizeLongPackageFolderPath(FString FolderPath)
 	return FolderPath;
 }
 
-bool TrySelectSummonEffectForDefinitionGeneration(
-	const UCardDefinition* Card,
+bool TrySelectSummonActionForDefinitionGeneration(
+	UCardDefinition* Card,
 	bool bReplaceExistingDefinition,
-	int32& OutEffectIndex,
+	UJargonCardSummonAction*& OutAction,
 	FString& OutFailureReason)
 {
-	OutEffectIndex = INDEX_NONE;
+	OutAction = nullptr;
 	OutFailureReason.Reset();
 
 	if (!Card)
@@ -155,54 +173,133 @@ bool TrySelectSummonEffectForDefinitionGeneration(
 		return false;
 	}
 
-	TArray<int32> SummonEffectIndices;
-	TArray<int32> UnassignedSummonEffectIndices;
-	for (int32 EffectIndex = 0; EffectIndex < Card->Effects.Num(); ++EffectIndex)
+	if (!Card->CardScript)
 	{
-		const FCardEffectSpec& EffectSpec = Card->Effects[EffectIndex];
-		if (EffectSpec.Operation != ECardEffectOperation::SummonUnit)
+		OutFailureReason = TEXT("card has no CardScript.");
+		return false;
+	}
+
+	TArray<UJargonCardSummonAction*> SummonActions;
+	TArray<UJargonCardSummonAction*> UnassignedSummonActions;
+	for (TObjectPtr<UJargonCardAction>& ActionPtr : Card->CardScript->Actions)
+	{
+		UJargonCardSummonAction* SummonAction = Cast<UJargonCardSummonAction>(ActionPtr.Get());
+		if (!SummonAction)
 		{
 			continue;
 		}
 
-		SummonEffectIndices.Add(EffectIndex);
-		if (!EffectSpec.SummonedUnitDefinition)
+		SummonActions.Add(SummonAction);
+		if (!SummonAction->SummonedUnitDefinition)
 		{
-			UnassignedSummonEffectIndices.Add(EffectIndex);
+			UnassignedSummonActions.Add(SummonAction);
 		}
 	}
 
-	if (SummonEffectIndices.Num() <= 0)
+	if (SummonActions.Num() <= 0)
 	{
-		OutFailureReason = TEXT("card has no SummonUnit effects.");
+		OutFailureReason = TEXT("card has no summon keyword actions.");
 		return false;
 	}
 
-	if (SummonEffectIndices.Num() == 1)
+	if (SummonActions.Num() == 1)
 	{
-		OutEffectIndex = SummonEffectIndices[0];
+		OutAction = SummonActions[0];
 		return true;
 	}
 
-	if (UnassignedSummonEffectIndices.Num() == 1)
+	if (UnassignedSummonActions.Num() == 1)
 	{
-		OutEffectIndex = UnassignedSummonEffectIndices[0];
+		OutAction = UnassignedSummonActions[0];
 		return true;
 	}
 
-	if (UnassignedSummonEffectIndices.Num() > 1)
+	if (UnassignedSummonActions.Num() > 1)
 	{
-		OutFailureReason = TEXT("card has multiple unassigned SummonUnit effects; assign one manually or generate definitions one at a time.");
+		OutFailureReason = TEXT("card has multiple unassigned summon keywords; assign one manually or generate definitions one at a time.");
 		return false;
 	}
 
 	if (bReplaceExistingDefinition)
 	{
-		OutFailureReason = TEXT("card has multiple SummonUnit effects that already have definitions; Phase 3 does not guess which existing reference to replace.");
+		OutFailureReason = TEXT("card has multiple summon keywords that already have definitions; this button does not guess which existing reference to replace.");
 	}
 	else
 	{
-		OutFailureReason = TEXT("card has multiple SummonUnit effects and all already have definitions.");
+		OutFailureReason = TEXT("card has multiple summon keywords and all already have definitions.");
+	}
+	return false;
+}
+
+bool TrySelectTileEffectActionForDefinitionGeneration(
+	UCardDefinition* Card,
+	bool bReplaceExistingDefinition,
+	UJargonCardPlaceTileEffectAction*& OutAction,
+	FString& OutFailureReason)
+{
+	OutAction = nullptr;
+	OutFailureReason.Reset();
+
+	if (!Card)
+	{
+		OutFailureReason = TEXT("No card definition was provided.");
+		return false;
+	}
+
+	if (!Card->CardScript)
+	{
+		OutFailureReason = TEXT("card has no CardScript.");
+		return false;
+	}
+
+	TArray<UJargonCardPlaceTileEffectAction*> TileEffectActions;
+	TArray<UJargonCardPlaceTileEffectAction*> UnassignedTileEffectActions;
+	for (TObjectPtr<UJargonCardAction>& ActionPtr : Card->CardScript->Actions)
+	{
+		UJargonCardPlaceTileEffectAction* TileEffectAction = Cast<UJargonCardPlaceTileEffectAction>(ActionPtr.Get());
+		if (!TileEffectAction)
+		{
+			continue;
+		}
+
+		TileEffectActions.Add(TileEffectAction);
+		if (!TileEffectAction->TileEffectDefinition)
+		{
+			UnassignedTileEffectActions.Add(TileEffectAction);
+		}
+	}
+
+	if (TileEffectActions.Num() <= 0)
+	{
+		OutFailureReason = TEXT("card has no place-tile-effect keyword actions.");
+		return false;
+	}
+
+	if (TileEffectActions.Num() == 1)
+	{
+		OutAction = TileEffectActions[0];
+		return true;
+	}
+
+	if (UnassignedTileEffectActions.Num() == 1)
+	{
+		OutAction = UnassignedTileEffectActions[0];
+		return true;
+	}
+
+	if (UnassignedTileEffectActions.Num() > 1)
+	{
+		OutFailureReason = TEXT("card has multiple unassigned place-tile-effect keywords; assign one manually or generate definitions one at a time.");
+		return false;
+	}
+
+	if (bReplaceExistingDefinition)
+	{
+		OutFailureReason = TEXT("card has multiple place-tile-effect keywords that already have definitions; this button does not guess which existing reference to replace.");
+	}
+	else
+	{
+		OutFailureReason = TEXT("card has multiple place-tile-effect keywords and all already have definitions.");
 	}
 	return false;
 }
@@ -212,66 +309,26 @@ FString BuildObjectPathFromPackageAndAssetName(const FString& PackageName, const
 	return FString::Printf(TEXT("%s.%s"), *PackageName, *AssetName);
 }
 
-bool CardOperationUsesValue(ECardEffectOperation Operation)
-{
-	switch (Operation)
-	{
-	case ECardEffectOperation::DealDamage:
-	case ECardEffectOperation::Heal:
-	case ECardEffectOperation::ApplyShield:
-	case ECardEffectOperation::ApplyStun:
-	case ECardEffectOperation::ApplyFreeze:
-	case ECardEffectOperation::PlaceTileEffect:
-	case ECardEffectOperation::DrawCards:
-	case ECardEffectOperation::GainEnergy:
-	case ECardEffectOperation::GainElementCharge:
-	case ECardEffectOperation::ChainDamage:
-	case ECardEffectOperation::ChainHeal:
-	case ECardEffectOperation::ChainStun:
-		return true;
 
-	default:
-		return false;
-	}
+FString GetEffectOperationDisplayName(EJargonEffectOperation Operation)
+{
+	return GetEnumDisplayName(StaticEnum<EJargonEffectOperation>(), static_cast<int64>(Operation));
 }
 
-bool IsChainCardOperation(ECardEffectOperation Operation)
+bool CardHasOperation(const UCardDefinition* Card, EJargonEffectOperation Operation)
 {
-	return Operation == ECardEffectOperation::ChainDamage
-		|| Operation == ECardEffectOperation::ChainHeal
-		|| Operation == ECardEffectOperation::ChainStun;
+	return Card && Card->HasEffectOperation(Operation);
 }
 
-bool CardHasOperation(const UCardDefinition* Card, ECardEffectOperation Operation)
+FString BuildCardEffectAuditSummary(const FJargonEffectSpec& EffectSpec)
 {
-	if (!Card)
-	{
-		return false;
-	}
-
-	for (const FCardEffectSpec& EffectSpec : Card->Effects)
-	{
-		if (EffectSpec.Operation == Operation)
-		{
-			return true;
-		}
-	}
-
-	for (const FCardElementalBonusGroup& BonusGroup : Card->ElementalBonusGroups)
-	{
-		for (const FCardEffectSpec& BonusEffectSpec : BonusGroup.BonusEffects)
-		{
-			if (BonusEffectSpec.Operation == Operation)
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
+	const FString PayloadSummary = JargonEffectContracts::BuildPayloadSummary(EffectSpec);
+	return PayloadSummary.IsEmpty() || PayloadSummary == TEXT("None")
+		? GetEffectOperationDisplayName(EffectSpec.Operation)
+		: FString::Printf(TEXT("%s %s"), *GetEffectOperationDisplayName(EffectSpec.Operation), *PayloadSummary);
 }
 
-FString BuildEffectListSummary(const TArray<FCardEffectSpec>& Effects)
+FString BuildEffectListSummary(const TArray<FJargonEffectSpec>& Effects)
 {
 	if (Effects.Num() == 0)
 	{
@@ -279,166 +336,18 @@ FString BuildEffectListSummary(const TArray<FCardEffectSpec>& Effects)
 	}
 
 	TArray<FString> EffectSummaries;
-	for (const FCardEffectSpec& EffectSpec : Effects)
+	EffectSummaries.Reserve(Effects.Num());
+	for (const FJargonEffectSpec& EffectSpec : Effects)
 	{
-		TArray<FString> Fields;
-
-		if (CardOperationUsesValue(EffectSpec.Operation))
-		{
-			Fields.Add(FString::Printf(TEXT("value %d"), EffectSpec.Value));
-		}
-
-		if (EffectSpec.Operation == ECardEffectOperation::GainElementCharge)
-		{
-			Fields.Add(FString::Printf(TEXT("element %s"), *GetElementTypeDisplayName(EffectSpec.ElementType)));
-		}
-
-		if (EffectSpec.EffectRadius > 0)
-		{
-			Fields.Add(FString::Printf(TEXT("radius %d"), EffectSpec.EffectRadius));
-		}
-
-		if (IsChainCardOperation(EffectSpec.Operation))
-		{
-			Fields.Add(FString::Printf(TEXT("chain count %d"), EffectSpec.ChainCount));
-		}
-
-		if (EffectSpec.Operation == ECardEffectOperation::MoveSelf)
-		{
-			Fields.Add(FString::Printf(TEXT("move distance %d"), EffectSpec.MoveDistance));
-		}
-
-		if (EffectSpec.Operation == ECardEffectOperation::PushTarget)
-		{
-			Fields.Add(FString::Printf(TEXT("push distance %d"), EffectSpec.PushDistance));
-		}
-
-		if (EffectSpec.Operation == ECardEffectOperation::PullTarget)
-		{
-			Fields.Add(FString::Printf(TEXT("pull distance %d"), EffectSpec.PullDistance));
-		}
-
-		const FString FieldSummary = Fields.Num() > 0
-			? FString::Printf(TEXT(" (%s)"), *FString::Join(Fields, TEXT(", ")))
-			: FString();
-
-		EffectSummaries.Add(FString::Printf(
-			TEXT("%s%s"),
-			*GetCardEffectOperationDisplayName(EffectSpec.Operation),
-			*FieldSummary));
+		EffectSummaries.Add(BuildCardEffectAuditSummary(EffectSpec));
 	}
 
 	return FString::Join(EffectSummaries, TEXT("; "));
 }
 
-FString BuildCardEffectAuditSummary(const FCardEffectSpec& EffectSpec)
-{
-	TArray<FString> Fields;
-
-	if (CardOperationUsesValue(EffectSpec.Operation))
-	{
-		Fields.Add(FString::Printf(TEXT("Value=%d"), EffectSpec.Value));
-	}
-
-	if (EffectSpec.Operation == ECardEffectOperation::GainElementCharge)
-	{
-		Fields.Add(FString::Printf(TEXT("Element=%s"), *GetElementTypeDisplayName(EffectSpec.ElementType)));
-	}
-
-	if (EffectSpec.EffectRadius > 0)
-	{
-		Fields.Add(FString::Printf(TEXT("Radius=%d"), EffectSpec.EffectRadius));
-	}
-
-	if (IsChainCardOperation(EffectSpec.Operation))
-	{
-		Fields.Add(FString::Printf(TEXT("Chain=%d"), EffectSpec.ChainCount));
-	}
-
-	if (EffectSpec.Operation == ECardEffectOperation::MoveSelf)
-	{
-		Fields.Add(FString::Printf(TEXT("Move=%d"), EffectSpec.MoveDistance));
-	}
-
-	if (EffectSpec.Operation == ECardEffectOperation::PushTarget)
-	{
-		Fields.Add(FString::Printf(TEXT("Push=%d"), EffectSpec.PushDistance));
-		Fields.Add(FString::Printf(TEXT("Collision=%d"), EffectSpec.CollisionDamage));
-	}
-
-	if (EffectSpec.Operation == ECardEffectOperation::PullTarget)
-	{
-		Fields.Add(FString::Printf(TEXT("Pull=%d"), EffectSpec.PullDistance));
-	}
-
-	if (EffectSpec.Operation == ECardEffectOperation::SummonUnit)
-	{
-		Fields.Add(FString::Printf(TEXT("Definition=%s"), *GetPathNameSafe(EffectSpec.SummonedUnitDefinition.Get())));
-		Fields.Add(FString::Printf(
-			TEXT("UnitClass=%s%s"),
-			*GetNameSafe(EffectSpec.UnitClass.Get()),
-			EffectSpec.UnitClass
-				? (EffectSpec.SummonedUnitDefinition ? TEXT(" fallback") : TEXT(" legacy"))
-				: TEXT("")));
-		Fields.Add(FString::Printf(TEXT("AttackExhausted=%s"), EffectSpec.bSummonEntersWithAttackExhausted ? TEXT("true") : TEXT("false")));
-	}
-
-	if (EffectSpec.Operation == ECardEffectOperation::PlaceTileEffect)
-	{
-		Fields.Add(FString::Printf(TEXT("TileEffect=%s"), *GetNameSafe(EffectSpec.TileEffectClass.Get())));
-		Fields.Add(FString::Printf(TEXT("Duration=%d"), EffectSpec.TileEffectDuration));
-	}
-
-	const FString FieldSummary = Fields.Num() > 0
-		? FString::Printf(TEXT(" %s"), *FString::Join(Fields, TEXT(" ")))
-		: FString();
-
-	return FString::Printf(TEXT("%s%s"), *GetCardEffectOperationDisplayName(EffectSpec.Operation), *FieldSummary);
-}
-
-FString BuildCardElementalBonusAuditSummary(const FCardElementalBonusGroup& BonusGroup)
-{
-	TArray<FString> BonusEffectSummaries;
-	BonusEffectSummaries.Reserve(BonusGroup.BonusEffects.Num());
-	for (const FCardEffectSpec& BonusEffect : BonusGroup.BonusEffects)
-	{
-		BonusEffectSummaries.Add(BuildCardEffectAuditSummary(BonusEffect));
-	}
-
-	return FString::Printf(
-		TEXT("Bonus: %s Required=%d Spend=%s Effects=[%s]"),
-		*GetElementTypeDisplayName(BonusGroup.ElementType),
-		BonusGroup.RequiredCharges,
-		BonusGroup.bSpendCharges ? TEXT("true") : TEXT("false"),
-		BonusEffectSummaries.Num() > 0 ? *FString::Join(BonusEffectSummaries, TEXT("; ")) : TEXT("None"));
-}
-
 FString BuildCardEffectPromptSummary(const UCardDefinition* Card)
 {
-	if (!Card)
-	{
-		return TEXT("None");
-	}
-
-	const FString BaseEffectSummary = BuildEffectListSummary(Card->Effects);
-	if (Card->ElementalBonusGroups.Num() <= 0)
-	{
-		return BaseEffectSummary;
-	}
-
-	TArray<FString> BonusSummaries;
-	for (int32 BonusIndex = 0; BonusIndex < Card->ElementalBonusGroups.Num(); ++BonusIndex)
-	{
-		const FCardElementalBonusGroup& BonusGroup = Card->ElementalBonusGroups[BonusIndex];
-		BonusSummaries.Add(FString::Printf(
-			TEXT("%s %d %s charge(s): %s"),
-			BonusGroup.bSpendCharges ? TEXT("Spend") : TEXT("Check"),
-			BonusGroup.RequiredCharges,
-			*GetElementTypeDisplayName(BonusGroup.ElementType),
-			*BuildEffectListSummary(BonusGroup.BonusEffects)));
-	}
-
-	return FString::Printf(TEXT("%s. Elemental bonuses: %s"), *BaseEffectSummary, *FString::Join(BonusSummaries, TEXT("; ")));
+	return Card && Card->CardScript ? Card->CardScript->GetScriptSummary() : TEXT("None");
 }
 
 void AddElementIfMeaningful(TArray<EJargonElementType>& Elements, EJargonElementType ElementType)
@@ -449,28 +358,180 @@ void AddElementIfMeaningful(TArray<EJargonElementType>& Elements, EJargonElement
 	}
 }
 
+bool IsDebugCardAsset(const UCardDefinition* Card)
+{
+	return Card && Card->GetPathName().Contains(TEXT("/Debug/"), ESearchCase::IgnoreCase);
+}
+
+void GatherExplicitCardScriptElements(const UCardDefinition* Card, TArray<EJargonElementType>& OutElements)
+{
+	OutElements.Reset();
+	if (!Card)
+	{
+		return;
+	}
+
+	TArray<FJargonEffectSpec> BaseEffects;
+	Card->BuildBaseEffectSpecs(BaseEffects);
+	for (const FJargonEffectSpec& EffectSpec : BaseEffects)
+	{
+		if (EffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
+		{
+			AddElementIfMeaningful(OutElements, EffectSpec.ElementType);
+		}
+	}
+
+	if (!Card->CardScript)
+	{
+		return;
+	}
+
+	for (int32 BonusIndex = 0; BonusIndex < Card->CardScript->ElementalBonuses.Num(); ++BonusIndex)
+	{
+		const FJargonCardElementalBonusScript& BonusGroup = Card->CardScript->ElementalBonuses[BonusIndex];
+		AddElementIfMeaningful(OutElements, BonusGroup.ElementType);
+
+		TArray<FJargonEffectSpec> BonusEffects;
+		Card->BuildElementalBonusEffectSpecs(BonusIndex, BonusEffects);
+		for (const FJargonEffectSpec& BonusEffectSpec : BonusEffects)
+		{
+			if (BonusEffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
+			{
+				AddElementIfMeaningful(OutElements, BonusEffectSpec.ElementType);
+			}
+		}
+	}
+}
+
+FString JoinElementNames(const TArray<EJargonElementType>& Elements)
+{
+	TArray<FString> ElementNames;
+	ElementNames.Reserve(Elements.Num());
+	for (const EJargonElementType ElementType : Elements)
+	{
+		ElementNames.Add(GetElementTypeDisplayName(ElementType));
+	}
+
+	return FString::Join(ElementNames, TEXT(", "));
+}
+
+bool CardElementMatchesExplicitElements(const UCardDefinition* Card)
+{
+	if (!Card)
+	{
+		return true;
+	}
+
+	TArray<EJargonElementType> ExplicitElements;
+	GatherExplicitCardScriptElements(Card, ExplicitElements);
+	for (const EJargonElementType ExplicitElement : ExplicitElements)
+	{
+		if (ExplicitElement != Card->CardElement)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool EffectSuggestsElementalIdentity(const FJargonEffectSpec& EffectSpec)
+{
+	if (EffectSpec.Operation == EJargonEffectOperation::ApplyStatus && EffectSpec.StatusEffectDefinition)
+	{
+		switch (EffectSpec.StatusEffectDefinition->StatusKind)
+		{
+		case EJargonStatusEffectKind::Stun:
+		case EJargonStatusEffectKind::Freeze:
+		case EJargonStatusEffectKind::Burn:
+		case EJargonStatusEffectKind::Root:
+		case EJargonStatusEffectKind::Vulnerable:
+			return true;
+		default:
+			break;
+		}
+	}
+
+	const FString ReferencedDefinitionNames = FString::Printf(
+		TEXT("%s %s"),
+		*GetNameSafe(EffectSpec.SummonedUnitDefinition.Get()),
+		*GetNameSafe(EffectSpec.TileEffectDefinition.Get()));
+	return ReferencedDefinitionNames.Contains(TEXT("Fire"), ESearchCase::IgnoreCase)
+		|| ReferencedDefinitionNames.Contains(TEXT("Frost"), ESearchCase::IgnoreCase)
+		|| ReferencedDefinitionNames.Contains(TEXT("Storm"), ESearchCase::IgnoreCase)
+		|| ReferencedDefinitionNames.Contains(TEXT("Nature"), ESearchCase::IgnoreCase)
+		|| ReferencedDefinitionNames.Contains(TEXT("Radiance"), ESearchCase::IgnoreCase)
+		|| ReferencedDefinitionNames.Contains(TEXT("Quietus"), ESearchCase::IgnoreCase);
+}
+
+bool NeutralCardHasElementalIdentitySignals(const UCardDefinition* Card)
+{
+	if (!Card || Card->CardElement != EJargonElementType::None)
+	{
+		return false;
+	}
+
+	TArray<FJargonEffectSpec> BaseEffects;
+	Card->BuildBaseEffectSpecs(BaseEffects);
+	for (const FJargonEffectSpec& EffectSpec : BaseEffects)
+	{
+		if (EffectSuggestsElementalIdentity(EffectSpec))
+		{
+			return true;
+		}
+	}
+
+	if (!Card->CardScript)
+	{
+		return false;
+	}
+
+	for (int32 BonusIndex = 0; BonusIndex < Card->CardScript->ElementalBonuses.Num(); ++BonusIndex)
+	{
+		TArray<FJargonEffectSpec> BonusEffects;
+		Card->BuildElementalBonusEffectSpecs(BonusIndex, BonusEffects);
+		for (const FJargonEffectSpec& BonusEffectSpec : BonusEffects)
+		{
+			if (EffectSuggestsElementalIdentity(BonusEffectSpec))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 FString DeriveCardElementIdentity(const UCardDefinition* Card)
 {
 	TArray<EJargonElementType> Elements;
 	if (Card)
 	{
-		for (const FCardEffectSpec& EffectSpec : Card->Effects)
+		TArray<FJargonEffectSpec> BaseEffects;
+		Card->BuildBaseEffectSpecs(BaseEffects);
+		for (const FJargonEffectSpec& EffectSpec : BaseEffects)
 		{
-			if (EffectSpec.Operation == ECardEffectOperation::GainElementCharge)
+			if (EffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
 			{
 				AddElementIfMeaningful(Elements, EffectSpec.ElementType);
 			}
 		}
 
-		for (const FCardElementalBonusGroup& BonusGroup : Card->ElementalBonusGroups)
+		if (Card->CardScript)
 		{
-			AddElementIfMeaningful(Elements, BonusGroup.ElementType);
-
-			for (const FCardEffectSpec& BonusEffectSpec : BonusGroup.BonusEffects)
+			for (int32 BonusIndex = 0; BonusIndex < Card->CardScript->ElementalBonuses.Num(); ++BonusIndex)
 			{
-				if (BonusEffectSpec.Operation == ECardEffectOperation::GainElementCharge)
+				const FJargonCardElementalBonusScript& BonusGroup = Card->CardScript->ElementalBonuses[BonusIndex];
+				AddElementIfMeaningful(Elements, BonusGroup.ElementType);
+
+				TArray<FJargonEffectSpec> BonusEffects;
+				Card->BuildElementalBonusEffectSpecs(BonusIndex, BonusEffects);
+				for (const FJargonEffectSpec& BonusEffectSpec : BonusEffects)
 				{
-					AddElementIfMeaningful(Elements, BonusEffectSpec.ElementType);
+					if (BonusEffectSpec.Operation == EJargonEffectOperation::GainElementCharge)
+					{
+						AddElementIfMeaningful(Elements, BonusEffectSpec.ElementType);
+					}
 				}
 			}
 		}
@@ -513,27 +574,22 @@ FString DeriveCardMainSubject(const UCardDefinition* Card)
 		break;
 	}
 
-	if (CardHasOperation(Card, ECardEffectOperation::Heal))
+	if (CardHasOperation(Card, EJargonEffectOperation::Heal))
 	{
 		return FString::Printf(TEXT("A restorative magical moment or healer's power representing '%s'."), *CardName);
 	}
 
-	if (CardHasOperation(Card, ECardEffectOperation::ApplyShield))
+	if (CardHasOperation(Card, EJargonEffectOperation::ApplyShield))
 	{
 		return FString::Printf(TEXT("A protective magical barrier or guardian force representing '%s'."), *CardName);
 	}
 
-	if (CardHasOperation(Card, ECardEffectOperation::ApplyStun))
+	if (CardHasOperation(Card, EJargonEffectOperation::ApplyStatus))
 	{
-		return FString::Printf(TEXT("A stunning magical impact or disabling strike representing '%s'."), *CardName);
+		return FString::Printf(TEXT("A visible magical condition, mark, or disabling strike representing '%s'."), *CardName);
 	}
 
-	if (CardHasOperation(Card, ECardEffectOperation::ApplyFreeze))
-	{
-		return FString::Printf(TEXT("A freezing stasis effect, frostbound spell, or suspended icy impact representing '%s'."), *CardName);
-	}
-
-	if (CardHasOperation(Card, ECardEffectOperation::MoveSelf))
+	if (CardHasOperation(Card, EJargonEffectOperation::MoveSource))
 	{
 		return FString::Printf(TEXT("A swift movement, dash, leap, or repositioning moment representing '%s'."), *CardName);
 	}
@@ -585,6 +641,92 @@ FString DeriveCardMood(const UCardDefinition* Card)
 	}
 
 	return TEXT("Epic, mystical, readable, game-ready.");
+}
+
+bool ValidateJargonEffectSpecRuntime(
+	const UCardDefinition* Card,
+	const FJargonEffectSpec& EffectSpec,
+	const FString& EffectLabel)
+{
+	if (EffectSpec.Operation == EJargonEffectOperation::None)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s has operation None."),
+			*GetNameSafe(Card),
+			*EffectLabel);
+		return false;
+	}
+
+	if (JargonEffectContracts::RequiresValue(EffectSpec.Operation) && EffectSpec.Value <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires Value > 0."),
+			*GetNameSafe(Card),
+			*EffectLabel);
+		return false;
+	}
+
+	if (JargonEffectContracts::RequiresStatusDefinition(EffectSpec.Operation) && !EffectSpec.StatusEffectDefinition)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires StatusEffectDefinition."),
+			*GetNameSafe(Card),
+			*EffectLabel);
+		return false;
+	}
+
+	if (JargonEffectContracts::RequiresElementType(EffectSpec.Operation) && EffectSpec.ElementType == EJargonElementType::None)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires ElementType other than None."),
+			*GetNameSafe(Card),
+			*EffectLabel);
+		return false;
+	}
+
+	if (EffectSpec.Operation == EJargonEffectOperation::MoveSource && EffectSpec.MoveDistance <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires MoveDistance > 0."),
+			*GetNameSafe(Card),
+			*EffectLabel);
+		return false;
+	}
+
+	if (EffectSpec.Operation == EJargonEffectOperation::PushTarget && EffectSpec.PushDistance <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires PushDistance > 0."),
+			*GetNameSafe(Card),
+			*EffectLabel);
+		return false;
+	}
+
+	if (EffectSpec.Operation == EJargonEffectOperation::PullTarget && EffectSpec.PullDistance <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires PullDistance > 0."),
+			*GetNameSafe(Card),
+			*EffectLabel);
+		return false;
+	}
+
+	if (JargonEffectContracts::RequiresSummonPayload(EffectSpec.Operation))
+	{
+		if (!EffectSpec.SummonedUnitDefinition || !EffectSpec.RuntimeSummonedUnitClass)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires summon definition and runtime class."),
+				*GetNameSafe(Card),
+				*EffectLabel);
+			return false;
+		}
+	}
+
+	if (JargonEffectContracts::RequiresTileEffectPayload(EffectSpec.Operation))
+	{
+		if (!EffectSpec.TileEffectDefinition || !EffectSpec.RuntimeTileEffectClass)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires tile effect definition and runtime class."),
+				*GetNameSafe(Card),
+				*EffectLabel);
+			return false;
+		}
+	}
+
+	return true;
 }
 
 FString BuildCardArtPromptText(const UCardDefinition* Card)
@@ -652,113 +794,6 @@ FString BuildCardArtPromptText(const UCardDefinition* Card)
 		*Mood);
 }
 
-bool ValidateCardEffectSpec(
-	const UCardDefinition* Card,
-	const FCardEffectSpec& EffectSpec,
-	const FString& EffectLabel)
-{
-	if (EffectSpec.Operation == ECardEffectOperation::None)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s has operation None."),
-			*GetNameSafe(Card),
-			*EffectLabel);
-		return false;
-	}
-
-	switch (EffectSpec.Operation)
-	{
-	case ECardEffectOperation::DealDamage:
-	case ECardEffectOperation::Heal:
-	case ECardEffectOperation::ApplyShield:
-	case ECardEffectOperation::ApplyStun:
-	case ECardEffectOperation::ApplyFreeze:
-	case ECardEffectOperation::DrawCards:
-	case ECardEffectOperation::GainEnergy:
-	case ECardEffectOperation::ChainDamage:
-	case ECardEffectOperation::ChainHeal:
-	case ECardEffectOperation::ChainStun:
-		if (EffectSpec.Value <= 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires Value > 0."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		break;
-
-	case ECardEffectOperation::GainElementCharge:
-		if (EffectSpec.Value <= 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires Value > 0."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		if (EffectSpec.ElementType == EJargonElementType::None)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires ElementType other than None."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		break;
-
-	case ECardEffectOperation::MoveSelf:
-		if (EffectSpec.MoveDistance <= 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires MoveDistance > 0."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		break;
-
-	case ECardEffectOperation::PushTarget:
-		if (EffectSpec.PushDistance <= 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires PushDistance > 0."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		break;
-
-	case ECardEffectOperation::PullTarget:
-		if (EffectSpec.PullDistance <= 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s requires PullDistance > 0."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		break;
-
-	case ECardEffectOperation::SummonUnit:
-		if (!EffectSpec.SummonedUnitDefinition && !EffectSpec.UnitClass)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s has neither SummonedUnitDefinition nor UnitClass."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		break;
-
-	case ECardEffectOperation::PlaceTileEffect:
-		if (!EffectSpec.TileEffectClass)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: %s has no TileEffectClass."),
-				*GetNameSafe(Card),
-				*EffectLabel);
-			return false;
-		}
-		break;
-
-	default:
-		break;
-	}
-
-	return true;
-}
 }
 
 void UCardDefinition::GenerateCardArtPrompt() const
@@ -808,9 +843,9 @@ void UCardDefinition::GenerateSummonUnitDefinition()
 		return;
 	}
 
-	int32 SelectedEffectIndex = INDEX_NONE;
+	UJargonCardSummonAction* SelectedAction = nullptr;
 	FString FailureReason;
-	if (!TrySelectSummonEffectForDefinitionGeneration(this, bReplaceExistingSummonDefinition, SelectedEffectIndex, FailureReason))
+	if (!TrySelectSummonActionForDefinitionGeneration(this, bReplaceExistingSummonDefinition, SelectedAction, FailureReason))
 	{
 		UE_LOG(LogCardDefinitionSummonAuthoring, Warning, TEXT("Could not generate summon definition for card '%s': %s"),
 			*GetNameSafe(this),
@@ -818,21 +853,11 @@ void UCardDefinition::GenerateSummonUnitDefinition()
 		return;
 	}
 
-	if (!Effects.IsValidIndex(SelectedEffectIndex))
+	if (SelectedAction->SummonedUnitDefinition && !bReplaceExistingSummonDefinition)
 	{
-		UE_LOG(LogCardDefinitionSummonAuthoring, Warning, TEXT("Could not generate summon definition for card '%s': selected effect index %d is invalid."),
+		UE_LOG(LogCardDefinitionSummonAuthoring, Warning, TEXT("Card '%s' selected summon keyword already has SummonedUnitDefinition '%s'. Enable bReplaceExistingSummonDefinition to replace the card reference."),
 			*GetNameSafe(this),
-			SelectedEffectIndex);
-		return;
-	}
-
-	FCardEffectSpec& SelectedEffect = Effects[SelectedEffectIndex];
-	if (SelectedEffect.SummonedUnitDefinition && !bReplaceExistingSummonDefinition)
-	{
-		UE_LOG(LogCardDefinitionSummonAuthoring, Warning, TEXT("Card '%s' effect %d already has SummonedUnitDefinition '%s'. Enable bReplaceExistingSummonDefinition to replace the card reference."),
-			*GetNameSafe(this),
-			SelectedEffectIndex,
-			*GetPathNameSafe(SelectedEffect.SummonedUnitDefinition.Get()));
+			*GetPathNameSafe(SelectedAction->SummonedUnitDefinition.Get()));
 		return;
 	}
 
@@ -898,8 +923,7 @@ void UCardDefinition::GenerateSummonUnitDefinition()
 		{
 			Definition->Description = Description;
 		}
-		Definition->OptionalUnitClassOverride = SelectedEffect.UnitClass;
-		Definition->bSummonEntersWithAttackExhausted = SelectedEffect.bSummonEntersWithAttackExhausted;
+		Definition->bSummonEntersWithAttackExhausted = SelectedAction->bSummonEntersWithAttackExhausted;
 
 		FAssetRegistryModule::AssetCreated(Definition);
 		Definition->MarkPackageDirty();
@@ -919,13 +943,17 @@ void UCardDefinition::GenerateSummonUnitDefinition()
 	if (bAssignGeneratedSummonDefinition)
 	{
 		Modify();
-		SelectedEffect.SummonedUnitDefinition = Definition;
+		if (CardScript)
+		{
+			CardScript->Modify();
+		}
+		SelectedAction->Modify();
+		SelectedAction->SummonedUnitDefinition = Definition;
+		SelectedAction->RefreshEditorTitle();
 		MarkPackageDirty();
-		UE_LOG(LogCardDefinitionSummonAuthoring, Display, TEXT("Assigned summon definition '%s' to card '%s' effect %d. Legacy UnitClass remains '%s'."),
+		UE_LOG(LogCardDefinitionSummonAuthoring, Display, TEXT("Assigned summon definition '%s' to card '%s' selected summon keyword. RuntimeSummonedUnitClass remains authored separately on the keyword."),
 			*GetPathNameSafe(Definition),
-			*GetNameSafe(this),
-			SelectedEffectIndex,
-			*GetNameSafe(SelectedEffect.UnitClass.Get()));
+			*GetNameSafe(this));
 	}
 	else
 	{
@@ -937,17 +965,181 @@ void UCardDefinition::GenerateSummonUnitDefinition()
 #endif
 }
 
-bool UCardDefinition::HasEffectOperation(ECardEffectOperation Operation) const
+void UCardDefinition::GenerateTileEffectDefinition()
 {
-	for (const FCardEffectSpec& EffectSpec : Effects)
+#if WITH_EDITOR
+	if (!bGenerateTileEffectDefinition)
 	{
-		if (EffectSpec.Operation == Operation)
-		{
-			return true;
-		}
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Tile effect definition generation is disabled for card '%s'. Enable bGenerateTileEffectDefinition first."),
+			*GetNameSafe(this));
+		return;
 	}
 
-	return false;
+	if (Category != ECardCategory::Trap && Category != ECardCategory::Aura)
+	{
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Could not generate tile effect definition for card '%s': card Category must be Trap or Aura."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	UJargonCardPlaceTileEffectAction* SelectedAction = nullptr;
+	FString FailureReason;
+	if (!TrySelectTileEffectActionForDefinitionGeneration(this, bReplaceExistingTileEffectDefinition, SelectedAction, FailureReason))
+	{
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Could not generate tile effect definition for card '%s': %s"),
+			*GetNameSafe(this),
+			*FailureReason);
+		return;
+	}
+
+	if (SelectedAction->TileEffectDefinition && !bReplaceExistingTileEffectDefinition)
+	{
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Card '%s' selected tile-effect keyword already has TileEffectDefinition '%s'. Enable bReplaceExistingTileEffectDefinition to replace the card reference."),
+			*GetNameSafe(this),
+			*GetPathNameSafe(SelectedAction->TileEffectDefinition.Get()));
+		return;
+	}
+
+	const FString NormalizedOutputFolder = NormalizeLongPackageFolderPath(TileEffectDefinitionOutputFolder);
+	FText PathError;
+	if (!FPackageName::IsValidLongPackageName(NormalizedOutputFolder, true, &PathError))
+	{
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Card '%s' has invalid TileEffectDefinitionOutputFolder '%s': %s"),
+			*GetNameSafe(this),
+			*TileEffectDefinitionOutputFolder,
+			*PathError.ToString());
+		return;
+	}
+
+	const FString TileEffectDefinitionAssetName = DeriveTileEffectDefinitionAssetNameFromCardAssetName(GetName());
+	const FString TileEffectDefinitionPackageName = FString::Printf(TEXT("%s/%s"), *NormalizedOutputFolder, *TileEffectDefinitionAssetName);
+	const FString TileEffectDefinitionObjectPath = BuildObjectPathFromPackageAndAssetName(TileEffectDefinitionPackageName, TileEffectDefinitionAssetName);
+
+	UJargonTileEffectDefinition* Definition = Cast<UJargonTileEffectDefinition>(
+		StaticLoadObject(UJargonTileEffectDefinition::StaticClass(), nullptr, *TileEffectDefinitionObjectPath));
+	const bool bExistingDefinitionAsset = Definition != nullptr;
+	if (bExistingDefinitionAsset && !bReplaceExistingTileEffectDefinition)
+	{
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Tile effect definition asset already exists for card '%s': %s. Enable bReplaceExistingTileEffectDefinition to reuse it."),
+			*GetNameSafe(this),
+			*TileEffectDefinitionObjectPath);
+		return;
+	}
+
+	if (!Definition)
+	{
+		if (UObject* ExistingObject = StaticLoadObject(UObject::StaticClass(), nullptr, *TileEffectDefinitionObjectPath))
+		{
+			UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Cannot create tile effect definition for card '%s': target object exists but is not a UJargonTileEffectDefinition: %s"),
+				*GetNameSafe(this),
+				*GetPathNameSafe(ExistingObject));
+			return;
+		}
+
+		UPackage* Package = CreatePackage(*TileEffectDefinitionPackageName);
+		if (!Package)
+		{
+			UE_LOG(LogCardDefinitionTileEffectAuthoring, Error, TEXT("Failed to create package for tile effect definition '%s'."), *TileEffectDefinitionPackageName);
+			return;
+		}
+
+		Definition = NewObject<UJargonTileEffectDefinition>(
+			Package,
+			UJargonTileEffectDefinition::StaticClass(),
+			*TileEffectDefinitionAssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+		if (!Definition)
+		{
+			UE_LOG(LogCardDefinitionTileEffectAuthoring, Error, TEXT("Failed to create tile effect definition asset '%s'."), *TileEffectDefinitionObjectPath);
+			return;
+		}
+
+		Definition->Modify();
+		Definition->DisplayName = DisplayName.IsEmpty()
+			? FText::FromString(DeriveDisplayNameFromAssetName(GetName()))
+			: DisplayName;
+		if (!Description.IsEmpty())
+		{
+			Definition->Description = Description;
+		}
+		Definition->TileEffectCategory = Category;
+		Definition->Trigger = Category == ECardCategory::Aura
+			? EJargonTileEffectTrigger::OnPlayerTurnStart
+			: EJargonTileEffectTrigger::OnUnitEnter;
+		Definition->bDestroyAfterUnitEnter = Category == ECardCategory::Trap;
+
+		FAssetRegistryModule::AssetCreated(Definition);
+		Definition->MarkPackageDirty();
+		Package->MarkPackageDirty();
+
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Display, TEXT("Created tile effect definition '%s' for card '%s'."),
+			*GetPathNameSafe(Definition),
+			*GetNameSafe(this));
+	}
+	else
+	{
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Display, TEXT("Reusing existing tile effect definition '%s' for card '%s'. Existing definition fields were not overwritten."),
+			*GetPathNameSafe(Definition),
+			*GetNameSafe(this));
+	}
+
+	if (bAssignGeneratedTileEffectDefinition)
+	{
+		Modify();
+		if (CardScript)
+		{
+			CardScript->Modify();
+		}
+		SelectedAction->Modify();
+		SelectedAction->TileEffectDefinition = Definition;
+		SelectedAction->RefreshEditorTitle();
+		MarkPackageDirty();
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Display, TEXT("Assigned tile effect definition '%s' to card '%s' selected place-tile-effect keyword. RuntimeTileEffectClass remains authored separately on the keyword."),
+			*GetPathNameSafe(Definition),
+			*GetNameSafe(this));
+	}
+	else
+	{
+		UE_LOG(LogCardDefinitionTileEffectAuthoring, Display, TEXT("Created/reused tile effect definition '%s' but did not assign it because bAssignGeneratedTileEffectDefinition is false."),
+			*GetPathNameSafe(Definition));
+	}
+#else
+	UE_LOG(LogCardDefinitionTileEffectAuthoring, Warning, TEXT("Tile effect definition generation is editor-only."));
+#endif
+}
+
+
+bool UCardDefinition::HasEffectOperation(EJargonEffectOperation Operation) const
+{
+	return CardScript && CardScript->HasRuntimeOperation(Operation);
+}
+
+bool UCardDefinition::UsesCardScript() const
+{
+	return CardScript && CardScript->HasAnyActions();
+}
+
+bool UCardDefinition::BuildBaseEffectSpecs(TArray<FJargonEffectSpec>& OutEffects) const
+{
+	OutEffects.Reset();
+	if (!CardScript)
+	{
+		return false;
+	}
+
+	CardScript->BuildBaseEffectSpecs(this, OutEffects);
+	return OutEffects.Num() > 0;
+}
+
+bool UCardDefinition::BuildElementalBonusEffectSpecs(int32 BonusIndex, TArray<FJargonEffectSpec>& OutEffects) const
+{
+	OutEffects.Reset();
+	return CardScript ? CardScript->BuildElementalBonusEffectSpecs(this, BonusIndex, OutEffects) : false;
+}
+
+int32 UCardDefinition::GetElementalBonusScriptCount() const
+{
+	return CardScript ? CardScript->ElementalBonuses.Num() : 0;
 }
 
 bool UCardDefinition::IsValidDefinition() const
@@ -970,25 +1162,37 @@ bool UCardDefinition::IsValidDefinition() const
 		return false;
 	}
 
-	if (Effects.Num() <= 0)
+	if (!UsesCardScript())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: no Effects authored."), *GetNameSafe(this));
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: no CardScript actions authored."), *GetNameSafe(this));
 		return false;
 	}
 
-	for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)
+	if (!CardElementMatchesExplicitElements(this))
 	{
-		const FCardEffectSpec& EffectSpec = Effects[EffectIndex];
-		const FString EffectLabel = FString::Printf(TEXT("effect %d"), EffectIndex);
-		if (!ValidateCardEffectSpec(this, EffectSpec, EffectLabel))
+		TArray<EJargonElementType> ExplicitElements;
+		GatherExplicitCardScriptElements(this, ExplicitElements);
+		UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: CardElement is %s but CardScript explicitly uses element(s): %s."),
+			*GetNameSafe(this),
+			*GetElementTypeDisplayName(CardElement),
+			*JoinElementNames(ExplicitElements));
+		return false;
+	}
+
+	TArray<FJargonEffectSpec> BaseEffects;
+	BuildBaseEffectSpecs(BaseEffects);
+	for (int32 EffectIndex = 0; EffectIndex < BaseEffects.Num(); ++EffectIndex)
+	{
+		const FString EffectLabel = FString::Printf(TEXT("effect line %d"), EffectIndex);
+		if (!ValidateJargonEffectSpecRuntime(this, BaseEffects[EffectIndex], EffectLabel))
 		{
 			return false;
 		}
 	}
 
-	for (int32 BonusIndex = 0; BonusIndex < ElementalBonusGroups.Num(); ++BonusIndex)
+	for (int32 BonusIndex = 0; BonusIndex < CardScript->ElementalBonuses.Num(); ++BonusIndex)
 	{
-		const FCardElementalBonusGroup& BonusGroup = ElementalBonusGroups[BonusIndex];
+		const FJargonCardElementalBonusScript& BonusGroup = CardScript->ElementalBonuses[BonusIndex];
 		if (BonusGroup.ElementType == EJargonElementType::None)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: elemental bonus group %d requires ElementType other than None."),
@@ -1005,18 +1209,20 @@ bool UCardDefinition::IsValidDefinition() const
 			return false;
 		}
 
-		if (BonusGroup.BonusEffects.Num() <= 0)
+		if (!BonusGroup.HasAnyActions())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: elemental bonus group %d has no BonusEffects."),
+			UE_LOG(LogTemp, Warning, TEXT("CardDefinition '%s' invalid: elemental bonus group %d has no effect lines."),
 				*GetNameSafe(this),
 				BonusIndex);
 			return false;
 		}
 
-		for (int32 BonusEffectIndex = 0; BonusEffectIndex < BonusGroup.BonusEffects.Num(); ++BonusEffectIndex)
+		TArray<FJargonEffectSpec> BonusEffects;
+		BuildElementalBonusEffectSpecs(BonusIndex, BonusEffects);
+		for (int32 BonusEffectIndex = 0; BonusEffectIndex < BonusEffects.Num(); ++BonusEffectIndex)
 		{
-			const FString EffectLabel = FString::Printf(TEXT("elemental bonus group %d effect %d"), BonusIndex, BonusEffectIndex);
-			if (!ValidateCardEffectSpec(this, BonusGroup.BonusEffects[BonusEffectIndex], EffectLabel))
+			const FString EffectLabel = FString::Printf(TEXT("elemental bonus group %d effect line %d"), BonusIndex, BonusEffectIndex);
+			if (!ValidateJargonEffectSpecRuntime(this, BonusEffects[BonusEffectIndex], EffectLabel))
 			{
 				return false;
 			}
@@ -1026,75 +1232,120 @@ bool UCardDefinition::IsValidDefinition() const
 	return true;
 }
 
-FString UCardDefinition::GetEffectAuditSummary(const FCardEffectSpec& EffectSpec) const
+#if WITH_EDITOR
+EDataValidationResult UCardDefinition::IsDataValid(FDataValidationContext& Context) const
+{
+	Super::IsDataValid(Context);
+
+	if (DisplayName.IsEmpty())
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("DisplayName is empty."));
+	}
+
+	if (Cost < 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("Cost is negative: %d."), Cost));
+	}
+
+	if (Range < 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("Range is negative: %d."), Range));
+	}
+
+	if (!CardScript)
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("CardScript is required. Cards resolve through CardScript effect lines only."));
+	}
+	else
+	{
+		CardScript->ValidateScript(this, Context);
+	}
+
+	if (!CardElementMatchesExplicitElements(this))
+	{
+		TArray<EJargonElementType> ExplicitElements;
+		GatherExplicitCardScriptElements(this, ExplicitElements);
+		JargonDataAssetValidation::AddError(
+			Context,
+			this,
+			FString::Printf(
+				TEXT("CardElement is %s but CardScript explicitly uses element(s): %s."),
+				*GetElementTypeDisplayName(CardElement),
+				*JoinElementNames(ExplicitElements)));
+	}
+
+	if (!IsDebugCardAsset(this) && NeutralCardHasElementalIdentitySignals(this))
+	{
+		JargonDataAssetValidation::AddWarning(
+			Context,
+			this,
+			TEXT("CardElement is Neutral, but status/summon/tile payloads suggest an elemental identity. Verify Neutral is intentional."));
+	}
+
+	TArray<FJargonEffectSpec> BaseEffects;
+	BuildBaseEffectSpecs(BaseEffects);
+	for (int32 EffectIndex = 0; EffectIndex < BaseEffects.Num(); ++EffectIndex)
+	{
+		JargonDataAssetValidation::ValidateJargonEffectSpec(
+			this,
+			BaseEffects[EffectIndex],
+			FString::Printf(TEXT("CardScript effect line %d"), EffectIndex),
+			Context);
+	}
+
+	if (CardScript)
+	{
+		for (int32 BonusIndex = 0; BonusIndex < CardScript->ElementalBonuses.Num(); ++BonusIndex)
+		{
+			TArray<FJargonEffectSpec> BonusEffects;
+			BuildElementalBonusEffectSpecs(BonusIndex, BonusEffects);
+			if (CardScript->ElementalBonuses[BonusIndex].HasAnyActions() && BonusEffects.Num() <= 0)
+			{
+				JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("CardScript elemental bonus %d has no generated effects."), BonusIndex));
+			}
+
+			for (int32 BonusEffectIndex = 0; BonusEffectIndex < BonusEffects.Num(); ++BonusEffectIndex)
+			{
+				JargonDataAssetValidation::ValidateJargonEffectSpec(
+					this,
+					BonusEffects[BonusEffectIndex],
+					FString::Printf(TEXT("CardScript elemental bonus %d effect line %d"), BonusIndex, BonusEffectIndex),
+					Context);
+			}
+		}
+	}
+
+	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;
+}
+#endif
+
+FString UCardDefinition::GetEffectAuditSummary(const FJargonEffectSpec& EffectSpec) const
 {
 	return BuildCardEffectAuditSummary(EffectSpec);
 }
 
-FString UCardDefinition::GetElementalBonusAuditSummary(const FCardElementalBonusGroup& BonusGroup) const
-{
-	return BuildCardElementalBonusAuditSummary(BonusGroup);
-}
-
 FString UCardDefinition::GetAuditSummary() const
 {
-	TArray<FString> EffectSummaries;
-	EffectSummaries.Reserve(Effects.Num());
-	for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)
-	{
-		EffectSummaries.Add(FString::Printf(TEXT("Effect %d: %s"), EffectIndex, *GetEffectAuditSummary(Effects[EffectIndex])));
-	}
-
-	TArray<FString> BonusSummaries;
-	BonusSummaries.Reserve(ElementalBonusGroups.Num());
-	for (int32 BonusIndex = 0; BonusIndex < ElementalBonusGroups.Num(); ++BonusIndex)
-	{
-		BonusSummaries.Add(FString::Printf(TEXT("Bonus %d: %s"), BonusIndex, *GetElementalBonusAuditSummary(ElementalBonusGroups[BonusIndex])));
-	}
-
 	const FString NameText = DisplayName.IsEmpty() ? GetNameSafe(this) : DisplayName.ToString();
 	return FString::Printf(
-		TEXT("%s | Cost=%d Range=%d Category=%s Target=%s Effects=[%s] ElementalBonuses=[%s]"),
+		TEXT("%s | Element=%s Cost=%d Range=%d Category=%s Target=%s CardScript=%s"),
 		*NameText,
+		*GetElementTypeDisplayName(CardElement),
 		Cost,
 		Range,
 		*GetCardCategoryDisplayName(Category),
 		*GetCardTargetTypeDisplayName(TargetType),
-		EffectSummaries.Num() > 0 ? *FString::Join(EffectSummaries, TEXT("; ")) : TEXT("None"),
-		BonusSummaries.Num() > 0 ? *FString::Join(BonusSummaries, TEXT("; ")) : TEXT("None"));
+		CardScript ? *CardScript->GetScriptSummary() : TEXT("None"));
 }
 
-ECardEffectOperation UCardDefinition::GetPrimaryEffectOperation() const
+EJargonEffectOperation UCardDefinition::GetPrimaryEffectOperation() const
 {
-	return Effects.Num() > 0 ? Effects[0].Operation : ECardEffectOperation::None;
+	TArray<FJargonEffectSpec> Effects;
+	BuildBaseEffectSpecs(Effects);
+	return Effects.Num() > 0 ? Effects[0].Operation : EJargonEffectOperation::None;
 }
 
-int32 UCardDefinition::GetConfiguredRangeForEffect(const FCardEffectSpec& EffectSpec) const
+FText UCardDefinition::GetCardElementDisplayText() const
 {
-	if (EffectSpec.Operation == ECardEffectOperation::MoveSelf)
-	{
-		return FMath::Max(0, EffectSpec.MoveDistance);
-	}
-
-	return FMath::Max(0, Range);
-}
-
-int32 UCardDefinition::GetConfiguredRadiusForEffect(const FCardEffectSpec& EffectSpec) const
-{
-	return FMath::Max(0, EffectSpec.EffectRadius);
-}
-
-int32 UCardDefinition::GetConfiguredValueForEffect(const FCardEffectSpec& EffectSpec) const
-{
-	return FMath::Max(0, EffectSpec.Value);
-}
-
-int32 UCardDefinition::GetConfiguredPushDistanceForEffect(const FCardEffectSpec& EffectSpec) const
-{
-	return FMath::Max(0, EffectSpec.PushDistance);
-}
-
-int32 UCardDefinition::GetConfiguredCollisionDamageForEffect(const FCardEffectSpec& EffectSpec) const
-{
-	return FMath::Max(0, EffectSpec.CollisionDamage);
+	return FText::FromString(GetElementTypeDisplayName(CardElement));
 }

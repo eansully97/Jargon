@@ -1,6 +1,7 @@
 #include "Combat/Presentation/JargonCombatPresentationManager.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Combat/Grid/Effects/BattleTileEffect.h"
 #include "Combat/Grid/GridTile.h"
 #include "Combat/Presentation/JargonCombatPresentationSettings.h"
 #include "Combat/Presentation/JargonFloatingCombatTextWidget.h"
@@ -244,6 +245,30 @@ FText AJargonCombatPresentationManager::GetCueDisplayText(const FJargonCombatCue
 	case EJargonCombatCueType::FreezeConsumed:
 		return FText::FromString(TEXT("Thawing"));
 
+	case EJargonCombatCueType::BurnApplied:
+		return FText::FromString(FString::Printf(TEXT("Burn %d"), FMath::Max(0, Cue.Value)));
+
+	case EJargonCombatCueType::BurnTick:
+		return FText::FromString(FString::Printf(TEXT("Burn -%d"), FMath::Max(0, Cue.Value)));
+
+	case EJargonCombatCueType::RootApplied:
+		return FText::FromString(TEXT("Rooted"));
+
+	case EJargonCombatCueType::RootConsumed:
+		return FText::FromString(TEXT("Root fades"));
+
+	case EJargonCombatCueType::VulnerableApplied:
+		return FText::FromString(FString::Printf(TEXT("Vulnerable +%d"), FMath::Max(0, Cue.Value)));
+
+	case EJargonCombatCueType::VulnerableConsumed:
+		return FText::FromString(TEXT("Vulnerable hit"));
+
+	case EJargonCombatCueType::Push:
+		return FText::FromString(TEXT("Pushed"));
+
+	case EJargonCombatCueType::Pull:
+		return FText::FromString(TEXT("Pulled"));
+
 	case EJargonCombatCueType::UnitSummoned:
 		return FText::FromString(TEXT("Summoned"));
 
@@ -326,11 +351,18 @@ bool AJargonCombatPresentationManager::IsUnitCue(const FJargonCombatCueEvent& Cu
 	case EJargonCombatCueType::StunConsumed:
 	case EJargonCombatCueType::FreezeApplied:
 	case EJargonCombatCueType::FreezeConsumed:
+	case EJargonCombatCueType::BurnApplied:
+	case EJargonCombatCueType::BurnTick:
+	case EJargonCombatCueType::RootApplied:
+	case EJargonCombatCueType::RootConsumed:
+	case EJargonCombatCueType::VulnerableApplied:
+	case EJargonCombatCueType::VulnerableConsumed:
 	case EJargonCombatCueType::UnitSummoned:
 	case EJargonCombatCueType::UnitDied:
 	case EJargonCombatCueType::ChainJump:
 	case EJargonCombatCueType::Push:
 	case EJargonCombatCueType::PushCollision:
+	case EJargonCombatCueType::Pull:
 		return true;
 
 	default:
@@ -656,7 +688,17 @@ bool AJargonCombatPresentationManager::ShouldSpawnFloatingTextForCue(const FJarg
 		case EJargonCombatCueType::PushCollision:
 		case EJargonCombatCueType::Heal:
 		case EJargonCombatCueType::ShieldGained:
+		case EJargonCombatCueType::BurnApplied:
+		case EJargonCombatCueType::BurnTick:
+		case EJargonCombatCueType::RootApplied:
+		case EJargonCombatCueType::RootConsumed:
+		case EJargonCombatCueType::VulnerableApplied:
+		case EJargonCombatCueType::VulnerableConsumed:
 			return Cue.Value > 0;
+
+		case EJargonCombatCueType::Push:
+		case EJargonCombatCueType::Pull:
+			return true;
 
 		case EJargonCombatCueType::ClassPassiveTriggered:
 		case EJargonCombatCueType::HeroAspectActivated:
@@ -884,8 +926,19 @@ void AJargonCombatPresentationManager::DispatchBlueprintCueEvents(const FJargonC
 		BP_OnFreezeCue(Cue);
 		break;
 
+	case EJargonCombatCueType::BurnApplied:
+	case EJargonCombatCueType::BurnTick:
+	case EJargonCombatCueType::RootApplied:
+	case EJargonCombatCueType::RootConsumed:
+	case EJargonCombatCueType::VulnerableApplied:
+	case EJargonCombatCueType::VulnerableConsumed:
+		BP_OnStatusCue(Cue);
+		break;
+
 	case EJargonCombatCueType::UnitSummoned:
 	case EJargonCombatCueType::UnitDied:
+	case EJargonCombatCueType::Push:
+	case EJargonCombatCueType::Pull:
 		BP_OnUnitCue(Cue);
 		break;
 

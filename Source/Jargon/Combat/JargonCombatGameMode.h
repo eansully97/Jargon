@@ -26,6 +26,7 @@ class AJargonCombatPresentationManager;
 class UJargonCombatPresentationSettings;
 class UJargonHeroDefinition;
 class UJargonSummonedUnitDefinition;
+class UJargonTileEffectDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatPhaseChangedSignature, ECombatPhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatEnergyChangedSignature, int32, NewEnergy);
@@ -121,31 +122,21 @@ public:
 	bool TryPlayCardOnSelf(UCardDefinition* Card);
 	bool StartPlayerControlledMoveSequence(ABattleUnit* MovingUnit, const TArray<AGridTile*>& Path, bool bConsumeMoveAction);
 	void ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTile* DeathTile);
-	ABattleTileEffect* SpawnPersistentTileEffectFromClass(
-		TSubclassOf<ABattleTileEffect> TileEffectClass,
+	ABattleTileEffect* SpawnPersistentTileEffectFromDefinition(
+		UJargonTileEffectDefinition* Definition,
+		TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass,
 		const UCardDefinition* Card,
 		const ABattleUnit* SourceUnit,
-		AGridTile* TargetTile,
-		ECardCategory EffectCategory,
-		int32 EffectValue,
-		int32 EffectRadius,
-		int32 EffectDuration);
-	ABattleTileEffect* SpawnPersistentTileEffectFromClassForTeam(
-		TSubclassOf<ABattleTileEffect> TileEffectClass,
+		AGridTile* TargetTile);
+	ABattleTileEffect* SpawnPersistentTileEffectFromDefinitionForTeam(
+		UJargonTileEffectDefinition* Definition,
+		TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass,
 		const UCardDefinition* Card,
 		ETeam SourceTeam,
-		AGridTile* TargetTile,
-		ECardCategory EffectCategory,
-		int32 EffectValue,
-		int32 EffectRadius,
-		int32 EffectDuration);
-	ABattleUnit* SpawnSummonedUnitFromClass(
-		TSubclassOf<ABattleUnit> UnitClass,
-		const ABattleUnit* SourceUnit,
-		AGridTile* TargetTile,
-		bool bAttackExhaustedOnSpawn);
+		AGridTile* TargetTile);
 	ABattleUnit* SpawnSummonedUnitFromDefinition(
 		UJargonSummonedUnitDefinition* Definition,
+		TSubclassOf<ABattleUnit> RuntimeSummonedUnitClass,
 		const ABattleUnit* SourceUnit,
 		AGridTile* TargetTile,
 		bool bAttackExhaustedOverride,
@@ -527,9 +518,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Enemy", meta = (DisplayName = "Fallback Enemy Unit Class"))
 	TSubclassOf<AEnemyBattleUnit> EnemyUnitClass;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Summons", meta = (ToolTip = "Generic unit class used by data-driven summon definitions when the definition does not provide an OptionalUnitClassOverride. Existing UnitClass summon cards do not use this."))
-	TSubclassOf<ABattleUnit> DefaultSummonedUnitClass;
-
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|UI")
 	TSubclassOf<UCombatHUDWidget> CombatHUDClass;
 
@@ -560,7 +548,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Elements", meta = (ClampMin = "1"))
 	int32 MaxElementChargesPerType = 9;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Hero", meta = (ClampMin = "1", ToolTip = "Element charge threshold required for the hero to enter a temporary class/element aspect such as Mage + Quietus = Necromancer."))
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Hero", meta = (ClampMin = "1", ToolTip = "Legacy compatibility value retained for existing Blueprint/UI bindings. Authored Hero Definition aspect entries now own their Required Element Charges."))
 	int32 RuntimeHeroAspectThreshold = 5;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0", DisplayName = "Starting Max Energy"))

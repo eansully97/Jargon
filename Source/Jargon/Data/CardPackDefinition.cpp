@@ -2,6 +2,11 @@
 
 #include "Data/CardDefinition.h"
 
+#if WITH_EDITOR
+#include "Data/JargonDataAssetValidationHelpers.h"
+#include "Misc/DataValidation.h"
+#endif
+
 namespace
 {
 	UCardDefinition* RollSingleWeightedCard(const TArray<FWeightedCardPackEntry>& Entries)
@@ -113,6 +118,70 @@ bool UCardPackDefinition::IsValidDefinition() const
 
 	return true;
 }
+
+#if WITH_EDITOR
+EDataValidationResult UCardPackDefinition::IsDataValid(FDataValidationContext& Context) const
+{
+	Super::IsDataValid(Context);
+
+	if (DisplayName.IsEmpty())
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("DisplayName is empty."));
+	}
+
+	if (Price.Gold < 0 || Price.Silver < 0 || Price.Copper < 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("Price contains a negative denomination. Gold=%d Silver=%d Copper=%d."), Price.Gold, Price.Silver, Price.Copper));
+	}
+
+	if (AmountToGrant <= 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("AmountToGrant must be greater than 0. Current value: %d."), AmountToGrant));
+	}
+
+	if (CardPool.Num() <= 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("CardPool is empty."));
+	}
+
+	int32 ValidEntryCount = 0;
+	TSet<const UCardDefinition*> UniqueCards;
+	for (int32 EntryIndex = 0; EntryIndex < CardPool.Num(); ++EntryIndex)
+	{
+		const FWeightedCardPackEntry& Entry = CardPool[EntryIndex];
+		if (!Entry.CardDefinition)
+		{
+			JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("CardPool entry %d has no CardDefinition."), EntryIndex));
+			continue;
+		}
+
+		if (Entry.Weight <= 0)
+		{
+			JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("CardPool entry %d has weight <= 0."), EntryIndex));
+			continue;
+		}
+
+		ValidEntryCount++;
+		UniqueCards.Add(Entry.CardDefinition);
+		if (!Entry.CardDefinition->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("CardPool entry %d references card '%s' that failed IsValidDefinition()."), EntryIndex, *GetNameSafe(Entry.CardDefinition)));
+		}
+	}
+
+	if (!bAllowDuplicateCardsPerPurchase && AmountToGrant > UniqueCards.Num())
+	{
+		JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("AmountToGrant=%d but only %d unique valid cards are present; purchases may grant fewer cards."), AmountToGrant, UniqueCards.Num()));
+	}
+
+	if (ValidEntryCount <= 0 && CardPool.Num() > 0)
+	{
+		JargonDataAssetValidation::AddError(Context, this, TEXT("No valid rollable CardPool entries."));
+	}
+
+	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;
+}
+#endif
 
 bool UCardPackDefinition::RollGrantedCards(TArray<UCardDefinition*>& OutGrantedCards) const
 {

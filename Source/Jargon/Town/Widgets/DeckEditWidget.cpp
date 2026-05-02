@@ -6,12 +6,13 @@
 
 namespace
 {
-constexpr int32 MaxCopiesPerCardInDeck = 3;
+constexpr int32 FallbackMaxCopiesPerCardInDeck = 3;
+constexpr int32 FallbackMaxRunDeckSize = 30;
 
 struct FDeckEditCardCounts
 {
 	int32 DeckCount = 0;
-	int32 ReserveCount = 0;
+	int32 OwnedCount = 0;
 };
 
 int32 CountCopiesOfCard(const TArray<TObjectPtr<UCardDefinition>>& Cards, const UCardDefinition* Card)
@@ -49,11 +50,14 @@ void UDeckEditWidget::RefreshFromRunState(UJargonGameInstance* JargonGameInstanc
 	CachedRunState = ResolveRunState(JargonGameInstance);
 
 	RunDeckCards.Empty();
+	RunOwnedCards.Empty();
 	RunReserveCards.Empty();
 
 	if (CachedRunState)
 	{
+		CachedRunState->RefreshRunReserveCardsFromAvailableShopPacks();
 		RunDeckCards = CachedRunState->GetRunDeckCards();
+		RunOwnedCards = CachedRunState->GetOwnedRunCards();
 		RunReserveCards = CachedRunState->GetRunReserveCards();
 	}
 
@@ -88,7 +92,20 @@ bool UDeckEditWidget::AddOneCopyToDeck(UCardDefinition* Card)
 		return false;
 	}
 
-	if (CountCopiesOfCard(RunDeckCards, Card) >= MaxCopiesPerCardInDeck)
+	const int32 MaxDeckSize = RunState->GetMaxRunDeckSize();
+	if (RunDeckCards.Num() >= MaxDeckSize)
+	{
+		return false;
+	}
+
+	const int32 DeckCount = CountCopiesOfCard(RunDeckCards, Card);
+	if (DeckCount >= RunState->GetMaxCopiesPerDeckCard())
+	{
+		return false;
+	}
+
+	const int32 OwnedCount = CountCopiesOfCard(RunOwnedCards, Card);
+	if (OwnedCount - DeckCount <= 0)
 	{
 		return false;
 	}
@@ -197,6 +214,12 @@ void UDeckEditWidget::RebuildViewData()
 	LibraryEntries.Empty();
 
 	TMap<UCardDefinition*, FDeckEditCardCounts> CountsByCard;
+	const int32 MaxCopiesPerDeckCard = CachedRunState
+		? CachedRunState->GetMaxCopiesPerDeckCard()
+		: FallbackMaxCopiesPerCardInDeck;
+	const int32 MaxRunDeckSize = CachedRunState
+		? CachedRunState->GetMaxRunDeckSize()
+		: FallbackMaxRunDeckSize;
 
 	for (UCardDefinition* Card : RunDeckCards)
 	{
@@ -206,11 +229,19 @@ void UDeckEditWidget::RebuildViewData()
 		}
 	}
 
+	for (UCardDefinition* Card : RunOwnedCards)
+	{
+		if (Card)
+		{
+			CountsByCard.FindOrAdd(Card).OwnedCount++;
+		}
+	}
+
 	for (UCardDefinition* Card : RunReserveCards)
 	{
 		if (Card)
 		{
-			CountsByCard.FindOrAdd(Card).ReserveCount++;
+			CountsByCard.FindOrAdd(Card);
 		}
 	}
 
@@ -241,9 +272,13 @@ void UDeckEditWidget::RebuildViewData()
 		FDeckEditLibraryCardEntry LibraryEntry;
 		LibraryEntry.Card = Card;
 		LibraryEntry.DeckCount = Counts.DeckCount;
-		LibraryEntry.ReserveCount = Counts.ReserveCount;
-		LibraryEntry.OwnedCount = Counts.DeckCount + Counts.ReserveCount;
-		LibraryEntry.bCanAddToDeck = Counts.ReserveCount > 0 && Counts.DeckCount < MaxCopiesPerCardInDeck;
+		LibraryEntry.OwnedCount = Counts.OwnedCount;
+		LibraryEntry.ReserveCount = FMath::Max(0, Counts.OwnedCount - Counts.DeckCount);
+		LibraryEntry.bCanAddToDeck =
+			LibraryEntry.ReserveCount > 0 &&
+			Counts.DeckCount < MaxCopiesPerDeckCard &&
+			RunDeckCards.Num() < MaxRunDeckSize &&
+			(!CachedRunState || CachedRunState->WouldRunDeckRespectElementLimitWithCard(Card));
 		LibraryEntry.bCanRemoveFromDeck = Counts.DeckCount > 0;
 		LibraryEntries.Add(LibraryEntry);
 	}

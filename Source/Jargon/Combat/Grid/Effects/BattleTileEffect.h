@@ -13,6 +13,7 @@ class UCardDefinition;
 class AJargonCombatGameMode;
 class ABattleUnit;
 class UStaticMeshComponent;
+class UJargonTileEffectDefinition;
 
 UENUM(BlueprintType)
 enum class EJargonTileEffectTargetFilter : uint8
@@ -51,7 +52,7 @@ public:
 
 	virtual void Destroyed() override;
 
-	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
+	UFUNCTION(BlueprintCallable, Category = "Deprecated|Tile Effect", meta = (DeprecatedFunction, DeprecationMessage = "Use InitializeFromDefinition with a UJargonTileEffectDefinition."))
 	void InitializeFromCard(
 		UCardDefinition* InSourceCard,
 		ETeam InSourceTeam,
@@ -59,6 +60,12 @@ public:
 		int32 InEffectValue,
 		int32 InEffectRadius,
 		int32 InDuration = 0);
+
+	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
+	void InitializeFromDefinition(
+		UCardDefinition* InSourceCard,
+		ETeam InSourceTeam,
+		UJargonTileEffectDefinition* InDefinition);
 
 	UFUNCTION(BlueprintCallable, Category = "Tile Effect")
 	void PlaceOnTile(AGridTile* Tile);
@@ -90,7 +97,7 @@ public:
 		return RemainingDuration;
 	}
 
-	UFUNCTION(BlueprintCallable, Category = "Tile Effect|Spawning")
+	UFUNCTION(BlueprintCallable, Category = "Deprecated|Tile Effect|Spawning", meta = (DeprecatedFunction, DeprecationMessage = "Place tile effects through UJargonTileEffectDefinition and AJargonCombatGameMode::SpawnPersistentTileEffectFromDefinition."))
 	ABattleTileEffect* SpawnTileEffectOnTile(
 		TSubclassOf<ABattleTileEffect> TileEffectClass,
 		AGridTile* TargetTile,
@@ -143,6 +150,12 @@ public:
 		return EffectValue;
 	}
 
+	UFUNCTION(BlueprintPure, Category = "Tile Effect")
+	UJargonTileEffectDefinition* GetTileEffectDefinition() const
+	{
+		return TileEffectDefinition;
+	}
+
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Tile Effect")
 	void BP_OnPlayerTurnStart(AJargonCombatGameMode* CombatGameMode);
@@ -182,6 +195,9 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
 	TObjectPtr<UCardDefinition> SourceCard = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
+	TObjectPtr<UJargonTileEffectDefinition> TileEffectDefinition = nullptr;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Tile Effect")
 	ETeam SourceTeam = ETeam::Player;

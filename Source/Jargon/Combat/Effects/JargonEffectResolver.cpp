@@ -8,7 +8,9 @@
 #include "Combat/Units/BattleUnit.h"
 #include "Data/CardDefinition.h"
 #include "Data/JargonRelicDefinition.h"
+#include "Data/JargonStatusEffectDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
+#include "Data/JargonTileEffectDefinition.h"
 
 namespace
 {
@@ -47,7 +49,11 @@ namespace
 			|| Operation == EJargonEffectOperation::Heal
 			|| Operation == EJargonEffectOperation::ApplyShield
 			|| Operation == EJargonEffectOperation::ApplyStun
-			|| Operation == EJargonEffectOperation::ApplyFreeze;
+			|| Operation == EJargonEffectOperation::ApplyFreeze
+			|| Operation == EJargonEffectOperation::ApplyBurn
+			|| Operation == EJargonEffectOperation::ApplyRoot
+			|| Operation == EJargonEffectOperation::ApplyVulnerable
+			|| Operation == EJargonEffectOperation::ApplyStatus;
 	}
 
 	bool IsLiveSourceUnit(const FJargonEffectContext& Context)
@@ -118,6 +124,14 @@ namespace
 			return TEXT("ApplyStun");
 		case EJargonEffectOperation::ApplyFreeze:
 			return TEXT("ApplyFreeze");
+		case EJargonEffectOperation::ApplyBurn:
+			return TEXT("ApplyBurn");
+		case EJargonEffectOperation::ApplyRoot:
+			return TEXT("ApplyRoot");
+		case EJargonEffectOperation::ApplyVulnerable:
+			return TEXT("ApplyVulnerable");
+		case EJargonEffectOperation::ApplyStatus:
+			return TEXT("ApplyStatus");
 		case EJargonEffectOperation::MoveSource:
 			return TEXT("MoveSource");
 		case EJargonEffectOperation::PushTarget:
@@ -219,6 +233,7 @@ namespace
 		Event.ExplicitTileTarget = Context.PrimaryTileTarget;
 		Event.Value = EffectSpec.Value;
 		Event.ElementType = EffectSpec.ElementType;
+		Event.PayloadSummary = JargonEffectContracts::BuildPayloadSummary(EffectSpec);
 		Event.Reason = Reason;
 		Event.Warning = Warning;
 	}
@@ -489,6 +504,20 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 
 	switch (EffectSpec.Operation)
 	{
+	case EJargonEffectOperation::ApplyStatus:
+		if (!EffectSpec.StatusEffectDefinition)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ApplyStatus requires StatusEffectDefinition."));
+			return false;
+		}
+		if (!EffectSpec.StatusEffectDefinition->IsValidDefinition())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ApplyStatus requires a valid StatusEffectDefinition. Definition='%s'."),
+				*GetPathNameSafe(EffectSpec.StatusEffectDefinition.Get()));
+			return false;
+		}
+		break;
+
 	case EJargonEffectOperation::MoveSource:
 		if (!IsLiveSourceUnit(Context))
 		{
@@ -521,8 +550,17 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 		break;
 
 	case EJargonEffectOperation::PullTarget:
-		UE_LOG(LogTemp, Warning, TEXT("PullTarget is intentionally deferred in the generic Jargon effect resolver."));
-		return false;
+		if (!IsLiveSourceUnit(Context))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("PullTarget requires a living SourceUnit."));
+			return false;
+		}
+		if (EffectSpec.PullDistance <= 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("PullTarget requires PullDistance > 0."));
+			return false;
+		}
+		break;
 
 	case EJargonEffectOperation::SummonUnit:
 		if (!IsLiveSourceUnit(Context))
@@ -530,9 +568,14 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 			UE_LOG(LogTemp, Warning, TEXT("SummonUnit requires a living SourceUnit."));
 			return false;
 		}
-		if (!EffectSpec.SummonedUnitDefinition && !EffectSpec.UnitClass)
+		if (!EffectSpec.SummonedUnitDefinition)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect has neither SummonedUnitDefinition nor UnitClass."));
+			UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect requires SummonedUnitDefinition."));
+			return false;
+		}
+		if (!EffectSpec.RuntimeSummonedUnitClass)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect requires RuntimeSummonedUnitClass."));
 			return false;
 		}
 		if (!GetResolvedTargetTile(Context))
@@ -543,9 +586,14 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 		break;
 
 	case EJargonEffectOperation::PlaceTileEffect:
-		if (!EffectSpec.TileEffectClass)
+		if (!EffectSpec.TileEffectDefinition)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect has no TileEffectClass."));
+			UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect requires TileEffectDefinition."));
+			return false;
+		}
+		if (!EffectSpec.RuntimeTileEffectClass)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect requires RuntimeTileEffectClass."));
 			return false;
 		}
 		if (!GetResolvedTargetTile(Context))
@@ -758,8 +806,7 @@ bool FJargonEffectResolver::ResolveEffect(
 		break;
 
 	case EJargonEffectOperation::PullTarget:
-		UE_LOG(LogTemp, Warning, TEXT("PullTarget is intentionally deferred in the generic Jargon effect resolver."));
-		bResolved = false;
+		bResolved = ResolvePullTargetEffect(EffectSpec, Context, OutResult, OutTrace, EffectIndex);
 		break;
 
 	case EJargonEffectOperation::SummonUnit:
@@ -938,6 +985,89 @@ bool FJargonEffectResolver::ResolvePushTargetEffect(
 	return bResolvedAnyPushEffect;
 }
 
+bool FJargonEffectResolver::ResolvePullTargetEffect(
+	const FJargonEffectSpec& EffectSpec,
+	const FJargonEffectContext& Context,
+	FJargonEffectResult& OutResult,
+	FJargonEffectTrace* OutTrace,
+	int32 EffectIndex)
+{
+	if (!Context.GameMode || !IsLiveSourceUnit(Context))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PullTarget requires GameMode and a living SourceUnit."));
+		return false;
+	}
+
+	const TArray<ABattleUnit*> TargetUnits = GatherTargetUnits(EffectSpec, Context, OutTrace, EffectIndex);
+	AddTraceUnitsGathered(OutTrace, EffectSpec, Context, EffectIndex, TargetUnits);
+	if (TargetUnits.Num() <= 0)
+	{
+		if (CanTreatNoTargetsAsNoOp(Context))
+		{
+			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::NoTargetsNoOp, EffectIndex, TEXT("NoTargetsCleanNoOp"));
+			UE_LOG(LogTemp, Verbose, TEXT("PullTarget found no valid target units in %s context; treating as a clean no-op."),
+				GetEffectTriggerName(Context.Trigger));
+			OutResult.bResolvedAnyEffect = false;
+			return true;
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("PullTarget found no valid target units."));
+		return false;
+	}
+
+	AGridBoard* GridBoard = Context.GameMode->GetGridBoard();
+	AGridTile* SourceTile = GetResolvedSourceTile(Context);
+	if (!GridBoard || !SourceTile)
+	{
+		return false;
+	}
+
+	const int32 PullDistance = FMath::Max(1, EffectSpec.PullDistance);
+	bool bResolvedAnyPullEffect = false;
+
+	for (ABattleUnit* TargetUnit : TargetUnits)
+	{
+		if (!IsValid(TargetUnit) || TargetUnit->IsDead())
+		{
+			continue;
+		}
+
+		AGridTile* TargetTile = TargetUnit->GetCurrentTile();
+		if (!TargetTile || TargetTile == SourceTile)
+		{
+			continue;
+		}
+
+		const TArray<AGridTile*> PathToSource = GridBoard->BuildPath(TargetTile, SourceTile);
+		if (PathToSource.Num() < 3)
+		{
+			continue;
+		}
+
+		const int32 LastLegalPathIndex = PathToSource.Num() - 2;
+		const int32 DestinationIndex = FMath::Clamp(PullDistance, 1, LastLegalPathIndex);
+		AGridTile* BestDestination = PathToSource.IsValidIndex(DestinationIndex)
+			? PathToSource[DestinationIndex]
+			: nullptr;
+
+		if (!BestDestination || !BestDestination->IsWalkable() || BestDestination == TargetTile || BestDestination == SourceTile)
+		{
+			continue;
+		}
+
+		EmitEffectResolverCue(Context, EffectSpec, EJargonCombatCueType::Pull, TargetUnit, BestDestination, PullDistance);
+		TargetUnit->PlaceOnTile(BestDestination);
+		bResolvedAnyPullEffect = true;
+	}
+
+	OutResult.bResolvedAnyEffect = bResolvedAnyPullEffect;
+	if (!bResolvedAnyPullEffect && CanTreatNoTargetsAsNoOp(Context))
+	{
+		return true;
+	}
+	return bResolvedAnyPullEffect;
+}
+
 bool FJargonEffectResolver::ResolveSummonUnitEffect(
 	const FJargonEffectSpec& EffectSpec,
 	const FJargonEffectContext& Context,
@@ -958,43 +1088,25 @@ bool FJargonEffectResolver::ResolveSummonUnitEffect(
 		return false;
 	}
 
-	if (!EffectSpec.SummonedUnitDefinition && !EffectSpec.UnitClass)
+	if (!EffectSpec.SummonedUnitDefinition)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect has neither SummonedUnitDefinition nor UnitClass."));
+		UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect requires SummonedUnitDefinition."));
 		return false;
 	}
 
-	ABattleUnit* SpawnedUnit = nullptr;
-	if (EffectSpec.SummonedUnitDefinition)
+	if (!EffectSpec.RuntimeSummonedUnitClass)
 	{
-		SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromDefinition(
-			EffectSpec.SummonedUnitDefinition.Get(),
-			Context.SourceUnit,
-			TargetTile,
-			EffectSpec.bSummonEntersWithAttackExhausted,
-			true);
+		UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect requires RuntimeSummonedUnitClass."));
+		return false;
+	}
 
-		if (!SpawnedUnit && EffectSpec.UnitClass)
-		{
-			AddTraceEvent(OutTrace, EffectSpec, Context, EJargonEffectTraceEventType::FallbackUsed, EffectIndex, TEXT("DefinitionSpawnFailedFallbackToUnitClass"), TEXT("Summon definition failed to spawn; falling back to legacy UnitClass."));
-			UE_LOG(LogTemp, Warning, TEXT("SummonUnit definition '%s' failed to spawn. Falling back to legacy UnitClass '%s'."),
-				*GetNameSafe(EffectSpec.SummonedUnitDefinition.Get()),
-				*GetNameSafe(EffectSpec.UnitClass.Get()));
-			SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromClass(
-				EffectSpec.UnitClass,
-				Context.SourceUnit,
-				TargetTile,
-				EffectSpec.bSummonEntersWithAttackExhausted);
-		}
-	}
-	else
-	{
-		SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromClass(
-			EffectSpec.UnitClass,
-			Context.SourceUnit,
-			TargetTile,
-			EffectSpec.bSummonEntersWithAttackExhausted);
-	}
+	ABattleUnit* SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromDefinition(
+		EffectSpec.SummonedUnitDefinition.Get(),
+		EffectSpec.RuntimeSummonedUnitClass,
+		Context.SourceUnit,
+		TargetTile,
+		EffectSpec.bSummonEntersWithAttackExhausted,
+		true);
 
 	if (!SpawnedUnit)
 	{
@@ -1025,44 +1137,36 @@ bool FJargonEffectResolver::ResolvePlaceTileEffect(
 		return false;
 	}
 
-	if (!EffectSpec.TileEffectClass)
+	if (!EffectSpec.TileEffectDefinition)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect has no TileEffectClass."));
+		UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect requires TileEffectDefinition."));
 		return false;
 	}
 
-	const ECardCategory TileEffectCategory = Context.SourceCard
-		? Context.SourceCard->Category
-		: EffectSpec.TileEffectCategory;
-
-	const int32 TileEffectValue = FMath::Max(0, EffectSpec.Value);
-	const int32 TileEffectRadius = FMath::Max(0, EffectSpec.Radius);
-	const int32 TileEffectDuration = FMath::Max(0, EffectSpec.TileEffectDuration);
+	if (!EffectSpec.RuntimeTileEffectClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect requires RuntimeTileEffectClass."));
+		return false;
+	}
 
 	ABattleTileEffect* SpawnedEffect = nullptr;
 	if (IsLiveSourceUnit(Context))
 	{
-		SpawnedEffect = Context.GameMode->SpawnPersistentTileEffectFromClass(
-			EffectSpec.TileEffectClass,
+		SpawnedEffect = Context.GameMode->SpawnPersistentTileEffectFromDefinition(
+			EffectSpec.TileEffectDefinition.Get(),
+			EffectSpec.RuntimeTileEffectClass,
 			Context.SourceCard,
 			Context.SourceUnit.Get(),
-			TargetTile,
-			TileEffectCategory,
-			TileEffectValue,
-			TileEffectRadius,
-			TileEffectDuration);
+			TargetTile);
 	}
 	else
 	{
-		SpawnedEffect = Context.GameMode->SpawnPersistentTileEffectFromClassForTeam(
-			EffectSpec.TileEffectClass,
+		SpawnedEffect = Context.GameMode->SpawnPersistentTileEffectFromDefinitionForTeam(
+			EffectSpec.TileEffectDefinition.Get(),
+			EffectSpec.RuntimeTileEffectClass,
 			Context.SourceCard,
 			GetResolvedSourceTeam(Context),
-			TargetTile,
-			TileEffectCategory,
-			TileEffectValue,
-			TileEffectRadius,
-			TileEffectDuration);
+			TargetTile);
 	}
 
 	if (!SpawnedEffect)
@@ -1605,6 +1709,46 @@ bool FJargonEffectResolver::ApplyUnitPayload(
 	case EJargonEffectOperation::ApplyFreeze:
 		TargetUnit->ApplyFreeze(Amount);
 		return true;
+
+	case EJargonEffectOperation::ApplyBurn:
+		TargetUnit->ApplyBurn(Amount);
+		return true;
+
+	case EJargonEffectOperation::ApplyRoot:
+		TargetUnit->ApplyRoot(Amount);
+		return true;
+
+	case EJargonEffectOperation::ApplyVulnerable:
+		TargetUnit->ApplyVulnerable(Amount);
+		return true;
+
+	case EJargonEffectOperation::ApplyStatus:
+		if (!EffectSpec.StatusEffectDefinition)
+		{
+			return false;
+		}
+
+		switch (EffectSpec.StatusEffectDefinition->StatusKind)
+		{
+		case EJargonStatusEffectKind::Stun:
+			TargetUnit->ApplyStun(Amount);
+			return true;
+		case EJargonStatusEffectKind::Freeze:
+			TargetUnit->ApplyFreeze(Amount);
+			return true;
+		case EJargonStatusEffectKind::Burn:
+			TargetUnit->ApplyBurn(Amount);
+			return true;
+		case EJargonStatusEffectKind::Root:
+			TargetUnit->ApplyRoot(Amount);
+			return true;
+		case EJargonStatusEffectKind::Vulnerable:
+			TargetUnit->ApplyVulnerable(Amount);
+			return true;
+		case EJargonStatusEffectKind::None:
+		default:
+			return false;
+		}
 
 	default:
 		return false;

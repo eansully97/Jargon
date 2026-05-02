@@ -37,6 +37,18 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 		{
 			FreezeText->SetText(FText::GetEmpty());
 		}
+		if (BurnText)
+		{
+			BurnText->SetText(FText::GetEmpty());
+		}
+		if (RootText)
+		{
+			RootText->SetText(FText::GetEmpty());
+		}
+		if (VulnerableText)
+		{
+			VulnerableText->SetText(FText::GetEmpty());
+		}
 		return;
 	}
 
@@ -80,6 +92,30 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 		const int32 FreezeTurns = ObservedUnit->GetFreezeTurnsRemaining();
 		FreezeText->SetText(FreezeTurns > 0
 			? FText::FromString(TEXT("Frozen"))
+			: FText::GetEmpty());
+	}
+
+	if (BurnText)
+	{
+		const int32 BurnStacks = ObservedUnit->GetBurnStacks();
+		BurnText->SetText(BurnStacks > 0
+			? FText::Format(FText::FromString(TEXT("Burn {0}")), FText::AsNumber(BurnStacks))
+			: FText::GetEmpty());
+	}
+
+	if (RootText)
+	{
+		const int32 RootTurns = ObservedUnit->GetRootTurnsRemaining();
+		RootText->SetText(RootTurns > 0
+			? FText::FromString(TEXT("Rooted"))
+			: FText::GetEmpty());
+	}
+
+	if (VulnerableText)
+	{
+		const int32 VulnerableBonus = ObservedUnit->GetVulnerableDamageBonus();
+		VulnerableText->SetText(VulnerableBonus > 0
+			? FText::Format(FText::FromString(TEXT("Vuln +{0}")), FText::AsNumber(VulnerableBonus))
 			: FText::GetEmpty());
 	}
 }

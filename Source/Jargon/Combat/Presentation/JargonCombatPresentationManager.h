@@ -109,6 +109,9 @@ protected:
 	void BP_OnFreezeCue(const FJargonCombatCueEvent& Cue);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
+	void BP_OnStatusCue(const FJargonCombatCueEvent& Cue);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
 	void BP_OnUnitCue(const FJargonCombatCueEvent& Cue);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")

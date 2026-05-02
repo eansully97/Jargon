@@ -73,6 +73,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run")
 	TArray<UCardDefinition*> GetOwnedRunCards() const;
 
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetMaxRunDeckSize() const
+	{
+		return FMath::Max(1, MaxRunDeckSize);
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetMaxCopiesPerDeckCard() const
+	{
+		return FMath::Max(1, MaxCopiesPerDeckCard);
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetMaxRunDeckElements() const
+	{
+		return FMath::Max(0, MaxRunDeckElements);
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetRunDeckElementCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	bool WouldRunDeckRespectElementLimitWithCard(const UCardDefinition* Card) const;
+
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
 	FJargonCurrencyAmount GetRunCurrencies() const
 	{
@@ -82,6 +106,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Relics")
 	TArray<UJargonRelicDefinition*> GetRunRelics() const;
 
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Hero Boons")
+	TArray<UJargonRelicDefinition*> GetRunBoons() const;
+
 	const TArray<TObjectPtr<UJargonRelicDefinition>>& GetRunRelicsRef() const
 	{
 		return RunRelics;
@@ -90,8 +117,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Relics")
 	bool AddRunRelic(UJargonRelicDefinition* RelicDefinition);
 
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Hero Boons")
+	bool AddRunBoon(UJargonRelicDefinition* BoonDefinition);
+
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Relics")
 	bool HasRunRelic(const UJargonRelicDefinition* RelicDefinition) const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Hero Boons")
+	bool HasRunBoon(const UJargonRelicDefinition* BoonDefinition) const;
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
 	bool CanAffordCurrency(const FJargonCurrencyAmount& Cost) const;
@@ -119,6 +152,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Shop")
 	TArray<UCardPackDefinition*> GetAvailableCardPackOffers() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Shop")
+	void RefreshRunReserveCardsFromAvailableShopPacks();
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Shop")
 	bool PurchaseCardPack(UCardPackDefinition* PackDefinition, TArray<UCardDefinition*>& OutGrantedCards, FText& OutFailureReason);
@@ -219,6 +255,8 @@ public:
 protected:
 	static TArray<UCardDefinition*> ConvertCardArray(const TArray<TObjectPtr<UCardDefinition>>& SourceCards);
 	static bool RemoveCardFromCollection(TArray<TObjectPtr<UCardDefinition>>& CardCollection, UCardDefinition* Card);
+	bool DoesCardCollectionRespectElementLimit(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
+	int32 CountUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
 	void SetRunDeckInternal(const TArray<UCardDefinition*>& InitialDeck);
 	void NormalizeRunCurrencies();
 	void StorePostCombatReport(
@@ -262,8 +300,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "1"))
 	int32 MaxCopiesPerDeckCard = 3;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "1"))
+	int32 MaxRunDeckSize = 30;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "0", ToolTip = "Maximum number of unique non-neutral card elements allowed in the active run deck. Neutral cards do not count."))
+	int32 MaxRunDeckElements = 2;
+
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> ActiveRunDeck;
+
+	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
+	TArray<TObjectPtr<UCardDefinition>> RunOwnedCards;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> RunReserveCards;

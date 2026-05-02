@@ -103,14 +103,27 @@ struct JARGON_API FWeightedCardPackEntry
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pack")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pack", meta = (ToolTip = "Card definition this weighted pack entry can grant."))
 	TObjectPtr<UCardDefinition> CardDefinition = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pack", meta = (ClampMin = "0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pack", meta = (ClampMin = "0", ToolTip = "Relative roll weight. Entries with 0 or lower are skipped."))
 	int32 Weight = 1;
 
 	bool IsValid() const
 	{
 		return CardDefinition != nullptr && Weight > 0;
 	}
+};
+
+USTRUCT(BlueprintType)
+struct JARGON_API FJargonSavedDeckData
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Saved Deck")
+	FString DeckName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Saved Deck")
+	TArray<TSoftObjectPtr<UCardDefinition>> Cards;
 };

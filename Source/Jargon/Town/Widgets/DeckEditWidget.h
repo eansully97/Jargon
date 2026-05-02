@@ -132,6 +132,9 @@ protected:
 	TArray<TObjectPtr<UCardDefinition>> RunDeckCards;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
+	TArray<TObjectPtr<UCardDefinition>> RunOwnedCards;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TArray<TObjectPtr<UCardDefinition>> RunReserveCards;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")

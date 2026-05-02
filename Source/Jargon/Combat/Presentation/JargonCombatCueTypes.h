@@ -28,6 +28,7 @@ enum class EJargonCombatCueType : uint8
 	AoEPulse UMETA(DisplayName = "AoE Pulse"),
 	Push UMETA(DisplayName = "Push"),
 	PushCollision UMETA(DisplayName = "Push Collision"),
+	Pull UMETA(DisplayName = "Pull"),
 	TileEffectPlaced UMETA(DisplayName = "Tile Effect Placed"),
 	TileEffectTriggered UMETA(DisplayName = "Tile Effect Triggered"),
 	TileEffectExpired UMETA(DisplayName = "Tile Effect Expired"),
@@ -38,6 +39,12 @@ enum class EJargonCombatCueType : uint8
 	HeroAspectTriggered UMETA(DisplayName = "Hero Aspect Triggered"),
 	FreezeApplied UMETA(DisplayName = "Freeze Applied"),
 	FreezeConsumed UMETA(DisplayName = "Freeze Consumed"),
+	BurnApplied UMETA(DisplayName = "Burn Applied"),
+	BurnTick UMETA(DisplayName = "Burn Tick"),
+	RootApplied UMETA(DisplayName = "Root Applied"),
+	RootConsumed UMETA(DisplayName = "Root Consumed"),
+	VulnerableApplied UMETA(DisplayName = "Vulnerable Applied"),
+	VulnerableConsumed UMETA(DisplayName = "Vulnerable Consumed"),
 	ElementalBonusTriggered UMETA(DisplayName = "Elemental Bonus Triggered"),
 	HeroAspectActivated UMETA(DisplayName = "Hero Aspect Activated")
 };

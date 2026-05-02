@@ -7,6 +7,7 @@
 #include "Combat/Grid/GridBoard.h"
 #include "Combat/Grid/GridTile.h"
 #include "Combat/Units/BattleUnit.h"
+#include "Data/JargonTileEffectDefinition.h"
 #include "Engine/World.h"
 
 ABattleTileEffect::ABattleTileEffect()
@@ -25,6 +26,7 @@ ABattleTileEffect::ABattleTileEffect()
 
 	CurrentTile = nullptr;
 	SourceCard = nullptr;
+	TileEffectDefinition = nullptr;
 	SourceTeam = ETeam::Player;
 	CardCategory = ECardCategory::Spell;
 	EffectRadius = 0;
@@ -60,6 +62,27 @@ void ABattleTileEffect::InitializeFromCard(
 	EffectValue = FMath::Max(0, InEffectValue);
 	EffectRadius = FMath::Max(0, InEffectRadius);
 	RemainingDuration = FMath::Max(0, InDuration);
+
+	BP_OnInitializedFromCard();
+}
+
+void ABattleTileEffect::InitializeFromDefinition(
+	UCardDefinition* InSourceCard,
+	ETeam InSourceTeam,
+	UJargonTileEffectDefinition* InDefinition)
+{
+	if (!InDefinition)
+	{
+		return;
+	}
+
+	SourceCard = InSourceCard;
+	TileEffectDefinition = InDefinition;
+	SourceTeam = InSourceTeam;
+	CardCategory = InDefinition->TileEffectCategory;
+	EffectValue = 0;
+	EffectRadius = FMath::Max(0, InDefinition->EffectRadius);
+	RemainingDuration = FMath::Max(0, InDefinition->Duration);
 
 	BP_OnInitializedFromCard();
 }
