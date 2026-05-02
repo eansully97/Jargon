@@ -36,7 +36,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run")
 	void StartNewRun(const TArray<UCardDefinition*>& InitialDeck, const FJargonCurrencyAmount& StartingCurrency);
 
-	void EnsureRunInitializedFromSeedDeck(const TArray<TObjectPtr<UCardDefinition>>& SeedDeck);
+	void EnsureRunInitializedFromSeedDeck(const TArray<UCardDefinition*>& SeedDeck);
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run")
 	void ResetRunState();
@@ -95,6 +95,15 @@ public:
 	int32 GetRunDeckElementCount() const;
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	TArray<EJargonElementType> GetRunDeckElements() const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	FJargonDeckElementSummary GetRunDeckElementSummary() const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	FText GetCardElementDisplayText(EJargonElementType CardElement) const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
 	bool WouldRunDeckRespectElementLimitWithCard(const UCardDefinition* Card) const;
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
@@ -102,6 +111,9 @@ public:
 	{
 		return RunCurrencies;
 	}
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
+	FJargonCurrencyAmount GetCardRecycleValue(const UCardDefinition* Card) const;
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Relics")
 	TArray<UJargonRelicDefinition*> GetRunRelics() const;
@@ -140,6 +152,33 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Deck")
 	bool MoveCardFromDeckToReserve(UCardDefinition* Card);
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetRunDeckCardCopyCount(const UCardDefinition* Card) const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetOwnedRunCardCopyCount(const UCardDefinition* Card) const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetOwnedRunReserveCardCopyCount(const UCardDefinition* Card) const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	bool CanRecycleOwnedRunCard(const UCardDefinition* Card, FText& OutBlockedReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Deck")
+	bool RecycleOwnedRunCard(UCardDefinition* Card, FJargonCurrencyAmount& OutCurrencyAwarded, FText& OutFailureReason);
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	int32 GetRecycleAllExtraReserveCardCopyCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
+	FJargonCurrencyAmount GetRecycleAllExtraReserveCardsValue() const;
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Deck")
+	bool CanRecycleAllExtraReserveCards(FText& OutBlockedReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Deck")
+	bool RecycleAllExtraReserveCards(int32& OutCardsRecycled, FJargonCurrencyAmount& OutCurrencyAwarded, FText& OutFailureReason);
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Town")
 	void SetTownMapName(const FName& InTownMapName);
@@ -257,6 +296,7 @@ protected:
 	static bool RemoveCardFromCollection(TArray<TObjectPtr<UCardDefinition>>& CardCollection, UCardDefinition* Card);
 	bool DoesCardCollectionRespectElementLimit(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
 	int32 CountUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
+	TArray<EJargonElementType> GatherUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
 	void SetRunDeckInternal(const TArray<UCardDefinition*>& InitialDeck);
 	void NormalizeRunCurrencies();
 	void StorePostCombatReport(
@@ -267,6 +307,7 @@ protected:
 	);
 
 	int32 CountCardCopiesInCollection(const TArray<TObjectPtr<UCardDefinition>>& Collection, const UCardDefinition* Card) const;
+	void GatherOwnedRunReserveCardCopies(TArray<UCardDefinition*>& OutCards) const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
@@ -305,6 +346,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "0", ToolTip = "Maximum number of unique non-neutral card elements allowed in the active run deck. Neutral cards do not count."))
 	int32 MaxRunDeckElements = 2;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Economy", meta = (ToolTip = "Currency awarded when recycling one owned reserve card copy. Cards currently in the active run deck cannot be recycled until removed."))
+	FJargonCurrencyAmount CardRecycleValue;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> ActiveRunDeck;

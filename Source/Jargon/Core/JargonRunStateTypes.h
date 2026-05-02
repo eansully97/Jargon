@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/Effects/JargonEffectTypes.h"
 #include "JargonRunStateTypes.generated.h"
 
 class UCardDefinition;
@@ -95,6 +96,31 @@ public:
 		VictoryBonusCurrency = FJargonCurrencyAmount();
 		TotalCurrencyEarned = FJargonCurrencyAmount();
 	}
+};
+
+USTRUCT(BlueprintType)
+struct JARGON_API FJargonDeckElementSummary
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
+	int32 CurrentElementCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
+	int32 MaxElementCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
+	TArray<EJargonElementType> ActiveElements;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
+	TArray<FText> ActiveElementTexts;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
+	FText SummaryText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
+	bool bIsWithinLimit = true;
 };
 
 USTRUCT(BlueprintType)

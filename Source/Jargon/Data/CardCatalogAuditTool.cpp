@@ -202,6 +202,72 @@ struct FCardRewritePlanRow
 	FString ProposedRulesText;
 };
 
+struct FCardElementCoverageAuditRow
+{
+	FString Element;
+	int32 ProductionCards = 0;
+	int32 SpellCards = 0;
+	int32 SummonCards = 0;
+	int32 TrapCards = 0;
+	int32 AuraCards = 0;
+	int32 DamageCards = 0;
+	int32 DefenseCards = 0;
+	int32 HealingCards = 0;
+	int32 ControlCards = 0;
+	int32 MobilityCards = 0;
+	int32 DrawCards = 0;
+	int32 EnergyCards = 0;
+	int32 Generators = 0;
+	int32 Payoffs = 0;
+	int32 TacticalCards = 0;
+	int32 UniqueOperations = 0;
+	FString StatusTerms;
+	FString CardNames;
+	FString MissingCardTypes;
+	FString MissingRoles;
+	FString CoverageStatus;
+	FString RecommendedFocus;
+};
+
+struct FElementPackGapAuditRow
+{
+	FString PackAssetPath;
+	FString PackName;
+	FString DetectedElement;
+	int32 NeutralSupportCount = 0;
+	int32 NeutralSupportWeight = 0;
+	int32 ElementPoolCount = 0;
+	int32 ElementPoolWeight = 0;
+	int32 OtherElementCount = 0;
+	int32 DebugCardCount = 0;
+	int32 SpellCards = 0;
+	int32 SummonCards = 0;
+	int32 TrapCards = 0;
+	int32 AuraCards = 0;
+	FString RoleSpread;
+	FString ElementMix;
+	FString RepeatedFingerprintGroups;
+	FString MissingCardTypes;
+	FString MissingRoles;
+	FString PackStatus;
+	FString Recommendations;
+};
+
+struct FCardContentRecommendationRow
+{
+	FString Priority;
+	FString Element;
+	FString SuggestedCardType;
+	FString RoleFilled;
+	FString Reason;
+	FString IntendedOperation;
+	FString Delivery;
+	FString Payload;
+	FString DraftRulesText;
+	FString CardArtPrompt;
+	FString SourceReport;
+};
+
 struct FCardBalanceEstimate
 {
 	int32 BaseBudget = 0;
@@ -771,10 +837,6 @@ void AddCardEffectSpecWarnings(
 		{
 			OutFatalWarnings.Add(FString::Printf(TEXT("Invalid: %s requires RuntimeSummonedUnitClass payload."), *EffectLabel));
 		}
-		if (EffectSpec.SummonedUnitDefinition && EffectSpec.RuntimeSummonedUnitClass)
-		{
-			OutSoftWarnings.Add(FString::Printf(TEXT("Info: %s uses a data-driven summon definition plus explicit runtime class."), *EffectLabel));
-		}
 		break;
 
 	case EJargonEffectOperation::PlaceTileEffect:
@@ -1110,6 +1172,58 @@ void AddUniqueString(TArray<FString>& Values, const FString& Value)
 	{
 		Values.AddUnique(Value);
 	}
+}
+
+FString BuildStringCountSummary(const TMap<FString, int32>& CountMap)
+{
+	TArray<FString> Parts;
+	for (const TPair<FString, int32>& Pair : CountMap)
+	{
+		Parts.Add(FString::Printf(TEXT("%s=%d"), *Pair.Key, Pair.Value));
+	}
+	Parts.Sort();
+	return JoinStrings(Parts, TEXT("; "));
+}
+
+bool StringListContainsAny(const TArray<FString>& Values, const TArray<FString>& AcceptedValues)
+{
+	for (const FString& AcceptedValue : AcceptedValues)
+	{
+		if (Values.Contains(AcceptedValue))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+TArray<EJargonElementType> GetOrderedContentGapElements()
+{
+	return
+	{
+		EJargonElementType::None,
+		EJargonElementType::Fire,
+		EJargonElementType::Frost,
+		EJargonElementType::Storm,
+		EJargonElementType::Nature,
+		EJargonElementType::Radiance,
+		EJargonElementType::Quietus
+	};
+}
+
+FString GetStatusKindName(EJargonStatusEffectKind StatusKind)
+{
+	return GetAuditEnumDisplayName(StaticEnum<EJargonStatusEffectKind>(), static_cast<int64>(StatusKind));
+}
+
+FString GetCardOwnedElementName(const UCardDefinition* Card)
+{
+	return Card ? GetElementTypeName(Card->CardElement) : TEXT("Neutral");
+}
+
+bool IsProductionCard(const UCardDefinition* Card)
+{
+	return Card && !IsLikelyDebugPathOrName(Card->GetPathName(), Card->GetName());
 }
 
 FString GetPluralSuffix(int32 Count)
@@ -1717,11 +1831,40 @@ TArray<FString> BuildRoleTagsForCard(const UCardDefinition* Card)
 		case EJargonEffectOperation::ApplyStun:
 		case EJargonEffectOperation::ApplyFreeze:
 		case EJargonEffectOperation::ApplyRoot:
-		case EJargonEffectOperation::ApplyStatus:
 		case EJargonEffectOperation::PushTarget:
 		case EJargonEffectOperation::PullTarget:
 		case EJargonEffectOperation::DestroyTileEffect:
 			AddUniqueString(RoleTags, TEXT("Control"));
+			break;
+
+		case EJargonEffectOperation::ApplyStatus:
+			if (EffectSpec.StatusEffectDefinition)
+			{
+				switch (EffectSpec.StatusEffectDefinition->StatusKind)
+				{
+				case EJargonStatusEffectKind::Burn:
+					AddUniqueString(RoleTags, TEXT("Damage"));
+					AddUniqueString(RoleTags, TEXT("Burn"));
+					AddUniqueString(RoleTags, TEXT("Damage Over Time"));
+					break;
+
+				case EJargonStatusEffectKind::Vulnerable:
+					AddUniqueString(RoleTags, TEXT("Damage Setup"));
+					AddUniqueString(RoleTags, TEXT("Control"));
+					break;
+
+				case EJargonStatusEffectKind::Stun:
+				case EJargonStatusEffectKind::Freeze:
+				case EJargonStatusEffectKind::Root:
+				default:
+					AddUniqueString(RoleTags, TEXT("Control"));
+					break;
+				}
+			}
+			else
+			{
+				AddUniqueString(RoleTags, TEXT("Control"));
+			}
 			break;
 
 		case EJargonEffectOperation::ApplyVulnerable:
@@ -1809,6 +1952,8 @@ TArray<FString> BuildElementTagsForCard(const UCardDefinition* Card)
 	{
 		return ElementTags;
 	}
+
+	AddUniqueString(ElementTags, GetCardOwnedElementName(Card));
 
 	const auto AddElementFromEffect = [&ElementTags](const FJargonEffectSpec& EffectSpec)
 	{
@@ -2444,6 +2589,871 @@ TArray<FPackExperienceAuditRow> BuildPackExperienceRows(const TArray<UCardPackDe
 	return Rows;
 }
 
+void AddStatusTermForEffect(const FJargonEffectSpec& EffectSpec, TArray<FString>& InOutStatusTerms)
+{
+	switch (EffectSpec.Operation)
+	{
+	case EJargonEffectOperation::ApplyStun:
+		AddUniqueString(InOutStatusTerms, TEXT("Stun"));
+		break;
+
+	case EJargonEffectOperation::ApplyFreeze:
+		AddUniqueString(InOutStatusTerms, TEXT("Freeze"));
+		break;
+
+	case EJargonEffectOperation::ApplyBurn:
+		AddUniqueString(InOutStatusTerms, TEXT("Burn"));
+		break;
+
+	case EJargonEffectOperation::ApplyRoot:
+		AddUniqueString(InOutStatusTerms, TEXT("Root"));
+		break;
+
+	case EJargonEffectOperation::ApplyVulnerable:
+		AddUniqueString(InOutStatusTerms, TEXT("Vulnerable"));
+		break;
+
+	case EJargonEffectOperation::ApplyStatus:
+		if (EffectSpec.StatusEffectDefinition)
+		{
+			const FString StatusDisplayName = EffectSpec.StatusEffectDefinition->DisplayName.ToString().TrimStartAndEnd();
+			AddUniqueString(
+				InOutStatusTerms,
+				StatusDisplayName.IsEmpty()
+					? GetStatusKindName(EffectSpec.StatusEffectDefinition->StatusKind)
+					: StatusDisplayName);
+		}
+		else
+		{
+			AddUniqueString(InOutStatusTerms, TEXT("Status"));
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
+FString GetElementLaneDirection(const FString& ElementName)
+{
+	if (ElementName == TEXT("Fire"))
+	{
+		return TEXT("burn, hazard pressure, risk damage");
+	}
+	if (ElementName == TEXT("Frost"))
+	{
+		return TEXT("freeze/root control, shielded setup, shatter payoff");
+	}
+	if (ElementName == TEXT("Storm"))
+	{
+		return TEXT("chain, push/pull, movement, draw tempo");
+	}
+	if (ElementName == TEXT("Nature"))
+	{
+		return TEXT("root, healing, shields, growth/sustain");
+	}
+	if (ElementName == TEXT("Radiance"))
+	{
+		return TEXT("shield, heal, protection, smite payoff");
+	}
+	if (ElementName == TEXT("Quietus"))
+	{
+		return TEXT("vulnerable, drain, death/reaping payoff");
+	}
+
+	return TEXT("simple support, positioning, draw, and defensive utility");
+}
+
+FString GetElementStatusKeyword(const FString& ElementName)
+{
+	if (ElementName == TEXT("Fire"))
+	{
+		return TEXT("Burn");
+	}
+	if (ElementName == TEXT("Frost"))
+	{
+		return TEXT("Freeze");
+	}
+	if (ElementName == TEXT("Storm"))
+	{
+		return TEXT("Stun");
+	}
+	if (ElementName == TEXT("Nature"))
+	{
+		return TEXT("Root");
+	}
+	if (ElementName == TEXT("Quietus"))
+	{
+		return TEXT("Vulnerable");
+	}
+
+	return TEXT("Shield");
+}
+
+FString GetElementThemeNoun(const FString& ElementName)
+{
+	if (ElementName == TEXT("Fire"))
+	{
+		return TEXT("cinder");
+	}
+	if (ElementName == TEXT("Frost"))
+	{
+		return TEXT("glacier");
+	}
+	if (ElementName == TEXT("Storm"))
+	{
+		return TEXT("static");
+	}
+	if (ElementName == TEXT("Nature"))
+	{
+		return TEXT("bramble");
+	}
+	if (ElementName == TEXT("Radiance"))
+	{
+		return TEXT("sunward");
+	}
+	if (ElementName == TEXT("Quietus"))
+	{
+		return TEXT("grave");
+	}
+
+	return TEXT("neutral");
+}
+
+void BuildRecommendationDetails(
+	const FString& ElementName,
+	const FString& SuggestedCardType,
+	const FString& RoleFilled,
+	FString& OutOperation,
+	FString& OutDelivery,
+	FString& OutPayload,
+	FString& OutRulesText)
+{
+	const FString StatusKeyword = GetElementStatusKeyword(ElementName);
+	const FString ThemeNoun = GetElementThemeNoun(ElementName);
+
+	if (SuggestedCardType == TEXT("Summon"))
+	{
+		OutOperation = TEXT("SummonUnit");
+		OutDelivery = TEXT("ExplicitTile");
+		OutPayload = FString::Printf(TEXT("%s summon definition + runtime summon BP class"), *ElementName);
+		OutRulesText = FString::Printf(TEXT("Summon a %s ally."), *ThemeNoun);
+		return;
+	}
+
+	if (SuggestedCardType == TEXT("Trap"))
+	{
+		OutOperation = TEXT("PlaceTileEffect");
+		OutDelivery = TEXT("ExplicitTile");
+		OutPayload = FString::Printf(TEXT("%s trap tile-effect definition + runtime trap BP class"), *ElementName);
+		OutRulesText = FString::Printf(TEXT("Place a %s trap."), *ThemeNoun);
+		return;
+	}
+
+	if (SuggestedCardType == TEXT("Aura"))
+	{
+		OutOperation = TEXT("PlaceTileEffect");
+		OutDelivery = TEXT("ExplicitTile");
+		OutPayload = FString::Printf(TEXT("%s aura tile-effect definition + runtime aura BP class"), *ElementName);
+		OutRulesText = FString::Printf(TEXT("Place a %s aura."), *ThemeNoun);
+		return;
+	}
+
+	if (RoleFilled == TEXT("Generator"))
+	{
+		OutOperation = TEXT("GainElementCharge");
+		OutDelivery = TEXT("Source");
+		OutPayload = FString::Printf(TEXT("Element=%s Value=1"), *ElementName);
+		OutRulesText = FString::Printf(TEXT("Gain 1 %s charge."), *ElementName);
+		return;
+	}
+
+	if (RoleFilled == TEXT("Element Payoff"))
+	{
+		OutOperation = ElementName == TEXT("Radiance") ? TEXT("ApplyShield") : TEXT("ApplyStatus");
+		OutDelivery = ElementName == TEXT("Radiance") ? TEXT("Source or ExplicitFriendly") : TEXT("ExplicitUnit");
+		OutPayload = FString::Printf(TEXT("Elemental bonus requires %s charges; payload follows %s lane"), *ElementName, *GetElementLaneDirection(ElementName));
+		OutRulesText = ElementName == TEXT("Radiance")
+			? FString::Printf(TEXT("Gain 1 %s charge. Spend 2 %s: Apply 3 Shield."), *ElementName, *ElementName)
+			: FString::Printf(TEXT("Gain 1 %s charge. Spend 2 %s: Apply 2 %s."), *ElementName, *ElementName, *StatusKeyword);
+		return;
+	}
+
+	if (RoleFilled == TEXT("Damage"))
+	{
+		OutOperation = ElementName == TEXT("Radiance") ? TEXT("DealDamage") : TEXT("DealDamage + ApplyStatus");
+		OutDelivery = TEXT("ExplicitUnit");
+		OutPayload = ElementName == TEXT("Radiance")
+			? TEXT("Damage=2")
+			: FString::Printf(TEXT("Damage=1 Status=%s Value=2"), *StatusKeyword);
+		OutRulesText = ElementName == TEXT("Radiance")
+			? TEXT("Deal 2 damage.")
+			: FString::Printf(TEXT("Deal 1 damage. Apply 2 %s."), *StatusKeyword);
+		return;
+	}
+
+	if (RoleFilled == TEXT("Defense/Utility"))
+	{
+		if (ElementName == TEXT("Fire"))
+		{
+			OutOperation = TEXT("GainElementCharge + ApplyShield");
+			OutDelivery = TEXT("Source");
+			OutPayload = TEXT("Fire=1 Shield=1");
+			OutRulesText = TEXT("Gain 1 Fire charge. Apply 1 Shield.");
+			return;
+		}
+		if (ElementName == TEXT("Frost") || ElementName == TEXT("Radiance") || ElementName == TEXT("Nature"))
+		{
+			OutOperation = ElementName == TEXT("Nature") ? TEXT("Heal + ApplyShield") : TEXT("ApplyShield");
+			OutDelivery = TEXT("Source or ExplicitFriendly");
+			OutPayload = ElementName == TEXT("Nature") ? TEXT("Heal=1 Shield=1") : TEXT("Shield=3");
+			OutRulesText = ElementName == TEXT("Nature") ? TEXT("Heal 1 HP. Apply 1 Shield.") : TEXT("Apply 3 Shield.");
+			return;
+		}
+		if (ElementName == TEXT("Storm"))
+		{
+			OutOperation = TEXT("DrawCards");
+			OutDelivery = TEXT("Source");
+			OutPayload = TEXT("Value=1");
+			OutRulesText = TEXT("Draw 1 card.");
+			return;
+		}
+
+		OutOperation = TEXT("DealDamage + Heal");
+		OutDelivery = TEXT("ExplicitUnit + Source");
+		OutPayload = TEXT("Damage=1 Heal=1");
+		OutRulesText = TEXT("Deal 1 damage. Heal 1 HP.");
+		return;
+	}
+
+	OutOperation = ElementName == TEXT("Storm") ? TEXT("PullTarget") : TEXT("ApplyStatus");
+	OutDelivery = TEXT("ExplicitUnit");
+	OutPayload = ElementName == TEXT("Storm")
+		? TEXT("PullDistance=2")
+		: FString::Printf(TEXT("Status=%s Value=1"), *StatusKeyword);
+	OutRulesText = ElementName == TEXT("Storm")
+		? TEXT("Pull the target 2 tiles.")
+		: FString::Printf(TEXT("Apply 1 %s."), *StatusKeyword);
+}
+
+FString BuildRecommendationArtPrompt(
+	const FString& ElementName,
+	const FString& SuggestedCardType,
+	const FString& RoleFilled,
+	const FString& DraftRulesText)
+{
+	return FString::Printf(
+		TEXT("Fantasy tactical card art for a %s %s card focused on %s. Show %s magic in a readable board-game composition. Rules inspiration: %s"),
+		*ElementName,
+		*SuggestedCardType,
+		*RoleFilled,
+		*GetElementLaneDirection(ElementName),
+		*DraftRulesText);
+}
+
+void AddCardContentRecommendation(
+	TArray<FCardContentRecommendationRow>& InOutRows,
+	TSet<FString>& InOutKeys,
+	const FString& Priority,
+	const FString& ElementName,
+	const FString& SuggestedCardType,
+	const FString& RoleFilled,
+	const FString& Reason,
+	const FString& SourceReport)
+{
+	const FString Key = FString::Printf(TEXT("%s|%s|%s|%s"), *Priority, *ElementName, *SuggestedCardType, *RoleFilled);
+	if (InOutKeys.Contains(Key))
+	{
+		return;
+	}
+	InOutKeys.Add(Key);
+
+	FCardContentRecommendationRow Row;
+	Row.Priority = Priority;
+	Row.Element = ElementName;
+	Row.SuggestedCardType = SuggestedCardType;
+	Row.RoleFilled = RoleFilled;
+	Row.Reason = Reason;
+	Row.SourceReport = SourceReport;
+	BuildRecommendationDetails(
+		ElementName,
+		SuggestedCardType,
+		RoleFilled,
+		Row.IntendedOperation,
+		Row.Delivery,
+		Row.Payload,
+		Row.DraftRulesText);
+	Row.CardArtPrompt = BuildRecommendationArtPrompt(ElementName, SuggestedCardType, RoleFilled, Row.DraftRulesText);
+	InOutRows.Add(Row);
+}
+
+TArray<FCardElementCoverageAuditRow> BuildCardElementCoverageRows(const TArray<UCardDefinition*>& Cards)
+{
+	TArray<FCardElementCoverageAuditRow> Rows;
+	const TArray<EJargonElementType> Elements = GetOrderedContentGapElements();
+	Rows.Reserve(Elements.Num());
+
+	for (const EJargonElementType ElementType : Elements)
+	{
+		FCardElementCoverageAuditRow Row;
+		Row.Element = GetElementTypeName(ElementType);
+
+		TArray<FString> CardNames;
+		TArray<FString> Operations;
+		TArray<FString> StatusTerms;
+
+		for (const UCardDefinition* Card : Cards)
+		{
+			if (!IsProductionCard(Card) || Card->CardElement != ElementType)
+			{
+				continue;
+			}
+
+			Row.ProductionCards++;
+			CardNames.Add(TextOrFallbackName(Card->DisplayName, Card));
+
+			switch (Card->Category)
+			{
+			case ECardCategory::Spell:
+				Row.SpellCards++;
+				break;
+			case ECardCategory::Summon:
+				Row.SummonCards++;
+				break;
+			case ECardCategory::Trap:
+				Row.TrapCards++;
+				break;
+			case ECardCategory::Aura:
+				Row.AuraCards++;
+				break;
+			default:
+				break;
+			}
+
+			const TArray<FString> RoleTags = BuildRoleTagsForCard(Card);
+			if (RoleTags.Contains(TEXT("Damage")))
+			{
+				Row.DamageCards++;
+			}
+			if (RoleTags.Contains(TEXT("Defense")))
+			{
+				Row.DefenseCards++;
+			}
+			if (RoleTags.Contains(TEXT("Healing")))
+			{
+				Row.HealingCards++;
+			}
+			if (RoleTags.Contains(TEXT("Control")))
+			{
+				Row.ControlCards++;
+			}
+			if (RoleTags.Contains(TEXT("Mobility")))
+			{
+				Row.MobilityCards++;
+			}
+			if (RoleTags.Contains(TEXT("Draw")))
+			{
+				Row.DrawCards++;
+			}
+			if (RoleTags.Contains(TEXT("Energy")))
+			{
+				Row.EnergyCards++;
+			}
+			if (RoleTags.Contains(TEXT("Generator")))
+			{
+				Row.Generators++;
+			}
+			if (RoleTags.Contains(TEXT("Element Payoff")))
+			{
+				Row.Payoffs++;
+			}
+			const TArray<FString> TacticalRoleTags =
+			{
+				TEXT("Mobility"),
+				TEXT("Control"),
+				TEXT("Summon"),
+				TEXT("Trap"),
+				TEXT("Aura"),
+				TEXT("Tile Effect"),
+				TEXT("Draw"),
+				TEXT("Energy")
+			};
+			if (StringListContainsAny(RoleTags, TacticalRoleTags))
+			{
+				Row.TacticalCards++;
+			}
+
+			TArray<FJargonEffectSpec> AuditEffects;
+			TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+			BuildAuditEffectSpecs(Card, AuditEffects);
+			BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+			for (const FJargonEffectSpec& EffectSpec : AuditEffects)
+			{
+				AddUniqueString(Operations, GetCardEffectOperationName(EffectSpec.Operation));
+				AddStatusTermForEffect(EffectSpec, StatusTerms);
+			}
+			for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
+			{
+				for (const FJargonEffectSpec& BonusEffect : BonusGroup.BonusEffects)
+				{
+					AddUniqueString(Operations, GetCardEffectOperationName(BonusEffect.Operation));
+					AddStatusTermForEffect(BonusEffect, StatusTerms);
+				}
+			}
+		}
+
+		CardNames.Sort();
+		Operations.Sort();
+		StatusTerms.Sort();
+		Row.UniqueOperations = Operations.Num();
+		Row.StatusTerms = StatusTerms.Num() > 0 ? JoinStrings(StatusTerms, TEXT("; ")) : TEXT("None");
+		Row.CardNames = JoinStrings(CardNames, TEXT("; "));
+
+		TArray<FString> MissingCardTypes;
+		if (Row.Element != TEXT("Neutral"))
+		{
+			if (Row.SpellCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Spell"));
+			}
+			if (Row.SummonCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Summon"));
+			}
+			if (Row.TrapCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Trap"));
+			}
+			if (Row.AuraCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Aura"));
+			}
+		}
+
+		TArray<FString> MissingRoles;
+		if (Row.Element == TEXT("Neutral"))
+		{
+			if (Row.ProductionCards < 4)
+			{
+				MissingRoles.Add(TEXT("support pool below four cards"));
+			}
+			if (Row.SpellCards < 4)
+			{
+				MissingRoles.Add(TEXT("needs more simple support spells"));
+			}
+		}
+		else
+		{
+			if (Row.Generators <= 0)
+			{
+				MissingRoles.Add(TEXT("Generator"));
+			}
+			else if (Row.Generators < 2)
+			{
+				MissingRoles.Add(TEXT("Generator under target"));
+			}
+			if (Row.Payoffs <= 0)
+			{
+				MissingRoles.Add(TEXT("Element Payoff"));
+			}
+			else if (Row.Payoffs < 2)
+			{
+				MissingRoles.Add(TEXT("Element Payoff under target"));
+			}
+			if (Row.DamageCards <= 0)
+			{
+				MissingRoles.Add(TEXT("Damage"));
+			}
+			if ((Row.DefenseCards + Row.HealingCards + Row.ControlCards + Row.DrawCards + Row.EnergyCards) <= 0)
+			{
+				MissingRoles.Add(TEXT("Defense/Utility"));
+			}
+			if (Row.TacticalCards <= 0)
+			{
+				MissingRoles.Add(TEXT("Tactical"));
+			}
+		}
+
+		Row.MissingCardTypes = MissingCardTypes.Num() > 0 ? JoinStrings(MissingCardTypes, TEXT("; ")) : TEXT("None");
+		Row.MissingRoles = MissingRoles.Num() > 0 ? JoinStrings(MissingRoles, TEXT("; ")) : TEXT("None");
+
+		if (MissingCardTypes.Num() > 0 || MissingRoles.Contains(TEXT("Generator")) || MissingRoles.Contains(TEXT("Element Payoff")) || MissingRoles.Contains(TEXT("Damage")) || MissingRoles.Contains(TEXT("Defense/Utility")) || MissingRoles.Contains(TEXT("Tactical")))
+		{
+			Row.CoverageStatus = TEXT("HighGap");
+		}
+		else if (MissingRoles.Num() > 0 || (Row.Element != TEXT("Neutral") && Row.ProductionCards < 8))
+		{
+			Row.CoverageStatus = TEXT("MediumGap");
+		}
+		else
+		{
+			Row.CoverageStatus = TEXT("Covered");
+		}
+
+		Row.RecommendedFocus = Row.CoverageStatus == TEXT("Covered")
+			? FString::Printf(TEXT("%s has baseline coverage. Next additions can target taste and pack feel."), *Row.Element)
+			: FString::Printf(TEXT("Focus %s on %s. Missing types: %s. Missing roles: %s."), *Row.Element, *GetElementLaneDirection(Row.Element), *Row.MissingCardTypes, *Row.MissingRoles);
+
+		Rows.Add(Row);
+	}
+
+	return Rows;
+}
+
+TArray<FElementPackGapAuditRow> BuildElementPackGapRows(const TArray<UCardPackDefinition*>& Packs)
+{
+	TArray<FElementPackGapAuditRow> Rows;
+	Rows.Reserve(Packs.Num());
+
+	for (const UCardPackDefinition* Pack : Packs)
+	{
+		if (!Pack)
+		{
+			continue;
+		}
+
+		FElementPackGapAuditRow Row;
+		Row.PackAssetPath = Pack->GetPathName();
+		Row.PackName = TextOrFallbackName(Pack->DisplayName, Pack);
+
+		TMap<FString, int32> ElementCounts;
+		TMap<FString, int32> RoleCounts;
+		TMap<FString, int32> FingerprintCounts;
+		TSet<EJargonElementType> NonNeutralElements;
+		TArray<FString> RepeatedFingerprints;
+
+		for (const FWeightedCardPackEntry& Entry : Pack->CardPool)
+		{
+			const UCardDefinition* Card = Entry.CardDefinition.Get();
+			if (!Card)
+			{
+				continue;
+			}
+
+			const bool bDebug = !IsProductionCard(Card);
+			if (bDebug)
+			{
+				Row.DebugCardCount++;
+				continue;
+			}
+
+			const FString ElementName = GetCardOwnedElementName(Card);
+			ElementCounts.FindOrAdd(ElementName)++;
+			FingerprintCounts.FindOrAdd(BuildCardSamenessFingerprint(Card))++;
+
+			if (Card->CardElement == EJargonElementType::None)
+			{
+				Row.NeutralSupportCount++;
+				Row.NeutralSupportWeight += Entry.Weight;
+			}
+			else
+			{
+				NonNeutralElements.Add(Card->CardElement);
+				Row.ElementPoolCount++;
+				Row.ElementPoolWeight += Entry.Weight;
+			}
+
+			switch (Card->Category)
+			{
+			case ECardCategory::Spell:
+				Row.SpellCards++;
+				break;
+			case ECardCategory::Summon:
+				Row.SummonCards++;
+				break;
+			case ECardCategory::Trap:
+				Row.TrapCards++;
+				break;
+			case ECardCategory::Aura:
+				Row.AuraCards++;
+				break;
+			default:
+				break;
+			}
+
+			for (const FString& RoleTag : BuildRoleTagsForCard(Card))
+			{
+				RoleCounts.FindOrAdd(RoleTag)++;
+			}
+		}
+
+		TArray<FString> NonNeutralElementNames;
+		for (const EJargonElementType ElementType : NonNeutralElements)
+		{
+			NonNeutralElementNames.Add(GetElementTypeName(ElementType));
+		}
+		NonNeutralElementNames.Sort();
+		if (NonNeutralElementNames.Num() == 1)
+		{
+			Row.DetectedElement = NonNeutralElementNames[0];
+		}
+		else if (NonNeutralElementNames.Num() > 1)
+		{
+			Row.DetectedElement = FString::Printf(TEXT("Mixed: %s"), *JoinStrings(NonNeutralElementNames, TEXT("; ")));
+			Row.OtherElementCount = Row.ElementPoolCount;
+		}
+		else
+		{
+			Row.DetectedElement = Row.NeutralSupportCount > 0 ? TEXT("NeutralOnly") : TEXT("None");
+		}
+
+		if (NonNeutralElementNames.Num() == 1)
+		{
+			const FString MainElementName = NonNeutralElementNames[0];
+			for (const FWeightedCardPackEntry& Entry : Pack->CardPool)
+			{
+				const UCardDefinition* Card = Entry.CardDefinition.Get();
+				if (IsProductionCard(Card) && Card->CardElement != EJargonElementType::None && GetCardOwnedElementName(Card) != MainElementName)
+				{
+					Row.OtherElementCount++;
+				}
+			}
+		}
+
+		for (const TPair<FString, int32>& Pair : FingerprintCounts)
+		{
+			if (Pair.Value > 1)
+			{
+				RepeatedFingerprints.Add(FString::Printf(TEXT("%s=%d"), *Pair.Key, Pair.Value));
+			}
+		}
+		RepeatedFingerprints.Sort();
+		Row.RepeatedFingerprintGroups = RepeatedFingerprints.Num() > 0 ? JoinStrings(RepeatedFingerprints, TEXT("; ")) : TEXT("None");
+		Row.RoleSpread = BuildStringCountSummary(RoleCounts);
+		Row.ElementMix = BuildStringCountSummary(ElementCounts);
+
+		TArray<FString> MissingCardTypes;
+		if (NonNeutralElementNames.Num() == 1)
+		{
+			if (Row.SpellCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Spell"));
+			}
+			if (Row.SummonCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Summon"));
+			}
+			if (Row.TrapCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Trap"));
+			}
+			if (Row.AuraCards <= 0)
+			{
+				MissingCardTypes.Add(TEXT("Aura"));
+			}
+		}
+
+		TArray<FString> MissingRoles;
+		if (NonNeutralElementNames.Num() == 1)
+		{
+			if (!RoleCounts.Contains(TEXT("Generator")))
+			{
+				MissingRoles.Add(TEXT("Generator"));
+			}
+			if (!RoleCounts.Contains(TEXT("Element Payoff")))
+			{
+				MissingRoles.Add(TEXT("Element Payoff"));
+			}
+			if (!RoleCounts.Contains(TEXT("Damage")))
+			{
+				MissingRoles.Add(TEXT("Damage"));
+			}
+			if (!RoleCounts.Contains(TEXT("Defense")) && !RoleCounts.Contains(TEXT("Healing")) && !RoleCounts.Contains(TEXT("Control")) && !RoleCounts.Contains(TEXT("Draw")) && !RoleCounts.Contains(TEXT("Energy")))
+			{
+				MissingRoles.Add(TEXT("Defense/Utility"));
+			}
+			if (!RoleCounts.Contains(TEXT("Mobility")) && !RoleCounts.Contains(TEXT("Control")) && !RoleCounts.Contains(TEXT("Summon")) && !RoleCounts.Contains(TEXT("Trap")) && !RoleCounts.Contains(TEXT("Aura")) && !RoleCounts.Contains(TEXT("Tile Effect")) && !RoleCounts.Contains(TEXT("Draw")))
+			{
+				MissingRoles.Add(TEXT("Tactical"));
+			}
+		}
+
+		Row.MissingCardTypes = MissingCardTypes.Num() > 0 ? JoinStrings(MissingCardTypes, TEXT("; ")) : TEXT("None");
+		Row.MissingRoles = MissingRoles.Num() > 0 ? JoinStrings(MissingRoles, TEXT("; ")) : TEXT("None");
+
+		TArray<FString> Recommendations;
+		if (Row.NeutralSupportCount <= 0)
+		{
+			Recommendations.Add(TEXT("Add Neutral support pool entries so each element pack has flexible deck-building glue."));
+		}
+		if (Row.ElementPoolCount <= 0)
+		{
+			Recommendations.Add(TEXT("Add production element cards or remove this pack from the shop until it has a real lane."));
+		}
+		if (NonNeutralElementNames.Num() > 1)
+		{
+			Recommendations.Add(TEXT("Element pack contains multiple non-neutral elements; split or remove off-element entries."));
+		}
+		if (MissingCardTypes.Num() > 0)
+		{
+			Recommendations.Add(FString::Printf(TEXT("Add missing card types: %s."), *Row.MissingCardTypes));
+		}
+		if (MissingRoles.Num() > 0)
+		{
+			Recommendations.Add(FString::Printf(TEXT("Add missing roles: %s."), *Row.MissingRoles));
+		}
+		if (RepeatedFingerprints.Num() > 0)
+		{
+			Recommendations.Add(TEXT("Rewrite or replace repeated tactical fingerprints."));
+		}
+		if (Row.DebugCardCount > 0)
+		{
+			Recommendations.Add(TEXT("Remove debug cards from production pack pools."));
+		}
+
+		Row.PackStatus = Recommendations.Num() > 0 ? TEXT("Review") : TEXT("Focused");
+		Row.Recommendations = Recommendations.Num() > 0 ? JoinStrings(Recommendations, TEXT(" ")) : TEXT("Pack has focused element plus Neutral support coverage.");
+		Rows.Add(Row);
+	}
+
+	Rows.Sort([](const FElementPackGapAuditRow& Left, const FElementPackGapAuditRow& Right)
+	{
+		return Left.PackName < Right.PackName;
+	});
+
+	return Rows;
+}
+
+TArray<FCardContentRecommendationRow> BuildCardContentRecommendationRows(
+	const TArray<FCardElementCoverageAuditRow>& ElementCoverageRows,
+	const TArray<FElementPackGapAuditRow>& ElementPackGapRows)
+{
+	TArray<FCardContentRecommendationRow> Rows;
+	TSet<FString> RecommendationKeys;
+
+	for (const FCardElementCoverageAuditRow& CoverageRow : ElementCoverageRows)
+	{
+		if (CoverageRow.Element == TEXT("Neutral"))
+		{
+			if (CoverageRow.ProductionCards < 4)
+			{
+				AddCardContentRecommendation(
+					Rows,
+					RecommendationKeys,
+					TEXT("Medium"),
+					CoverageRow.Element,
+					TEXT("Spell"),
+					TEXT("Defense/Utility"),
+					TEXT("Neutral support pool is below the current four-card staple target."),
+					TEXT("CardElementCoverageAudit"));
+			}
+			continue;
+		}
+
+		if (CoverageRow.SpellCards <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Spell"), TEXT("Damage"), TEXT("Element has no production spell card."), TEXT("CardElementCoverageAudit"));
+		}
+		if (CoverageRow.SummonCards <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Summon"), TEXT("Summon"), TEXT("Element has no production summon card."), TEXT("CardElementCoverageAudit"));
+		}
+		if (CoverageRow.TrapCards <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Trap"), TEXT("Tactical"), TEXT("Element has no production trap card."), TEXT("CardElementCoverageAudit"));
+		}
+		if (CoverageRow.AuraCards <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Aura"), TEXT("Tactical"), TEXT("Element has no production aura card."), TEXT("CardElementCoverageAudit"));
+		}
+		if (CoverageRow.Generators <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Spell"), TEXT("Generator"), TEXT("Element has no production generator card."), TEXT("CardElementCoverageAudit"));
+		}
+		else if (CoverageRow.Generators < 2)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("Medium"), CoverageRow.Element, TEXT("Spell"), TEXT("Generator"), TEXT("Element has only one production generator card; target is at least two."), TEXT("CardElementCoverageAudit"));
+		}
+		if (CoverageRow.Payoffs <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Spell"), TEXT("Element Payoff"), TEXT("Element has no production payoff card."), TEXT("CardElementCoverageAudit"));
+		}
+		else if (CoverageRow.Payoffs < 2)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("Medium"), CoverageRow.Element, TEXT("Spell"), TEXT("Element Payoff"), TEXT("Element has only one production payoff card; target is at least two."), TEXT("CardElementCoverageAudit"));
+		}
+		if (CoverageRow.DamageCards <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Spell"), TEXT("Damage"), TEXT("Element has no production damage role."), TEXT("CardElementCoverageAudit"));
+		}
+		if ((CoverageRow.DefenseCards + CoverageRow.HealingCards + CoverageRow.ControlCards + CoverageRow.DrawCards + CoverageRow.EnergyCards) <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Spell"), TEXT("Defense/Utility"), TEXT("Element has no production defense or utility role."), TEXT("CardElementCoverageAudit"));
+		}
+		if (CoverageRow.TacticalCards <= 0)
+		{
+			AddCardContentRecommendation(Rows, RecommendationKeys, TEXT("High"), CoverageRow.Element, TEXT("Spell"), TEXT("Tactical"), TEXT("Element has no production tactical role."), TEXT("CardElementCoverageAudit"));
+		}
+		else if (CoverageRow.ProductionCards < 8)
+		{
+			AddCardContentRecommendation(
+				Rows,
+				RecommendationKeys,
+				TEXT("Low"),
+				CoverageRow.Element,
+				TEXT("Spell"),
+				TEXT("Tactical"),
+				TEXT("Element is below the long-term eight-card lane depth target."),
+				TEXT("CardElementCoverageAudit"));
+		}
+	}
+
+	for (const FElementPackGapAuditRow& PackRow : ElementPackGapRows)
+	{
+		if (PackRow.PackStatus != TEXT("Review") || PackRow.DetectedElement.StartsWith(TEXT("Mixed")) || PackRow.DetectedElement == TEXT("NeutralOnly") || PackRow.DetectedElement == TEXT("None"))
+		{
+			continue;
+		}
+
+		if (PackRow.NeutralSupportCount <= 0)
+		{
+			AddCardContentRecommendation(
+				Rows,
+				RecommendationKeys,
+				TEXT("Medium"),
+				TEXT("Neutral"),
+				TEXT("Spell"),
+				TEXT("Defense/Utility"),
+				FString::Printf(TEXT("%s has no Neutral support pool entries."), *PackRow.PackName),
+				TEXT("ElementPackGapAudit"));
+		}
+	}
+
+	const auto GetPriorityRank = [](const FString& Priority)
+	{
+		if (Priority == TEXT("High"))
+		{
+			return 0;
+		}
+		if (Priority == TEXT("Medium"))
+		{
+			return 1;
+		}
+		return 2;
+	};
+
+	Rows.Sort([&GetPriorityRank](const FCardContentRecommendationRow& Left, const FCardContentRecommendationRow& Right)
+	{
+		const int32 LeftRank = GetPriorityRank(Left.Priority);
+		const int32 RightRank = GetPriorityRank(Right.Priority);
+		if (LeftRank != RightRank)
+		{
+			return LeftRank < RightRank;
+		}
+		if (Left.Element != Right.Element)
+		{
+			return Left.Element < Right.Element;
+		}
+		if (Left.SuggestedCardType != Right.SuggestedCardType)
+		{
+			return Left.SuggestedCardType < Right.SuggestedCardType;
+		}
+		return Left.RoleFilled < Right.RoleFilled;
+	});
+
+	return Rows;
+}
+
 void AppendCardCsvLine(const FCardAuditRow& Row, FString& Csv)
 {
 	TArray<FString> Fields;
@@ -2587,6 +3597,78 @@ void AppendCardRewritePlanCsvLine(const FCardRewritePlanRow& Row, FString& Csv)
 	Fields.Add(CsvEscape(Row.CurrentIssue));
 	Fields.Add(CsvEscape(Row.RecommendedAction));
 	Fields.Add(CsvEscape(Row.ProposedRulesText));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendCardElementCoverageCsvLine(const FCardElementCoverageAuditRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.Element));
+	Fields.Add(CsvEscapeInt(Row.ProductionCards));
+	Fields.Add(CsvEscapeInt(Row.SpellCards));
+	Fields.Add(CsvEscapeInt(Row.SummonCards));
+	Fields.Add(CsvEscapeInt(Row.TrapCards));
+	Fields.Add(CsvEscapeInt(Row.AuraCards));
+	Fields.Add(CsvEscapeInt(Row.DamageCards));
+	Fields.Add(CsvEscapeInt(Row.DefenseCards));
+	Fields.Add(CsvEscapeInt(Row.HealingCards));
+	Fields.Add(CsvEscapeInt(Row.ControlCards));
+	Fields.Add(CsvEscapeInt(Row.MobilityCards));
+	Fields.Add(CsvEscapeInt(Row.DrawCards));
+	Fields.Add(CsvEscapeInt(Row.EnergyCards));
+	Fields.Add(CsvEscapeInt(Row.Generators));
+	Fields.Add(CsvEscapeInt(Row.Payoffs));
+	Fields.Add(CsvEscapeInt(Row.TacticalCards));
+	Fields.Add(CsvEscapeInt(Row.UniqueOperations));
+	Fields.Add(CsvEscape(Row.StatusTerms));
+	Fields.Add(CsvEscape(Row.MissingCardTypes));
+	Fields.Add(CsvEscape(Row.MissingRoles));
+	Fields.Add(CsvEscape(Row.CoverageStatus));
+	Fields.Add(CsvEscape(Row.RecommendedFocus));
+	Fields.Add(CsvEscape(Row.CardNames));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendElementPackGapCsvLine(const FElementPackGapAuditRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.PackAssetPath));
+	Fields.Add(CsvEscape(Row.PackName));
+	Fields.Add(CsvEscape(Row.DetectedElement));
+	Fields.Add(CsvEscapeInt(Row.NeutralSupportCount));
+	Fields.Add(CsvEscapeInt(Row.NeutralSupportWeight));
+	Fields.Add(CsvEscapeInt(Row.ElementPoolCount));
+	Fields.Add(CsvEscapeInt(Row.ElementPoolWeight));
+	Fields.Add(CsvEscapeInt(Row.OtherElementCount));
+	Fields.Add(CsvEscapeInt(Row.DebugCardCount));
+	Fields.Add(CsvEscapeInt(Row.SpellCards));
+	Fields.Add(CsvEscapeInt(Row.SummonCards));
+	Fields.Add(CsvEscapeInt(Row.TrapCards));
+	Fields.Add(CsvEscapeInt(Row.AuraCards));
+	Fields.Add(CsvEscape(Row.RoleSpread));
+	Fields.Add(CsvEscape(Row.ElementMix));
+	Fields.Add(CsvEscape(Row.RepeatedFingerprintGroups));
+	Fields.Add(CsvEscape(Row.MissingCardTypes));
+	Fields.Add(CsvEscape(Row.MissingRoles));
+	Fields.Add(CsvEscape(Row.PackStatus));
+	Fields.Add(CsvEscape(Row.Recommendations));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
+void AppendCardContentRecommendationCsvLine(const FCardContentRecommendationRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.Priority));
+	Fields.Add(CsvEscape(Row.Element));
+	Fields.Add(CsvEscape(Row.SuggestedCardType));
+	Fields.Add(CsvEscape(Row.RoleFilled));
+	Fields.Add(CsvEscape(Row.Reason));
+	Fields.Add(CsvEscape(Row.IntendedOperation));
+	Fields.Add(CsvEscape(Row.Delivery));
+	Fields.Add(CsvEscape(Row.Payload));
+	Fields.Add(CsvEscape(Row.DraftRulesText));
+	Fields.Add(CsvEscape(Row.CardArtPrompt));
+	Fields.Add(CsvEscape(Row.SourceReport));
 	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
 }
 
@@ -2834,7 +3916,8 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		const TArray<FCardPackUsage>* PackUsages = PackUsagesByCard.Find(Card);
 		Row.bUsedInPacks = PackUsages && PackUsages->Num() > 0;
 		Row.PackSummary = Row.bUsedInPacks ? BuildPackSummaryForCard(*PackUsages) : FString();
-		if (!Row.bUsedInPacks)
+		const bool bLooksDebug = IsLikelyDebugPathOrName(Card->GetPathName(), Card->GetName());
+		if (!Row.bUsedInPacks && !bLooksDebug)
 		{
 			SoftWarnings.Add(TEXT("Warning: card is not included in any scanned pack."));
 		}
@@ -2842,11 +3925,11 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		BalanceRows.Add(BuildCardBalanceAuditRow(Card, Row.bUsedInPacks, Row.PackSummary));
 		FCardDescriptionSuggestionRow DescriptionRow = BuildDescriptionSuggestionRow(Card);
 		DescriptionRows.Add(DescriptionRow);
-		if (DescriptionRow.Status == TEXT("Missing"))
+		if (!bLooksDebug && DescriptionRow.Status == TEXT("Missing"))
 		{
 			SoftWarnings.Add(TEXT("Warning: Description is missing; generated rules-first keyword text is available in CardDescriptionSuggestions.csv."));
 		}
-		else if (DescriptionRow.Status == TEXT("Review"))
+		else if (!bLooksDebug && DescriptionRow.Status == TEXT("Review"))
 		{
 			SoftWarnings.Add(TEXT("Review: authored Description differs from generated rules-first keyword text. See CardDescriptionSuggestions.csv."));
 		}
@@ -2966,6 +4049,9 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 
 	const TArray<FElementIdentityAuditRow> ElementIdentityRows = BuildElementIdentityRows(BalanceRows, DesignRows);
 	const TArray<FPackExperienceAuditRow> PackExperienceRows = BuildPackExperienceRows(Packs);
+	const TArray<FCardElementCoverageAuditRow> ElementCoverageRows = BuildCardElementCoverageRows(Cards);
+	const TArray<FElementPackGapAuditRow> ElementPackGapRows = BuildElementPackGapRows(Packs);
+	const TArray<FCardContentRecommendationRow> ContentRecommendationRows = BuildCardContentRecommendationRows(ElementCoverageRows, ElementPackGapRows);
 
 	TArray<FPackAuditRow> PackRows;
 	PackRows.Reserve(Packs.Num());
@@ -3189,6 +4275,33 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		}
 	}
 
+	int32 ElementCoverageGapCount = 0;
+	for (const FCardElementCoverageAuditRow& Row : ElementCoverageRows)
+	{
+		if (Row.CoverageStatus != TEXT("Covered"))
+		{
+			ElementCoverageGapCount++;
+		}
+	}
+
+	int32 ElementPackGapReviewCount = 0;
+	for (const FElementPackGapAuditRow& Row : ElementPackGapRows)
+	{
+		if (Row.PackStatus == TEXT("Review"))
+		{
+			ElementPackGapReviewCount++;
+		}
+	}
+
+	int32 HighPriorityRecommendationCount = 0;
+	for (const FCardContentRecommendationRow& Row : ContentRecommendationRows)
+	{
+		if (Row.Priority == TEXT("High"))
+		{
+			HighPriorityRecommendationCount++;
+		}
+	}
+
 	UE_LOG(LogCardCatalogAudit, Display, TEXT("=== Card Catalog Audit ==="));
 	UE_LOG(LogCardCatalogAudit, Display, TEXT("Card paths: %s"), *JoinStrings([&EffectiveCardScanPaths]()
 	{
@@ -3229,6 +4342,13 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		ElementIdentityRows.Num(),
 		PackExperienceReviewCount,
 		RewriteRows.Num());
+	UE_LOG(LogCardCatalogAudit, Display, TEXT("Content gaps: ElementCoverageRows=%d | GapRows=%d | ElementPackRows=%d | PackReviews=%d | Recommendations=%d | HighPriority=%d"),
+		ElementCoverageRows.Num(),
+		ElementCoverageGapCount,
+		ElementPackGapRows.Num(),
+		ElementPackGapReviewCount,
+		ContentRecommendationRows.Num(),
+		HighPriorityRecommendationCount);
 	if (Cards.Num() > 0 && ElementGeneratorCardCount == 0)
 	{
 		UE_LOG(LogCardCatalogAudit, Warning, TEXT("Element charge backend exists, but no scanned card currently gains element charges."));
@@ -3332,6 +4452,9 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		FString ElementIdentityCsv;
 		FString PackExperienceCsv;
 		FString RewritePlanCsv;
+		FString ElementCoverageCsv;
+		FString ElementPackGapCsv;
+		FString ContentRecommendationsCsv;
 		if (bExportBalanceReports)
 		{
 			BalanceCsv += TEXT("CardAssetPath,CardAssetName,DisplayName,Category,TargetType,Cost,BaseBalanceBudget,ElementalBonusBudget,ExpectedCostMin,ExpectedCostMax,SuggestedCost,BalanceStatus,RoleTags,ElementTags,ProductionStatus,PackStatus,EffectsSummary,Warnings") LINE_TERMINATOR;
@@ -3375,6 +4498,24 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			{
 				AppendCardRewritePlanCsvLine(Row, RewritePlanCsv);
 			}
+
+			ElementCoverageCsv += TEXT("Element,ProductionCards,SpellCards,SummonCards,TrapCards,AuraCards,DamageCards,DefenseCards,HealingCards,ControlCards,MobilityCards,DrawCards,EnergyCards,Generators,Payoffs,TacticalCards,UniqueOperations,StatusTerms,MissingCardTypes,MissingRoles,CoverageStatus,RecommendedFocus,Cards") LINE_TERMINATOR;
+			for (const FCardElementCoverageAuditRow& Row : ElementCoverageRows)
+			{
+				AppendCardElementCoverageCsvLine(Row, ElementCoverageCsv);
+			}
+
+			ElementPackGapCsv += TEXT("PackAssetPath,PackName,DetectedElement,NeutralSupportCount,NeutralSupportWeight,ElementPoolCount,ElementPoolWeight,OtherElementCount,DebugCardCount,SpellCards,SummonCards,TrapCards,AuraCards,RoleSpread,ElementMix,RepeatedFingerprintGroups,MissingCardTypes,MissingRoles,PackStatus,Recommendations") LINE_TERMINATOR;
+			for (const FElementPackGapAuditRow& Row : ElementPackGapRows)
+			{
+				AppendElementPackGapCsvLine(Row, ElementPackGapCsv);
+			}
+
+			ContentRecommendationsCsv += TEXT("Priority,Element,SuggestedCardType,RoleFilled,Reason,IntendedOperation,Delivery,Payload,DraftRulesText,CardArtPrompt,SourceReport") LINE_TERMINATOR;
+			for (const FCardContentRecommendationRow& Row : ContentRecommendationRows)
+			{
+				AppendCardContentRecommendationCsvLine(Row, ContentRecommendationsCsv);
+			}
 		}
 
 		const FString CardCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardCatalog.csv"));
@@ -3387,6 +4528,9 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		const FString ElementIdentityCsvPath = FPaths::Combine(OutputDirectory, TEXT("ElementIdentityAudit.csv"));
 		const FString PackExperienceCsvPath = FPaths::Combine(OutputDirectory, TEXT("PackExperienceAudit.csv"));
 		const FString RewritePlanCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardRewritePlan.csv"));
+		const FString ElementCoverageCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardElementCoverageAudit.csv"));
+		const FString ElementPackGapCsvPath = FPaths::Combine(OutputDirectory, TEXT("ElementPackGapAudit.csv"));
+		const FString ContentRecommendationsCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardContentRecommendations.csv"));
 
 		const bool bSavedCardCsv = FFileHelper::SaveStringToFile(CardCsv, *CardCsvPath);
 		const bool bSavedPackCsv = FFileHelper::SaveStringToFile(PackCsv, *PackCsvPath);
@@ -3398,6 +4542,9 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		bool bSavedElementIdentityCsv = false;
 		bool bSavedPackExperienceCsv = false;
 		bool bSavedRewritePlanCsv = false;
+		bool bSavedElementCoverageCsv = false;
+		bool bSavedElementPackGapCsv = false;
+		bool bSavedContentRecommendationsCsv = false;
 		if (bExportBalanceReports)
 		{
 			bSavedBalanceCsv = FFileHelper::SaveStringToFile(BalanceCsv, *BalanceCsvPath);
@@ -3407,6 +4554,9 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			bSavedElementIdentityCsv = FFileHelper::SaveStringToFile(ElementIdentityCsv, *ElementIdentityCsvPath);
 			bSavedPackExperienceCsv = FFileHelper::SaveStringToFile(PackExperienceCsv, *PackExperienceCsvPath);
 			bSavedRewritePlanCsv = FFileHelper::SaveStringToFile(RewritePlanCsv, *RewritePlanCsvPath);
+			bSavedElementCoverageCsv = FFileHelper::SaveStringToFile(ElementCoverageCsv, *ElementCoverageCsvPath);
+			bSavedElementPackGapCsv = FFileHelper::SaveStringToFile(ElementPackGapCsv, *ElementPackGapCsvPath);
+			bSavedContentRecommendationsCsv = FFileHelper::SaveStringToFile(ContentRecommendationsCsv, *ContentRecommendationsCsvPath);
 		}
 
 		if (bSavedCardCsv)
@@ -3499,6 +4649,33 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			else
 			{
 				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card rewrite plan CSV: %s"), *RewritePlanCsvPath);
+			}
+
+			if (bSavedElementCoverageCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote card element coverage audit CSV: %s"), *ElementCoverageCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card element coverage audit CSV: %s"), *ElementCoverageCsvPath);
+			}
+
+			if (bSavedElementPackGapCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote element pack gap audit CSV: %s"), *ElementPackGapCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write element pack gap audit CSV: %s"), *ElementPackGapCsvPath);
+			}
+
+			if (bSavedContentRecommendationsCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote card content recommendations CSV: %s"), *ContentRecommendationsCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card content recommendations CSV: %s"), *ContentRecommendationsCsvPath);
 			}
 		}
 	}

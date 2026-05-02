@@ -10,6 +10,7 @@
 #include "Combat/TacticsCameraPawn.h"
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
+#include "Data/JargonDeckDefinition.h"
 #include "Data/JargonHeroDefinition.h"
 #include "Data/JargonRelicDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
@@ -454,6 +455,30 @@ AJargonCombatGameMode::AJargonCombatGameMode()
 	RuntimeHeroAspectThreshold = 5;
 	bLogCombatPacingSummary = true;
 	bHasLoggedCombatPacingSummary = false;
+}
+
+TArray<UCardDefinition*> AJargonCombatGameMode::GetEmergencyStartingDeckCards() const
+{
+	if (!EmergencyStartingDeckDefinition)
+	{
+		UE_LOG(LogTemp, Error, TEXT("CombatGameMode has no EmergencyStartingDeckDefinition assigned for direct combat seeding."));
+		return TArray<UCardDefinition*>();
+	}
+
+	if (!EmergencyStartingDeckDefinition->IsValidDefinition())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Combat emergency starting deck definition '%s' failed validation. Runtime will preserve resolved non-null cards."),
+			*GetNameSafe(EmergencyStartingDeckDefinition));
+	}
+
+	TArray<UCardDefinition*> ResolvedCards = EmergencyStartingDeckDefinition->GetResolvedCards();
+	if (ResolvedCards.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Combat emergency starting deck definition '%s' resolved no cards."),
+			*GetNameSafe(EmergencyStartingDeckDefinition));
+	}
+
+	return ResolvedCards;
 }
 
 void AJargonCombatGameMode::BeginPlay()

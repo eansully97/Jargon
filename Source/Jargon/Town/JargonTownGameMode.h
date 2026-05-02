@@ -1,11 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Data/CardDefinition.h"
 #include "GameFramework/GameModeBase.h"
 #include "JargonTownGameMode.generated.h"
 
 class UCardPackDefinition;
+class UJargonDeckDefinition;
 class UJargonHeroDefinition;
 
 UCLASS()
@@ -21,8 +21,8 @@ public:
 		return TownShopPackOffers;
 	}
 
-	UPROPERTY(EditDefaultsOnly, Category = "Run Setup")
-	TArray<TObjectPtr<UCardDefinition>> StarterDeckDefinitions;
+	UPROPERTY(EditDefaultsOnly, Category = "Run Setup", meta = (ToolTip = "Preferred starter deck Data Asset used when beginning a new run in town."))
+	TObjectPtr<UJargonDeckDefinition> StarterDeckDefinition = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Run Setup")
 	int32 StartingGold = 0;

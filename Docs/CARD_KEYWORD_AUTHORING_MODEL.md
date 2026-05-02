@@ -98,6 +98,14 @@ The card catalog audit should call out:
 - long or noisy collapsed effect-line summaries
 - authored descriptions that drift from generated rules-first effect text
 
+Debug cards under `/Game/Jargon/Data/Cards/Debug` are intentionally allowed to be outside production packs and may use terse test descriptions. They should not create normal production audit noise unless they are accidentally included in a non-debug pack.
+
+## Deck Element Rule
+
+Each card owns a `CardElement`. `None` is displayed as `Neutral` for card and deck authoring. Run decks may contain cards from at most two unique non-neutral elements, plus any number of Neutral cards.
+
+`UDeckEditWidget` exposes source-only Blueprint hooks for this rule: each library entry includes element text and add-block reasons, and the widget exposes a deck element summary such as `Elements: Fire, Storm (2 / 2)`. This pass does not change the DeckEditWidget Blueprint layout.
+
 ## Deferred Work
 
 - Rename C++ symbols from Action/Keyword only after asset compatibility and reflection churn are worth it.

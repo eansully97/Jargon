@@ -39,6 +39,19 @@ void AddUniqueCardToCollection(TArray<TObjectPtr<UCardDefinition>>& CardCollecti
 		CardCollection.Add(Card);
 	}
 }
+
+FText GetCardFacingElementText(EJargonElementType CardElement)
+{
+	if (CardElement == EJargonElementType::None)
+	{
+		return NSLOCTEXT("JargonDeck", "NeutralCardElement", "Neutral");
+	}
+
+	const UEnum* ElementEnum = StaticEnum<EJargonElementType>();
+	return ElementEnum
+		? ElementEnum->GetDisplayNameTextByValue(static_cast<int64>(CardElement))
+		: FText::AsNumber(static_cast<int32>(CardElement));
+}
 }
 
 UJargonGameInstance::UJargonGameInstance()
@@ -51,6 +64,8 @@ UJargonGameInstance::UJargonGameInstance()
 	bHasActiveRun = false;
 	TownMapName = NAME_None;
 	RunCurrencies = FJargonCurrencyAmount();
+	CardRecycleValue = FJargonCurrencyAmount();
+	CardRecycleValue.Copper = 20;
 	bHasPendingPostCombatReport = false;
 	PendingPostCombatReport.Reset();
 	ActiveHeroDefinition = nullptr;
@@ -118,7 +133,7 @@ void UJargonGameInstance::StartNewRun(const TArray<UCardDefinition*>& InitialDec
 	);
 }
 
-void UJargonGameInstance::EnsureRunInitializedFromSeedDeck(const TArray<TObjectPtr<UCardDefinition>>& SeedDeck)
+void UJargonGameInstance::EnsureRunInitializedFromSeedDeck(const TArray<UCardDefinition*>& SeedDeck)
 {
 	if (bHasActiveRun)
 	{
@@ -204,6 +219,55 @@ int32 UJargonGameInstance::GetRunDeckElementCount() const
 	return CountUniqueNonNeutralElements(ActiveRunDeck);
 }
 
+TArray<EJargonElementType> UJargonGameInstance::GetRunDeckElements() const
+{
+	return GatherUniqueNonNeutralElements(ActiveRunDeck);
+}
+
+FJargonDeckElementSummary UJargonGameInstance::GetRunDeckElementSummary() const
+{
+	FJargonDeckElementSummary Summary;
+	Summary.MaxElementCount = GetMaxRunDeckElements();
+	Summary.ActiveElements = GetRunDeckElements();
+	Summary.CurrentElementCount = Summary.ActiveElements.Num();
+	Summary.bIsWithinLimit = Summary.CurrentElementCount <= Summary.MaxElementCount;
+
+	for (const EJargonElementType Element : Summary.ActiveElements)
+	{
+		Summary.ActiveElementTexts.Add(GetCardElementDisplayText(Element));
+	}
+
+	if (Summary.ActiveElementTexts.Num() == 0)
+	{
+		Summary.SummaryText = FText::Format(
+			NSLOCTEXT("JargonDeck", "DeckElementSummaryNeutralOnly", "Elements: Neutral only ({0} / {1})"),
+			FText::AsNumber(Summary.CurrentElementCount),
+			FText::AsNumber(Summary.MaxElementCount));
+	}
+	else
+	{
+		TArray<FString> ElementNames;
+		ElementNames.Reserve(Summary.ActiveElementTexts.Num());
+		for (const FText& ElementText : Summary.ActiveElementTexts)
+		{
+			ElementNames.Add(ElementText.ToString());
+		}
+
+		Summary.SummaryText = FText::Format(
+			NSLOCTEXT("JargonDeck", "DeckElementSummaryWithElements", "Elements: {0} ({1} / {2})"),
+			FText::FromString(FString::Join(ElementNames, TEXT(", "))),
+			FText::AsNumber(Summary.CurrentElementCount),
+			FText::AsNumber(Summary.MaxElementCount));
+	}
+
+	return Summary;
+}
+
+FText UJargonGameInstance::GetCardElementDisplayText(EJargonElementType CardElement) const
+{
+	return GetCardFacingElementText(CardElement);
+}
+
 bool UJargonGameInstance::WouldRunDeckRespectElementLimitWithCard(const UCardDefinition* Card) const
 {
 	TArray<TObjectPtr<UCardDefinition>> CandidateDeck = ActiveRunDeck;
@@ -224,6 +288,13 @@ void UJargonGameInstance::AddCurrency(const FJargonCurrencyAmount& Amount)
 {
 	RunCurrencies = FJargonCurrencyAmount::FromTotalCopper(
 		RunCurrencies.GetTotalCopperValue() + Amount.GetTotalCopperValue());
+}
+
+FJargonCurrencyAmount UJargonGameInstance::GetCardRecycleValue(const UCardDefinition* Card) const
+{
+	FJargonCurrencyAmount RecycleValue = Card ? CardRecycleValue : FJargonCurrencyAmount();
+	RecycleValue.Normalize();
+	return RecycleValue;
 }
 
 TArray<UJargonRelicDefinition*> UJargonGameInstance::GetRunRelics() const
@@ -404,6 +475,185 @@ bool UJargonGameInstance::MoveCardFromDeckToReserve(UCardDefinition* Card)
 		ActiveRunDeck.Num(),
 		RunOwnedCards.Num(),
 		RunReserveCards.Num());
+
+	return true;
+}
+
+int32 UJargonGameInstance::GetRunDeckCardCopyCount(const UCardDefinition* Card) const
+{
+	return CountCardCopiesInCollection(ActiveRunDeck, Card);
+}
+
+int32 UJargonGameInstance::GetOwnedRunCardCopyCount(const UCardDefinition* Card) const
+{
+	return CountCardCopiesInCollection(RunOwnedCards, Card);
+}
+
+int32 UJargonGameInstance::GetOwnedRunReserveCardCopyCount(const UCardDefinition* Card) const
+{
+	return FMath::Max(0, GetOwnedRunCardCopyCount(Card) - GetRunDeckCardCopyCount(Card));
+}
+
+bool UJargonGameInstance::CanRecycleOwnedRunCard(const UCardDefinition* Card, FText& OutBlockedReason) const
+{
+	OutBlockedReason = FText::GetEmpty();
+
+	if (!bHasActiveRun)
+	{
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleBlockedNoActiveRun", "No active run is available.");
+		return false;
+	}
+
+	if (!Card)
+	{
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleBlockedMissingCard", "No card is selected.");
+		return false;
+	}
+
+	if (GetCardRecycleValue(Card).IsZero())
+	{
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleBlockedNoValue", "Card recycling has no currency value configured.");
+		return false;
+	}
+
+	if (GetOwnedRunReserveCardCopyCount(Card) <= 0)
+	{
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleBlockedNoReserveCopies", "No owned reserve copies are available to recycle.");
+		return false;
+	}
+
+	return true;
+}
+
+bool UJargonGameInstance::RecycleOwnedRunCard(
+	UCardDefinition* Card,
+	FJargonCurrencyAmount& OutCurrencyAwarded,
+	FText& OutFailureReason)
+{
+	OutCurrencyAwarded = FJargonCurrencyAmount();
+	OutFailureReason = FText::GetEmpty();
+
+	if (!CanRecycleOwnedRunCard(Card, OutFailureReason))
+	{
+		UE_LOG(LogJargon, Log, TEXT("RecycleOwnedRunCard rejected '%s': %s"),
+			*GetNameSafe(Card),
+			*OutFailureReason.ToString());
+		return false;
+	}
+
+	if (!RemoveCardFromCollection(RunOwnedCards, Card))
+	{
+		OutFailureReason = NSLOCTEXT("JargonDeck", "RecycleBlockedOwnedCopyMissing", "Owned card copy could not be found.");
+		UE_LOG(LogJargon, Warning, TEXT("RecycleOwnedRunCard could not remove owned reserve copy '%s' after validation passed."),
+			*GetNameSafe(Card));
+		return false;
+	}
+
+	OutCurrencyAwarded = GetCardRecycleValue(Card);
+	AddCurrency(OutCurrencyAwarded);
+	RefreshRunReserveCardsFromAvailableShopPacks();
+
+	UE_LOG(LogJargon, Log, TEXT("Recycled one reserve copy of '%s' for %d copper. Owned=%d Deck=%d ReserveCopies=%d Currency=%d"),
+		*GetNameSafe(Card),
+		OutCurrencyAwarded.GetTotalCopperValue(),
+		GetOwnedRunCardCopyCount(Card),
+		GetRunDeckCardCopyCount(Card),
+		GetOwnedRunReserveCardCopyCount(Card),
+		RunCurrencies.GetTotalCopperValue());
+
+	return true;
+}
+
+int32 UJargonGameInstance::GetRecycleAllExtraReserveCardCopyCount() const
+{
+	TArray<UCardDefinition*> RecyclableCards;
+	GatherOwnedRunReserveCardCopies(RecyclableCards);
+	return RecyclableCards.Num();
+}
+
+FJargonCurrencyAmount UJargonGameInstance::GetRecycleAllExtraReserveCardsValue() const
+{
+	TArray<UCardDefinition*> RecyclableCards;
+	GatherOwnedRunReserveCardCopies(RecyclableCards);
+
+	int32 TotalCopper = 0;
+	for (const UCardDefinition* Card : RecyclableCards)
+	{
+		TotalCopper += GetCardRecycleValue(Card).GetTotalCopperValue();
+	}
+
+	return FJargonCurrencyAmount::FromTotalCopper(TotalCopper);
+}
+
+bool UJargonGameInstance::CanRecycleAllExtraReserveCards(FText& OutBlockedReason) const
+{
+	OutBlockedReason = FText::GetEmpty();
+
+	if (!bHasActiveRun)
+	{
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleAllBlockedNoActiveRun", "No active run is available.");
+		return false;
+	}
+
+	if (GetRecycleAllExtraReserveCardCopyCount() <= 0)
+	{
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleAllBlockedNoExtraCopies", "No extra reserve copies are available to recycle.");
+		return false;
+	}
+
+	if (GetRecycleAllExtraReserveCardsValue().IsZero())
+	{
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleAllBlockedNoValue", "Card recycling has no currency value configured.");
+		return false;
+	}
+
+	return true;
+}
+
+bool UJargonGameInstance::RecycleAllExtraReserveCards(
+	int32& OutCardsRecycled,
+	FJargonCurrencyAmount& OutCurrencyAwarded,
+	FText& OutFailureReason)
+{
+	OutCardsRecycled = 0;
+	OutCurrencyAwarded = FJargonCurrencyAmount();
+	OutFailureReason = FText::GetEmpty();
+
+	if (!CanRecycleAllExtraReserveCards(OutFailureReason))
+	{
+		UE_LOG(LogJargon, Log, TEXT("RecycleAllExtraReserveCards rejected: %s"), *OutFailureReason.ToString());
+		return false;
+	}
+
+	TArray<UCardDefinition*> RecyclableCards;
+	GatherOwnedRunReserveCardCopies(RecyclableCards);
+
+	OutCurrencyAwarded = GetRecycleAllExtraReserveCardsValue();
+	for (UCardDefinition* Card : RecyclableCards)
+	{
+		if (RemoveCardFromCollection(RunOwnedCards, Card))
+		{
+			++OutCardsRecycled;
+		}
+	}
+
+	if (OutCardsRecycled <= 0)
+	{
+		OutCurrencyAwarded = FJargonCurrencyAmount();
+		OutFailureReason = NSLOCTEXT("JargonDeck", "RecycleAllBlockedNoOwnedCopiesRemoved", "No owned reserve copies could be removed.");
+		UE_LOG(LogJargon, Warning, TEXT("RecycleAllExtraReserveCards found recyclable cards but removed none."));
+		return false;
+	}
+
+	AddCurrency(OutCurrencyAwarded);
+	RefreshRunReserveCardsFromAvailableShopPacks();
+
+	UE_LOG(LogJargon, Log, TEXT("Recycled %d extra reserve card copies for %d copper. Owned=%d Deck=%d Currency=%d"),
+		OutCardsRecycled,
+		OutCurrencyAwarded.GetTotalCopperValue(),
+		RunOwnedCards.Num(),
+		ActiveRunDeck.Num(),
+		RunCurrencies.GetTotalCopperValue());
 
 	return true;
 }
@@ -666,6 +916,11 @@ bool UJargonGameInstance::RemoveCardFromCollection(TArray<TObjectPtr<UCardDefini
 
 int32 UJargonGameInstance::CountUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const
 {
+	return GatherUniqueNonNeutralElements(CardCollection).Num();
+}
+
+TArray<EJargonElementType> UJargonGameInstance::GatherUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const
+{
 	TSet<EJargonElementType> UniqueElements;
 
 	for (const TObjectPtr<UCardDefinition>& Card : CardCollection)
@@ -678,7 +933,13 @@ int32 UJargonGameInstance::CountUniqueNonNeutralElements(const TArray<TObjectPtr
 		UniqueElements.Add(Card->CardElement);
 	}
 
-	return UniqueElements.Num();
+	TArray<EJargonElementType> SortedElements = UniqueElements.Array();
+	SortedElements.Sort([](const EJargonElementType Left, const EJargonElementType Right)
+	{
+		return static_cast<uint8>(Left) < static_cast<uint8>(Right);
+	});
+
+	return SortedElements;
 }
 
 bool UJargonGameInstance::DoesCardCollectionRespectElementLimit(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const
@@ -762,4 +1023,35 @@ int32 UJargonGameInstance::CountCardCopiesInCollection(
 	}
 
 	return Count;
+}
+
+void UJargonGameInstance::GatherOwnedRunReserveCardCopies(TArray<UCardDefinition*>& OutCards) const
+{
+	OutCards.Reset();
+
+	TMap<UCardDefinition*, int32> ProtectedDeckCopies;
+	for (UCardDefinition* DeckCard : ActiveRunDeck)
+	{
+		if (DeckCard)
+		{
+			ProtectedDeckCopies.FindOrAdd(DeckCard)++;
+		}
+	}
+
+	for (UCardDefinition* OwnedCard : RunOwnedCards)
+	{
+		if (!OwnedCard)
+		{
+			continue;
+		}
+
+		int32& ProtectedCopyCount = ProtectedDeckCopies.FindOrAdd(OwnedCard);
+		if (ProtectedCopyCount > 0)
+		{
+			--ProtectedCopyCount;
+			continue;
+		}
+
+		OutCards.Add(OwnedCard);
+	}
 }

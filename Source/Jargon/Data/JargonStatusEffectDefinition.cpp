@@ -7,7 +7,7 @@
 
 namespace
 {
-const TCHAR* GetStatusKindName(EJargonStatusEffectKind StatusKind)
+const TCHAR* GetStatusDefinitionKindName(EJargonStatusEffectKind StatusKind)
 {
 	switch (StatusKind)
 	{
@@ -62,7 +62,7 @@ FString UJargonStatusEffectDefinition::GetAuditSummary() const
 	return FString::Printf(
 		TEXT("DisplayName=%s StatusKind=%s TargetIntent=%s ValueLabel=%s HasRulesText=%s IsValidDefinition=%s"),
 		*NameText,
-		GetStatusKindName(StatusKind),
+		GetStatusDefinitionKindName(StatusKind),
 		GetStatusIntentName(TargetIntent),
 		*ValueLabel.ToString(),
 		RulesText.IsEmpty() ? TEXT("false") : TEXT("true"),

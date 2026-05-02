@@ -43,6 +43,41 @@ int32 GetCardCostForSort(const UCardDefinition* Card)
 {
 	return Card ? Card->Cost : MAX_int32;
 }
+
+FText GetCardElementTextForDeckEntry(const UCardDefinition* Card)
+{
+	return Card ? Card->GetCardElementDisplayText() : FText::GetEmpty();
+}
+
+FText BuildBlockedReason(const FDeckEditLibraryCardEntry& Entry)
+{
+	if (Entry.bCanAddToDeck)
+	{
+		return FText::GetEmpty();
+	}
+
+	if (Entry.bAddBlockedByOwnership)
+	{
+		return NSLOCTEXT("DeckEdit", "AddBlockedByOwnership", "No owned reserve copies available.");
+	}
+
+	if (Entry.bAddBlockedByMaxCopies)
+	{
+		return NSLOCTEXT("DeckEdit", "AddBlockedByMaxCopies", "This card is already at the deck copy limit.");
+	}
+
+	if (Entry.bAddBlockedByDeckSize)
+	{
+		return NSLOCTEXT("DeckEdit", "AddBlockedByDeckSize", "The run deck is full.");
+	}
+
+	if (Entry.bAddBlockedByElementLimit)
+	{
+		return NSLOCTEXT("DeckEdit", "AddBlockedByElementLimit", "Adding this card would exceed the deck element limit.");
+	}
+
+	return FText::GetEmpty();
+}
 }
 
 void UDeckEditWidget::RefreshFromRunState(UJargonGameInstance* JargonGameInstance)
@@ -136,6 +171,26 @@ bool UDeckEditWidget::RemoveOneCopyFromDeck(UCardDefinition* Card)
 	return bMovedSuccessfully;
 }
 
+bool UDeckEditWidget::RecycleAllExtraReserveCards()
+{
+	UJargonGameInstance* RunState = ResolveRunState(CachedRunState.Get());
+	if (!RunState)
+	{
+		return false;
+	}
+
+	int32 CardsRecycled = 0;
+	FJargonCurrencyAmount CurrencyAwarded;
+	FText FailureReason;
+	const bool bRecycledSuccessfully = RunState->RecycleAllExtraReserveCards(CardsRecycled, CurrencyAwarded, FailureReason);
+	if (bRecycledSuccessfully)
+	{
+		RefreshFromRunState(RunState);
+	}
+
+	return bRecycledSuccessfully;
+}
+
 void UDeckEditWidget::SetLibraryCardsPerPage(int32 InCardsPerPage)
 {
 	LibraryCardsPerPage = FMath::Max(1, InCardsPerPage);
@@ -212,6 +267,18 @@ void UDeckEditWidget::RebuildViewData()
 {
 	StackedDeckEntries.Empty();
 	LibraryEntries.Empty();
+	DeckElementSummary = CachedRunState ? CachedRunState->GetRunDeckElementSummary() : FJargonDeckElementSummary();
+	bCanRecycleAllExtraReserveCards = false;
+	RecycleAllExtraReserveCardCount = 0;
+	RecycleAllExtraReserveCurrencyValue = FJargonCurrencyAmount();
+	RecycleAllExtraReserveBlockedReason = FText::GetEmpty();
+
+	if (CachedRunState)
+	{
+		RecycleAllExtraReserveCardCount = CachedRunState->GetRecycleAllExtraReserveCardCopyCount();
+		RecycleAllExtraReserveCurrencyValue = CachedRunState->GetRecycleAllExtraReserveCardsValue();
+		bCanRecycleAllExtraReserveCards = CachedRunState->CanRecycleAllExtraReserveCards(RecycleAllExtraReserveBlockedReason);
+	}
 
 	TMap<UCardDefinition*, FDeckEditCardCounts> CountsByCard;
 	const int32 MaxCopiesPerDeckCard = CachedRunState
@@ -266,6 +333,8 @@ void UDeckEditWidget::RebuildViewData()
 			FDeckEditStackedDeckEntry DeckEntry;
 			DeckEntry.Card = Card;
 			DeckEntry.DeckCount = Counts.DeckCount;
+			DeckEntry.CardElement = Card->CardElement;
+			DeckEntry.CardElementText = GetCardElementTextForDeckEntry(Card);
 			StackedDeckEntries.Add(DeckEntry);
 		}
 
@@ -274,11 +343,18 @@ void UDeckEditWidget::RebuildViewData()
 		LibraryEntry.DeckCount = Counts.DeckCount;
 		LibraryEntry.OwnedCount = Counts.OwnedCount;
 		LibraryEntry.ReserveCount = FMath::Max(0, Counts.OwnedCount - Counts.DeckCount);
+		LibraryEntry.CardElement = Card->CardElement;
+		LibraryEntry.CardElementText = GetCardElementTextForDeckEntry(Card);
+		LibraryEntry.bAddBlockedByOwnership = LibraryEntry.ReserveCount <= 0;
+		LibraryEntry.bAddBlockedByMaxCopies = Counts.DeckCount >= MaxCopiesPerDeckCard;
+		LibraryEntry.bAddBlockedByDeckSize = RunDeckCards.Num() >= MaxRunDeckSize;
+		LibraryEntry.bAddBlockedByElementLimit = CachedRunState && !CachedRunState->WouldRunDeckRespectElementLimitWithCard(Card);
 		LibraryEntry.bCanAddToDeck =
-			LibraryEntry.ReserveCount > 0 &&
-			Counts.DeckCount < MaxCopiesPerDeckCard &&
-			RunDeckCards.Num() < MaxRunDeckSize &&
-			(!CachedRunState || CachedRunState->WouldRunDeckRespectElementLimitWithCard(Card));
+			!LibraryEntry.bAddBlockedByOwnership &&
+			!LibraryEntry.bAddBlockedByMaxCopies &&
+			!LibraryEntry.bAddBlockedByDeckSize &&
+			!LibraryEntry.bAddBlockedByElementLimit;
+		LibraryEntry.AddToDeckBlockedReason = BuildBlockedReason(LibraryEntry);
 		LibraryEntry.bCanRemoveFromDeck = Counts.DeckCount > 0;
 		LibraryEntries.Add(LibraryEntry);
 	}

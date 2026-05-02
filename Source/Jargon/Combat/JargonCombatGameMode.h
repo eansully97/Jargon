@@ -24,6 +24,7 @@ class AJargonCombatPlayerController;
 class UJargonRelicDefinition;
 class AJargonCombatPresentationManager;
 class UJargonCombatPresentationSettings;
+class UJargonDeckDefinition;
 class UJargonHeroDefinition;
 class UJargonSummonedUnitDefinition;
 class UJargonTileEffectDefinition;
@@ -194,10 +195,7 @@ public:
 		return CombatHUDClass;
 	}
 
-	const TArray<TObjectPtr<UCardDefinition>>& GetStartingDeckDefinitions() const
-	{
-		return StartingDeckDefinitions;
-	}
+	TArray<UCardDefinition*> GetEmergencyStartingDeckCards() const;
 
 	int32 GetStartingHandSize() const
 	{
@@ -527,8 +525,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Presentation")
 	TObjectPtr<UJargonCombatPresentationSettings> PresentationSettings = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Cards")
-	TArray<TObjectPtr<UCardDefinition>> StartingDeckDefinitions;
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Cards", meta = (ToolTip = "Preferred deck Data Asset used only when combat is direct-loaded without an active run."))
+	TObjectPtr<UJargonDeckDefinition> EmergencyStartingDeckDefinition = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Cards", meta = (ClampMin = "1"))
 	int32 StartingHandSize = 3;

@@ -7,6 +7,7 @@
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
 #include "GameFramework/PlayerController.h"
+#include "Grid/Effects/BattleTileEffect.h"
 #include "Grid/GridTile.h"
 #include "InputCoreTypes.h"
 #include "Units/BattleUnit.h"
@@ -126,10 +127,11 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 	}
 
 	bool bLoadedPersistentRunDeck = false;
+	const TArray<UCardDefinition*> EmergencyStartingDeckCards = CombatGameMode->GetEmergencyStartingDeckCards();
 
 	if (UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>())
 	{
-		GameInstance->EnsureRunInitializedFromSeedDeck(CombatGameMode->GetStartingDeckDefinitions());
+		GameInstance->EnsureRunInitializedFromSeedDeck(EmergencyStartingDeckCards);
 
 		if (GameInstance->HasActiveRun())
 		{
@@ -161,7 +163,7 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Combat loading fallback starting deck."));
 
-		for (UCardDefinition* Card : CombatGameMode->GetStartingDeckDefinitions())
+		for (UCardDefinition* Card : EmergencyStartingDeckCards)
 		{
 			if (Card)
 			{
