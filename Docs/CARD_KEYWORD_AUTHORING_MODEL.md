@@ -60,6 +60,20 @@ Operation=ApplyStatus Delivery=Single Enemy Payload=2 Burn stacks Definition=DA_
 Rules text: Apply 2 Burn stacks.
 ```
 
+Cleanse card:
+
+```text
+Operation=CleanseStatus Delivery=Single Ally Payload=All negative statuses
+Rules text: Cleanse all negative statuses.
+```
+
+Lifesteal card:
+
+```text
+Operation=Damage Delivery=Single Enemy Payload=2 damage Lifesteal=true
+Rules text: Deal 2 damage. Heal for unblocked damage dealt.
+```
+
 Summon card:
 
 ```text
@@ -102,9 +116,15 @@ Debug cards under `/Game/Jargon/Data/Cards/Debug` are intentionally allowed to b
 
 ## Deck Element Rule
 
-Each card owns a `CardElement`. `None` is displayed as `Neutral` for card and deck authoring. Run decks may contain cards from at most two unique non-neutral elements, plus any number of Neutral cards.
+Each card owns a `CardElement`. `None` is displayed as `Neutral` for card and deck authoring. Run decks may include up to 3 unique non-neutral elements plus any number of Neutral cards.
 
-`UDeckEditWidget` exposes source-only Blueprint hooks for this rule: each library entry includes element text and add-block reasons, and the widget exposes a deck element summary such as `Elements: Fire, Storm (2 / 2)`. This pass does not change the DeckEditWidget Blueprint layout.
+`UDeckEditWidget` exposes source-only Blueprint hooks for element clarity: each library entry includes element text, filters can still show one or many elements, and the widget exposes a deck element summary such as `Deck elements: Fire, Frost, Radiance (3 / 3)`. Deck add blocking includes ownership, deck size, card copy limits, and introducing a fourth non-neutral element.
+
+## Hero Aspect Rule
+
+Energy is the normal card play resource. Element charges are separate combat-local resources. Save 10 charges of an authored element to transform into that element's hero aspect for the rest of combat. Element charges currently cap at 10, so "10+" effectively means capped.
+
+The first eligible element to reach 10 locks the transformation. Later capped elements do not switch it, and spending below 10 does not remove it. HUD and cue text should describe this as transformation, for example `Fire Transformation: 7/10` or `Pyromancer Transformed`.
 
 ## Deferred Work
 

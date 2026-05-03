@@ -12,7 +12,9 @@ enum class EJargonStatusEffectKind : uint8
 	Freeze UMETA(DisplayName = "Freeze"),
 	Burn UMETA(DisplayName = "Burn"),
 	Root UMETA(DisplayName = "Root"),
-	Vulnerable UMETA(DisplayName = "Vulnerable")
+	Vulnerable UMETA(DisplayName = "Vulnerable"),
+	Regen UMETA(DisplayName = "Regen"),
+	Weak UMETA(DisplayName = "Weak")
 };
 
 UENUM(BlueprintType)
@@ -25,7 +27,7 @@ enum class EJargonStatusEffectIntent : uint8
 
 /**
  * Data-driven authoring definition for built-in status effects.
- * Runtime behavior still dispatches to ABattleUnit's existing Stun/Freeze/Burn/Root/Vulnerable functions.
+ * Runtime behavior still dispatches to ABattleUnit's built-in status functions.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "Jargon Status Effect Definition"))
 class JARGON_API UJargonStatusEffectDefinition : public UPrimaryDataAsset

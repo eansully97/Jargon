@@ -8,7 +8,7 @@
 #include "Core/JargonTypes.h"
 #include "CombatHUDWidget.generated.h"
 
-class UHorizontalBox;
+class UCanvasPanel;
 class UImage;
 class UTextBlock;
 class UCardDefinition;
@@ -25,7 +25,7 @@ class JARGON_API UCombatHUDWidget : public UUserWidget
 
 public:
 	virtual void NativeConstruct() override;
-
+	
 	void RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& HandCards);
 	void SetSelectedCard(UCardDefinition* SelectedCard);
 	
@@ -57,7 +57,10 @@ public:
 	}
 
 protected:
+	
 	void RefreshSelectedCardText(UCardDefinition* SelectedCard);
+	void RefreshHandLayout();
+	
 	FText GetElementDisplayText(EJargonElementType ElementType) const;
 
 	UFUNCTION()
@@ -76,7 +79,7 @@ protected:
 
 protected:
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
-	TObjectPtr<UHorizontalBox> HandContainer = nullptr;
+	TObjectPtr<UCanvasPanel> HandCanvasPanel = nullptr;
 
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> SelectedCardText = nullptr;
@@ -156,8 +159,26 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD")
 	TSubclassOf<UCardEntryWidget> CardEntryWidgetClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD|Hand Layout", meta = (ClampMin = "0.0", ToolTip = "Horizontal distance between neighboring card centers in the fanned hand. Lower values create more overlap."))
+	float CardSpacing = 80.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD|Hand Layout", meta = (ClampMin = "0.0", ToolTip = "How much farther outer cards sit below the center card."))
+	float CurveAmount = 35.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD|Hand Layout", meta = (ClampMin = "0.0", ToolTip = "Maximum outward rotation in degrees for the leftmost and rightmost cards."))
+	float MaxCardRotation = 18.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD|Hand Layout", meta = (ToolTip = "Optional explicit card slot size inside the hand canvas. Leave at 0,0 to preserve the card widget's desired size and hit-test area."))
+	FVector2D CardSize = FVector2D::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD|Hand Layout", meta = (ToolTip = "Offset from the center anchor of the hand canvas. Usually stays at 0,0 when the Canvas Panel itself is positioned in Blueprint."))
+	FVector2D HandCenterPosition = FVector2D::ZeroVector;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat HUD")
 	TArray<TObjectPtr<UCardEntryWidget>> SpawnedCardWidgets;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat HUD")
+	TObjectPtr<UCardDefinition> SelectedCardDefinition = nullptr;
 
 	FOnHandCardClicked HandCardClickedDelegate;
 	FOnEndTurnClicked EndTurnClickedDelegate;

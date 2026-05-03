@@ -31,20 +31,23 @@ struct JARGON_API FJargonHeroAspectDefinition
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect", meta = (ToolTip = "Aspect identity activated by this requirement."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect", meta = (ToolTip = "Aspect identity locked when this element transformation triggers."))
 	EJargonHeroAspect Aspect = EJargonHeroAspect::None;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect", meta = (ToolTip = "Element that must be dominant and meet Required Element Charges for this aspect to activate."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect", meta = (ToolTip = "Element that must reach the combat element charge cap to lock this transformation. The current threshold is 10 charges."))
 	EJargonElementType RequiredElement = EJargonElementType::None;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect", meta = (ClampMin = "1", ToolTip = "Combat-local element charges required for this aspect to activate."))
-	int32 RequiredElementCharges = 5;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect", meta = (ToolTip = "Player-facing aspect name shown by HUD and combat cues. Empty names fall back to the aspect enum display name."))
 	FText DisplayName;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect", meta = (MultiLine = "true", ToolTip = "Player-facing aspect description shown by HUD."))
 	FText Description;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Transformation", meta = (ToolTip = "Player-facing name for the one-shot transformation moment. Empty names fall back to the aspect display name."))
+	FText TransformationName;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Transformation", meta = (TitleProperty = "Operation", ToolTip = "Effects resolved once when this aspect transforms. Empty arrays intentionally mean the transformation only locks the aspect."))
+	TArray<FJargonEffectSpec> TransformationEffects;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Turn Start", meta = (ToolTip = "Name for the aspect passive that fires at player turn start while this aspect is active."))
 	FText TurnStartPassiveName;
@@ -61,6 +64,11 @@ struct JARGON_API FJargonHeroAspectDefinition
 	bool HasAnyPassiveEffects() const
 	{
 		return TurnStartEffects.Num() > 0 || EnemyDeathEffects.Num() > 0;
+	}
+
+	bool HasAnyTransformationOrPassiveEffects() const
+	{
+		return TransformationEffects.Num() > 0 || HasAnyPassiveEffects();
 	}
 };
 
@@ -106,7 +114,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Passives", meta = (DisplayName = "Player Turn Start Passive", ToolTip = "Class passive resolved at the start of each player turn. Empty effects mean this hero has no turn-start passive."))
 	FJargonHeroClassPassiveDefinition PlayerTurnStartPassive;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspects", meta = (TitleProperty = "Aspect", ToolTip = "Aspect definitions this hero can enter when element charges meet the authored requirement. Empty arrays mean this hero has no aspects."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspects", meta = (TitleProperty = "Aspect", ToolTip = "Aspect transformations this hero can enter when the matching element reaches the combat element charge cap. Empty arrays mean this hero has no aspect transformations."))
 	TArray<FJargonHeroAspectDefinition> HeroAspects;
 
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Hero|Preset", meta = (ToolTip = "Seeds recommended stats for the selected Hero Class. This is only an authoring shortcut; you can freely tune the values afterward."))

@@ -16,6 +16,10 @@ FLinearColor UJargonCombatPresentationSettings::GetColorForCue(EJargonCombatCueT
 		return DamageColor;
 
 	case EJargonCombatCueType::Heal:
+	case EJargonCombatCueType::RegenApplied:
+	case EJargonCombatCueType::RegenTick:
+	case EJargonCombatCueType::StatusCleansed:
+	case EJargonCombatCueType::Lifesteal:
 		return HealColor;
 
 	case EJargonCombatCueType::ShieldGained:
@@ -24,6 +28,8 @@ FLinearColor UJargonCombatPresentationSettings::GetColorForCue(EJargonCombatCueT
 
 	case EJargonCombatCueType::StunApplied:
 	case EJargonCombatCueType::StunConsumed:
+	case EJargonCombatCueType::WeakApplied:
+	case EJargonCombatCueType::WeakConsumed:
 		return StunColor;
 
 	case EJargonCombatCueType::FreezeApplied:

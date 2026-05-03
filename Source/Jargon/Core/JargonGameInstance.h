@@ -294,9 +294,9 @@ public:
 protected:
 	static TArray<UCardDefinition*> ConvertCardArray(const TArray<TObjectPtr<UCardDefinition>>& SourceCards);
 	static bool RemoveCardFromCollection(TArray<TObjectPtr<UCardDefinition>>& CardCollection, UCardDefinition* Card);
-	bool DoesCardCollectionRespectElementLimit(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
 	int32 CountUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
 	TArray<EJargonElementType> GatherUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
+	bool DoesCardCollectionRespectElementLimit(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
 	void SetRunDeckInternal(const TArray<UCardDefinition*>& InitialDeck);
 	void NormalizeRunCurrencies();
 	void StorePostCombatReport(
@@ -347,7 +347,7 @@ protected:
 	int32 MaxRunDeckSize = 30;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "0", ToolTip = "Maximum number of unique non-neutral card elements allowed in the active run deck. Neutral cards do not count."))
-	int32 MaxRunDeckElements = 2;
+	int32 MaxRunDeckElements = 3;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Economy", meta = (ToolTip = "Currency awarded when recycling one owned card copy above the useful owned copy limit. Normal decks keep at least MaxCopiesPerDeckCard copies."))
 	FJargonCurrencyAmount CardRecycleValue;

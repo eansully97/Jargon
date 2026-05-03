@@ -65,12 +65,17 @@ EDataValidationResult UJargonTileEffectDefinition::IsDataValid(FDataValidationCo
 		}
 	}
 
+	const EJargonEffectTrigger EffectTrigger = Trigger == EJargonTileEffectTrigger::OnPlayerTurnStart
+		? EJargonEffectTrigger::OnTurnStart
+		: EJargonEffectTrigger::OnEnterTile;
+
 	for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			Effects[EffectIndex],
 			FString::Printf(TEXT("Effects effect %d"), EffectIndex),
+			EffectTrigger,
 			Context);
 	}
 

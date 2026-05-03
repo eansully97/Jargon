@@ -9,7 +9,7 @@
 - Author duplicate card copies as duplicate entries in `Cards`.
 - Keep starter/prebuilt decks at or below 30 cards.
 - Keep card copies at or below 3 copies per card.
-- Keep decks to at most two non-neutral elements plus any number of Neutral cards.
+- Keep deck definitions at or below 3 unique non-neutral card elements. Neutral cards do not count.
 - Use valid `UCardDefinition` assets only.
 
 ## Runtime Behavior
@@ -17,7 +17,7 @@
 - Town startup requires `StarterDeckDefinition` on `AJargonTownGameMode`.
 - Direct combat / no-run seeding uses `EmergencyStartingDeckDefinition` on `AJargonCombatGameMode`.
 - Missing or empty deck definitions log configuration errors instead of silently seeding from fallback arrays.
-- Runtime does not truncate over-limit deck definitions. Validation reports the issue, while existing run deck rules prevent adding more cards until the deck is valid.
+- Runtime does not truncate over-size deck definitions. Validation reports size, copy, and element-limit issues, while run deck rules prevent adding more cards when the deck is full, a card is already at the copy limit, or the add would introduce a fourth non-neutral element.
 
 ## Follow-Up Cleanup
 

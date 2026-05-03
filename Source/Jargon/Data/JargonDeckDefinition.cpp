@@ -11,7 +11,7 @@ namespace
 {
 constexpr int32 RecommendedMaxDeckSize = 30;
 constexpr int32 RecommendedMaxCopiesPerCard = 3;
-constexpr int32 RecommendedMaxNonNeutralElements = 2;
+constexpr int32 RecommendedMaxNonNeutralElements = 3;
 
 FString GetCardElementName(EJargonElementType Element)
 {
@@ -88,7 +88,12 @@ bool UJargonDeckDefinition::IsValidDefinition() const
 		return false;
 	}
 
-	if (ResolvedCount > RecommendedMaxDeckSize || NonNeutralElements.Num() > RecommendedMaxNonNeutralElements)
+	if (ResolvedCount > RecommendedMaxDeckSize)
+	{
+		return false;
+	}
+
+	if (NonNeutralElements.Num() > RecommendedMaxNonNeutralElements)
 	{
 		return false;
 	}
@@ -169,7 +174,7 @@ EDataValidationResult UJargonDeckDefinition::IsDataValid(FDataValidationContext&
 			Context,
 			this,
 			FString::Printf(
-				TEXT("Deck has %d non-neutral elements (%s), exceeding max %d."),
+				TEXT("Deck uses %d non-neutral elements (%s), exceeding the deck element limit of %d."),
 				NonNeutralElements.Num(),
 				*FString::Join(ElementNames, TEXT(", ")),
 				RecommendedMaxNonNeutralElements));

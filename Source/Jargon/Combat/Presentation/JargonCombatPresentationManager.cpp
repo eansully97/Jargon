@@ -307,9 +307,9 @@ FText AJargonCombatPresentationManager::GetCueDisplayText(const FJargonCombatCue
 			const FText AspectName = HeroAspectEnum
 				? HeroAspectEnum->GetDisplayNameTextByValue(static_cast<int64>(Cue.HeroAspect))
 				: FText::FromString(TEXT("Hero Aspect"));
-			return FText::Format(FText::FromString(TEXT("{0} Awakened")), AspectName);
+			return FText::Format(FText::FromString(TEXT("{0} Transformed")), AspectName);
 		}
-		return FText::FromString(TEXT("Hero Aspect Awakened"));
+		return FText::FromString(TEXT("Hero Transformed"));
 
 	case EJargonCombatCueType::ElementalBonusTriggered:
 		if (Cue.SourceCard && !Cue.SourceCard->DisplayName.IsEmpty())

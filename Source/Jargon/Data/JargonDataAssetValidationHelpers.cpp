@@ -64,6 +64,88 @@ namespace
 		}
 	}
 
+	bool OperationRequiresLivingSourceUnit(EJargonEffectOperation Operation)
+	{
+		switch (Operation)
+		{
+		case EJargonEffectOperation::MoveSource:
+		case EJargonEffectOperation::PushTarget:
+		case EJargonEffectOperation::PullTarget:
+		case EJargonEffectOperation::SummonUnit:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	bool ValidateJargonEffectTriggerContext(
+		const UObject* Source,
+		const FJargonEffectSpec& EffectSpec,
+		const FString& EffectLabel,
+		EJargonEffectTrigger Trigger,
+		FDataValidationContext& Context)
+	{
+		bool bValid = true;
+		const FString OperationName = JargonEffectContracts::GetOperationName(EffectSpec.Operation);
+		const FString DeliveryName = JargonEffectContracts::GetDeliveryName(EffectSpec.Delivery);
+
+		if (Trigger == EJargonEffectTrigger::OnDeath)
+		{
+			const bool bOperationRequiresLivingSource = OperationRequiresLivingSourceUnit(EffectSpec.Operation);
+			if (bOperationRequiresLivingSource)
+			{
+				AddError(
+					Context,
+					Source,
+					FString::Printf(
+						TEXT("%s uses %s in OnDeath. OnDeath effects run after the source unit is dead, so operations that require a living SourceUnit will fail at runtime."),
+						*EffectLabel,
+						*OperationName));
+				bValid = false;
+			}
+
+			if (EffectSpec.Delivery == EJargonEffectDelivery::ChainUnits)
+			{
+				AddError(
+					Context,
+					Source,
+					FString::Printf(
+						TEXT("%s uses Delivery=ChainUnits in OnDeath. OnDeath has no living initial unit target; use UnitsInRadius around the death tile or a tile operation instead."),
+						*EffectLabel));
+				bValid = false;
+			}
+
+			if ((EffectSpec.Delivery == EJargonEffectDelivery::Self || EffectSpec.Delivery == EJargonEffectDelivery::ExplicitUnit) &&
+				JargonEffectContracts::RequiresUnitTargets(EffectSpec.Operation) &&
+				!bOperationRequiresLivingSource)
+			{
+				AddError(
+					Context,
+					Source,
+					FString::Printf(
+						TEXT("%s uses %s with Delivery=%s in OnDeath. OnDeath cannot target the dead source as a living unit; use UnitsInRadius from the death tile when nearby units should be affected."),
+						*EffectLabel,
+						*OperationName,
+						*DeliveryName));
+				bValid = false;
+			}
+		}
+
+		if (Trigger == EJargonEffectTrigger::OnTurnStart &&
+			EffectSpec.Operation == EJargonEffectOperation::MoveSource)
+		{
+			AddError(
+				Context,
+				Source,
+				FString::Printf(
+					TEXT("%s uses MoveSource in OnTurnStart. Async turn-start movement is not sequenced yet, so this effect will fail at runtime."),
+					*EffectLabel));
+			bValid = false;
+		}
+
+		return bValid;
+	}
+
 }
 
 void AddError(FDataValidationContext& Context, const UObject* Source, const FString& Message)
@@ -149,6 +231,13 @@ bool ValidateJargonEffectSpec(
 			bValid = false;
 		}
 	}
+	else if (EffectSpec.Operation == EJargonEffectOperation::CleanseStatus &&
+		EffectSpec.StatusEffectDefinition &&
+		!EffectSpec.StatusEffectDefinition->IsValidDefinition())
+	{
+		AddError(Context, Source, FString::Printf(TEXT("%s references invalid optional StatusEffectDefinition '%s'."), *EffectLabel, *GetPathNameSafe(EffectSpec.StatusEffectDefinition.Get())));
+		bValid = false;
+	}
 
 	if (EffectSpec.Delivery == EJargonEffectDelivery::ChainUnits)
 	{
@@ -221,6 +310,18 @@ bool ValidateJargonEffectSpec(
 	}
 
 	return bValid;
+}
+
+bool ValidateJargonEffectSpecForTrigger(
+	const UObject* Source,
+	const FJargonEffectSpec& EffectSpec,
+	const FString& EffectLabel,
+	EJargonEffectTrigger Trigger,
+	FDataValidationContext& Context)
+{
+	const bool bSpecValid = ValidateJargonEffectSpec(Source, EffectSpec, EffectLabel, Context);
+	const bool bTriggerValid = ValidateJargonEffectTriggerContext(Source, EffectSpec, EffectLabel, Trigger, Context);
+	return bSpecValid && bTriggerValid;
 }
 }
 

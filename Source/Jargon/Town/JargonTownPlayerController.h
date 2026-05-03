@@ -79,7 +79,6 @@ protected:
 	void HideCardShopWithoutInputUpdate();
 	void HideDeckEditWithoutInputUpdate();
 	void HidePostMatchReportWithoutInputUpdate();
-	void PositionTownHoverInfoWidgetAtMouse();
 
 	void HandleOpenShopPressed();
 	void HandleOpenDeckEditPressed();

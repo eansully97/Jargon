@@ -34,7 +34,8 @@ enum class EJargonEffectOperation : uint8
 	ApplyBurn UMETA(DisplayName = "Apply Burn"),
 	ApplyRoot UMETA(DisplayName = "Apply Root"),
 	ApplyVulnerable UMETA(DisplayName = "Apply Vulnerable"),
-	ApplyStatus UMETA(DisplayName = "Apply Status")
+	ApplyStatus UMETA(DisplayName = "Apply Status"),
+	CleanseStatus UMETA(DisplayName = "Cleanse Status")
 };
 
 UENUM(BlueprintType)
@@ -94,16 +95,22 @@ struct JARGON_API FJargonEffectSpec
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (
 		ClampMin = "0",
-		ToolTip = "Primary amount for this effect. Damage, healing, shield, stun/freeze/root turns, burn stacks, vulnerable bonus damage, cards drawn, energy gained, element charges, or tile-effect payload value.",
+		ToolTip = "Primary amount for this effect. Damage, healing, shield, stun/freeze/root turns, burn/regen stacks, vulnerable bonus damage, weak damage reduction, cards drawn, energy gained, element charges, or tile-effect payload value.",
 		EditCondition = "Operation == EJargonEffectOperation::DealDamage || Operation == EJargonEffectOperation::Heal || Operation == EJargonEffectOperation::ApplyShield || Operation == EJargonEffectOperation::ApplyStun || Operation == EJargonEffectOperation::ApplyFreeze || Operation == EJargonEffectOperation::ApplyBurn || Operation == EJargonEffectOperation::ApplyRoot || Operation == EJargonEffectOperation::ApplyVulnerable || Operation == EJargonEffectOperation::ApplyStatus || Operation == EJargonEffectOperation::PlaceTileEffect || Operation == EJargonEffectOperation::DrawCards || Operation == EJargonEffectOperation::GainEnergy || Operation == EJargonEffectOperation::GainElementCharge",
 		EditConditionHides))
 	int32 Value = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status", meta = (
-		ToolTip = "Required data-driven status definition used by ApplyStatus. Existing direct ApplyStun/ApplyBurn/etc. operations are temporary migration scaffolding.",
-		EditCondition = "Operation == EJargonEffectOperation::ApplyStatus",
+		ToolTip = "Required data-driven status definition used by ApplyStatus. Optional for CleanseStatus; when omitted, CleanseStatus removes all negative statuses.",
+		EditCondition = "Operation == EJargonEffectOperation::ApplyStatus || Operation == EJargonEffectOperation::CleanseStatus",
 		EditConditionHides))
 	TObjectPtr<UJargonStatusEffectDefinition> StatusEffectDefinition = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage", meta = (
+		ToolTip = "Damage modifier: when true, DealDamage heals the source unit for unblocked HP damage dealt. Only supported by DealDamage.",
+		EditCondition = "Operation == EJargonEffectOperation::DealDamage",
+		EditConditionHides))
+	bool bLifesteal = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Element", meta = (
 		ToolTip = "Element charge type affected by GainElementCharge.",
@@ -279,6 +286,7 @@ namespace JargonEffectContracts
 		case EJargonEffectOperation::ApplyRoot:
 		case EJargonEffectOperation::ApplyVulnerable:
 		case EJargonEffectOperation::ApplyStatus:
+		case EJargonEffectOperation::CleanseStatus:
 		case EJargonEffectOperation::PushTarget:
 		case EJargonEffectOperation::PullTarget:
 			return true;
@@ -313,6 +321,12 @@ namespace JargonEffectContracts
 		return Operation == EJargonEffectOperation::ApplyStatus;
 	}
 
+	inline bool SupportsStatusDefinition(EJargonEffectOperation Operation)
+	{
+		return Operation == EJargonEffectOperation::ApplyStatus
+			|| Operation == EJargonEffectOperation::CleanseStatus;
+	}
+
 	inline bool RequiresElementType(EJargonEffectOperation Operation)
 	{
 		return Operation == EJargonEffectOperation::GainElementCharge;
@@ -339,6 +353,14 @@ namespace JargonEffectContracts
 		if (RequiresStatusDefinition(EffectSpec.Operation))
 		{
 			Fields.Add(FString::Printf(TEXT("StatusDefinition=%s"), EffectSpec.StatusEffectDefinition ? TEXT("Assigned") : TEXT("None")));
+		}
+		else if (EffectSpec.Operation == EJargonEffectOperation::CleanseStatus && EffectSpec.StatusEffectDefinition)
+		{
+			Fields.Add(TEXT("CleanseStatusDefinition=Assigned"));
+		}
+		if (EffectSpec.Operation == EJargonEffectOperation::DealDamage && EffectSpec.bLifesteal)
+		{
+			Fields.Add(TEXT("Lifesteal=true"));
 		}
 		if (RequiresElementType(EffectSpec.Operation))
 		{
@@ -431,9 +453,13 @@ namespace JargonEffectContracts
 		{
 			OutWarnings.Add(FString::Printf(TEXT("%s ignores PullDistance=%d."), *OperationName, EffectSpec.PullDistance));
 		}
-		if (!RequiresStatusDefinition(EffectSpec.Operation) && EffectSpec.StatusEffectDefinition)
+		if (!SupportsStatusDefinition(EffectSpec.Operation) && EffectSpec.StatusEffectDefinition)
 		{
 			OutWarnings.Add(FString::Printf(TEXT("%s ignores StatusEffectDefinition."), *OperationName));
+		}
+		if (EffectSpec.Operation != EJargonEffectOperation::DealDamage && EffectSpec.bLifesteal)
+		{
+			OutWarnings.Add(FString::Printf(TEXT("%s ignores bLifesteal."), *OperationName));
 		}
 		if (!RequiresSummonPayload(EffectSpec.Operation) &&
 			(EffectSpec.SummonedUnitDefinition || EffectSpec.RuntimeSummonedUnitClass.DebugAccessRawClassPtr()))

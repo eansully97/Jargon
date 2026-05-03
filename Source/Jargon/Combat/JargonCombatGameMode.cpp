@@ -147,21 +147,26 @@ FJargonHeroAspectInfo MakeHeroAspectInfo(
 	const int32 CurrentCharges = CombatGameMode
 		? CombatGameMode->GetElementCharges(AspectDefinition.RequiredElement)
 		: 0;
+	const int32 ActivationChargeThreshold = CombatGameMode
+		? CombatGameMode->GetHeroAspectActivationChargeThreshold()
+		: 0;
 
 	FJargonHeroAspectInfo Info;
 	Info.HeroClass = HeroDefinition.HeroClass;
 	Info.ElementType = AspectDefinition.RequiredElement;
 	Info.RequiredElement = AspectDefinition.RequiredElement;
-	Info.RequiredElementCharges = FMath::Max(0, AspectDefinition.RequiredElementCharges);
+	Info.RequiredElementCharges = FMath::Max(0, ActivationChargeThreshold);
 	Info.RequiredCharges = Info.RequiredElementCharges;
 	Info.CurrentElementCharges = FMath::Max(0, CurrentCharges);
 	Info.CurrentCharges = Info.CurrentElementCharges;
 	Info.Aspect = AspectDefinition.Aspect;
 	Info.DisplayName = GetHeroAspectDisplayText(&AspectDefinition, AspectDefinition.Aspect);
 	Info.Description = AspectDefinition.Description;
-	Info.PassiveName = !AspectDefinition.TurnStartPassiveName.IsEmpty()
-		? AspectDefinition.TurnStartPassiveName
-		: AspectDefinition.EnemyDeathPassiveName;
+	Info.PassiveName = !AspectDefinition.TransformationName.IsEmpty()
+		? AspectDefinition.TransformationName
+		: (!AspectDefinition.TurnStartPassiveName.IsEmpty()
+			? AspectDefinition.TurnStartPassiveName
+			: AspectDefinition.EnemyDeathPassiveName);
 	if (!AspectDefinition.TurnStartPassiveName.IsEmpty() && !AspectDefinition.EnemyDeathPassiveName.IsEmpty())
 	{
 		Info.PassiveDescription = FText::Format(
@@ -184,8 +189,32 @@ FJargonHeroAspectInfo MakeHeroAspectInfo(
 	Info.bHasRequiredCharges = Info.RequiredElementCharges > 0 && Info.CurrentElementCharges >= Info.RequiredElementCharges;
 	Info.bRequirementMet = Info.bHasRequiredCharges;
 	Info.bIsActive =
-		RuntimeState.ActiveAspect != EJargonHeroAspect::None &&
-		RuntimeState.ActiveAspect == AspectDefinition.Aspect;
+		RuntimeState.bHasTransformedAspect &&
+		RuntimeState.TransformedAspect == AspectDefinition.Aspect;
+	Info.bIsTransformed = Info.bIsActive;
+	Info.bTransformationLocked = RuntimeState.bHasTransformedAspect;
+	Info.bCanTransformNow =
+		!RuntimeState.bHasTransformedAspect &&
+		Info.bHasRequiredCharges &&
+		AspectDefinition.Aspect != EJargonHeroAspect::None;
+	const FText ElementName = GetCombatGameModeElementDisplayText(AspectDefinition.RequiredElement);
+	Info.ProgressText = FText::Format(
+		FText::FromString(TEXT("{0} Transformation: {1}/{2}")),
+		ElementName,
+		FText::AsNumber(Info.CurrentElementCharges),
+		FText::AsNumber(Info.RequiredElementCharges));
+	if (Info.bIsActive)
+	{
+		Info.StatusText = FText::Format(FText::FromString(TEXT("{0} Transformed")), Info.DisplayName);
+	}
+	else if (RuntimeState.bHasTransformedAspect)
+	{
+		Info.StatusText = NSLOCTEXT("JargonHero", "AspectTransformationLocked", "Transformation locked");
+	}
+	else
+	{
+		Info.StatusText = Info.ProgressText;
+	}
 	return Info;
 }
 
@@ -342,8 +371,10 @@ FText BuildHeroAspectPassiveCueText(
 
 FText BuildHeroAspectActivatedCueText(const FJargonHeroAspectDefinition* AspectDefinition, EJargonHeroAspect FallbackAspect)
 {
-	const FText AspectName = GetHeroAspectDisplayText(AspectDefinition, FallbackAspect);
-	return FText::Format(FText::FromString(TEXT("{0} Awakened")), AspectName);
+	const FText AspectName = AspectDefinition && !AspectDefinition->TransformationName.IsEmpty()
+		? AspectDefinition->TransformationName
+		: GetHeroAspectDisplayText(AspectDefinition, FallbackAspect);
+	return FText::Format(FText::FromString(TEXT("{0} Transformed")), AspectName);
 }
 
 TArray<FJargonEffectSpec> BuildHeroClassPassiveEffects(
@@ -452,7 +483,6 @@ AJargonCombatGameMode::AJargonCombatGameMode()
 	EnemyTurnStartDelay = 0.35f;
 	EnemyActionDelay = 0.5f;
 	EnemyTurnEndDelay = 0.35f;
-	RuntimeHeroAspectThreshold = 5;
 	bLogCombatPacingSummary = true;
 	bHasLoggedCombatPacingSummary = false;
 }
@@ -610,7 +640,7 @@ void AJargonCombatGameMode::GainElementCharges(EJargonElementType Element, int32
 		return;
 	}
 
-	const int32 ChargeCap = FMath::Max(1, MaxElementChargesPerType);
+	const int32 ChargeCap = GetElementChargeCap();
 	const int32 OldAmount = GetElementCharges(Element);
 	const int32 NewAmount = FMath::Clamp(OldAmount + Amount, 0, ChargeCap);
 	if (NewAmount == OldAmount)
@@ -619,8 +649,20 @@ void AJargonCombatGameMode::GainElementCharges(EJargonElementType Element, int32
 	}
 
 	ElementCharges.Add(Element, NewAmount);
+	const bool bLockedTransformation = TryLockHeroAspectTransformation(Element, OldAmount, NewAmount);
 	OnElementChargesChanged.Broadcast();
 	RefreshHeroRuntimeStateFromElements();
+
+	if (bLockedTransformation && ActiveHeroDefinition)
+	{
+		const FJargonHeroAspectDefinition* AspectDefinition =
+			ActiveHeroDefinition->FindAspectDefinitionByAspect(HeroRuntimeState.TransformedAspect);
+		EmitHeroAspectTransformationCue(AspectDefinition);
+		if (AspectDefinition)
+		{
+			ResolveHeroAspectTransformationEffects(*AspectDefinition);
+		}
+	}
 }
 
 bool AJargonCombatGameMode::HasElementCharges(EJargonElementType Element, int32 Amount) const
@@ -833,14 +875,19 @@ void AJargonCombatGameMode::RefreshHeroRuntimeStateFromElements()
 	const FJargonHeroAspectDefinition* DominantAspectDefinition = ActiveHeroDefinition
 		? ActiveHeroDefinition->FindAspectDefinitionForElement(NewState.DominantElement)
 		: nullptr;
-	NewState.AspectThreshold = DominantAspectDefinition
-		? FMath::Max(0, DominantAspectDefinition->RequiredElementCharges)
-		: 0;
-	NewState.ActiveAspect = ResolveHeroAspect(
-		ActiveHeroDefinition ? ActiveHeroDefinition->HeroClass : EJargonHeroClass::None,
-		NewState.DominantElement,
-		NewState.GetChargesForElement(NewState.DominantElement));
+	NewState.TransformedElement = PreviousState.TransformedElement;
+	NewState.TransformedAspect = PreviousState.TransformedAspect;
+	NewState.bHasTransformedAspect = PreviousState.bHasTransformedAspect;
+	NewState.TransformationThreshold = PreviousState.TransformationThreshold;
+	NewState.ActiveAspect = NewState.bHasTransformedAspect
+		? NewState.TransformedAspect
+		: EJargonHeroAspect::None;
 	NewState.bHasActiveAspect = NewState.ActiveAspect != EJargonHeroAspect::None;
+	NewState.AspectThreshold = NewState.bHasTransformedAspect
+		? NewState.TransformationThreshold
+		: (DominantAspectDefinition
+		? GetHeroAspectActivationChargeThreshold()
+		: 0);
 
 	if (!IsHeroRuntimeStateDifferent(PreviousState, NewState))
 	{
@@ -850,35 +897,6 @@ void AJargonCombatGameMode::RefreshHeroRuntimeStateFromElements()
 	HeroRuntimeState = NewState;
 	OnHeroRuntimeStateChanged.Broadcast(HeroRuntimeState);
 	BP_OnHeroRuntimeStateChanged(HeroRuntimeState);
-
-	if (NewState.bHasActiveAspect &&
-		NewState.ActiveAspect != PreviousState.ActiveAspect &&
-		ActiveHeroDefinition &&
-		PlayerUnit)
-	{
-		AGridTile* PlayerTile = PlayerUnit->GetCurrentTile();
-
-		FJargonCombatCueEvent AspectActivatedCue;
-		AspectActivatedCue.CueType = EJargonCombatCueType::HeroAspectActivated;
-		AspectActivatedCue.Trigger = EJargonEffectTrigger::Activated;
-		AspectActivatedCue.SourceObject = ActiveHeroDefinition;
-		AspectActivatedCue.SourceUnit = PlayerUnit;
-		AspectActivatedCue.TargetUnit = PlayerUnit;
-		AspectActivatedCue.SourceTile = PlayerTile;
-		AspectActivatedCue.TargetTile = PlayerTile;
-		AspectActivatedCue.HeroClass = ActiveHeroDefinition->HeroClass;
-		AspectActivatedCue.HeroAspect = NewState.ActiveAspect;
-		AspectActivatedCue.ElementType = NewState.DominantElement;
-		AspectActivatedCue.ElementChargeCount = NewState.GetChargesForElement(NewState.DominantElement);
-		AspectActivatedCue.Value = AspectActivatedCue.ElementChargeCount;
-		const FJargonHeroAspectDefinition* ActiveAspectDefinition = ActiveHeroDefinition->FindAspectDefinitionByAspect(NewState.ActiveAspect);
-		AspectActivatedCue.TextOverride = BuildHeroAspectActivatedCueText(
-			ActiveAspectDefinition,
-			NewState.ActiveAspect);
-		AspectActivatedCue.WorldLocation = PlayerTile ? PlayerTile->GetActorLocation() : PlayerUnit->GetActorLocation();
-		AspectActivatedCue.bHasWorldLocation = true;
-		EmitCombatCue(AspectActivatedCue);
-	}
 }
 
 EJargonElementType AJargonCombatGameMode::ResolveDominantElementFromCharges(EJargonElementType PreviousDominantElement) const
@@ -921,30 +939,102 @@ EJargonElementType AJargonCombatGameMode::ResolveDominantElementFromCharges(EJar
 	return EJargonElementType::None;
 }
 
-EJargonHeroAspect AJargonCombatGameMode::ResolveHeroAspect(
-	EJargonHeroClass HeroClass,
-	EJargonElementType DominantElement,
-	int32 DominantElementCharges) const
+bool AJargonCombatGameMode::TryLockHeroAspectTransformation(EJargonElementType Element, int32 OldCharges, int32 NewCharges)
 {
-	if (HeroClass == EJargonHeroClass::None ||
-		DominantElement == EJargonElementType::None ||
+	const int32 TransformationThreshold = GetHeroAspectActivationChargeThreshold();
+	if (HeroRuntimeState.bHasTransformedAspect ||
 		!ActiveHeroDefinition ||
-		ActiveHeroDefinition->HeroClass != HeroClass)
+		Element == EJargonElementType::None ||
+		TransformationThreshold <= 0 ||
+		OldCharges >= TransformationThreshold ||
+		NewCharges < TransformationThreshold)
 	{
-		return EJargonHeroAspect::None;
+		return false;
 	}
 
-	const FJargonHeroAspectDefinition* Definition = ActiveHeroDefinition->FindAspectDefinitionForElement(DominantElement);
-	if (!Definition ||
-		Definition->Aspect == EJargonHeroAspect::None ||
-		Definition->RequiredElement == EJargonElementType::None ||
-		Definition->RequiredElementCharges <= 0 ||
-		DominantElementCharges < Definition->RequiredElementCharges)
+	const FJargonHeroAspectDefinition* AspectDefinition = ActiveHeroDefinition->FindAspectDefinitionForElement(Element);
+	if (!AspectDefinition ||
+		AspectDefinition->Aspect == EJargonHeroAspect::None ||
+		AspectDefinition->RequiredElement == EJargonElementType::None)
 	{
-		return EJargonHeroAspect::None;
+		return false;
 	}
 
-	return Definition->Aspect;
+	HeroRuntimeState.TransformedElement = Element;
+	HeroRuntimeState.TransformedAspect = AspectDefinition->Aspect;
+	HeroRuntimeState.bHasTransformedAspect = true;
+	HeroRuntimeState.TransformationThreshold = TransformationThreshold;
+	HeroRuntimeState.ActiveAspect = AspectDefinition->Aspect;
+	HeroRuntimeState.bHasActiveAspect = true;
+	HeroRuntimeState.AspectThreshold = TransformationThreshold;
+	return true;
+}
+
+void AJargonCombatGameMode::EmitHeroAspectTransformationCue(const FJargonHeroAspectDefinition* AspectDefinition)
+{
+	if (!ActiveHeroDefinition || !PlayerUnit || !AspectDefinition)
+	{
+		return;
+	}
+
+	AGridTile* PlayerTile = PlayerUnit->GetCurrentTile();
+
+	FJargonCombatCueEvent AspectActivatedCue;
+	AspectActivatedCue.CueType = EJargonCombatCueType::HeroAspectActivated;
+	AspectActivatedCue.Trigger = EJargonEffectTrigger::Activated;
+	AspectActivatedCue.SourceObject = ActiveHeroDefinition;
+	AspectActivatedCue.SourceUnit = PlayerUnit;
+	AspectActivatedCue.TargetUnit = PlayerUnit;
+	AspectActivatedCue.SourceTile = PlayerTile;
+	AspectActivatedCue.TargetTile = PlayerTile;
+	AspectActivatedCue.HeroClass = ActiveHeroDefinition->HeroClass;
+	AspectActivatedCue.HeroAspect = AspectDefinition->Aspect;
+	AspectActivatedCue.ElementType = AspectDefinition->RequiredElement;
+	AspectActivatedCue.ElementChargeCount = GetElementCharges(AspectDefinition->RequiredElement);
+	AspectActivatedCue.Value = AspectActivatedCue.ElementChargeCount;
+	ApplyPassiveCueEffectMetadata(AspectActivatedCue, AspectDefinition->TransformationEffects, true);
+	AspectActivatedCue.ElementType = AspectDefinition->RequiredElement;
+	AspectActivatedCue.ElementChargeCount = GetElementCharges(AspectDefinition->RequiredElement);
+	AspectActivatedCue.TextOverride = BuildHeroAspectActivatedCueText(
+		AspectDefinition,
+		AspectDefinition->Aspect);
+	AspectActivatedCue.WorldLocation = PlayerTile ? PlayerTile->GetActorLocation() : PlayerUnit->GetActorLocation();
+	AspectActivatedCue.bHasWorldLocation = true;
+	EmitCombatCue(AspectActivatedCue);
+}
+
+void AJargonCombatGameMode::ResolveHeroAspectTransformationEffects(const FJargonHeroAspectDefinition& AspectDefinition)
+{
+	if (!ActiveHeroDefinition || !PlayerUnit || AspectDefinition.TransformationEffects.Num() <= 0)
+	{
+		return;
+	}
+
+	AGridTile* PlayerTile = PlayerUnit->GetCurrentTile();
+	FJargonEffectContext Context = FJargonEffectContextBuilder::BuildForUnit(
+		this,
+		PlayerUnit,
+		EJargonEffectTrigger::Activated,
+		PlayerUnit,
+		PlayerTile,
+		ActiveHeroDefinition);
+	Context.TriggeringUnit = PlayerUnit;
+
+	FJargonEffectResult Result;
+	const bool bResolved = FJargonEffectResolver::ResolveEffects(AspectDefinition.TransformationEffects, Context, Result);
+	if (!bResolved)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Hero aspect transformation '%s' failed to resolve for hero '%s'."),
+			*BuildHeroAspectActivatedCueText(&AspectDefinition, AspectDefinition.Aspect).ToString(),
+			*GetNameSafe(ActiveHeroDefinition));
+		return;
+	}
+
+	if (Result.bContinuesAsynchronously)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Hero aspect transformation '%s' started an async effect. Async transformation effects are not specially sequenced yet."),
+			*BuildHeroAspectActivatedCueText(&AspectDefinition, AspectDefinition.Aspect).ToString());
+	}
 }
 
 bool AJargonCombatGameMode::IsHeroRuntimeStateDifferent(
@@ -957,6 +1047,10 @@ bool AJargonCombatGameMode::IsHeroRuntimeStateDifferent(
 		First.ActiveAspect != Second.ActiveAspect ||
 		First.bHasActiveAspect != Second.bHasActiveAspect ||
 		First.AspectThreshold != Second.AspectThreshold ||
+		First.TransformedElement != Second.TransformedElement ||
+		First.TransformedAspect != Second.TransformedAspect ||
+		First.bHasTransformedAspect != Second.bHasTransformedAspect ||
+		First.TransformationThreshold != Second.TransformationThreshold ||
 		First.FireCharges != Second.FireCharges ||
 		First.FrostCharges != Second.FrostCharges ||
 		First.StormCharges != Second.StormCharges ||
@@ -2022,6 +2116,8 @@ void AJargonCombatGameMode::StartPlayerTurn()
 			continue;
 		}
 
+		FriendlyUnit->ConsumeRegenTurn();
+
 		FriendlyUnit->ConsumeRootTurn();
 
 		if (FriendlyUnit->ConsumeFreezeTurn())
@@ -2251,6 +2347,8 @@ bool AJargonCombatGameMode::ResolveSingleEnemyAction(ABattleUnit* EnemyUnit)
 	{
 		return false;
 	}
+
+	EnemyUnit->ConsumeRegenTurn();
 
 	EnemyUnit->ConsumeRootTurn();
 
@@ -2498,7 +2596,7 @@ void AJargonCombatGameMode::ResolveHeroAspectPassiveEffects(
 	AspectPassiveCue.TargetTile = PrimaryTileTarget ? PrimaryTileTarget : PlayerTile;
 	AspectPassiveCue.HeroClass = ActiveHeroDefinition->HeroClass;
 	AspectPassiveCue.HeroAspect = HeroRuntimeState.ActiveAspect;
-	AspectPassiveCue.ElementType = HeroRuntimeState.DominantElement;
+	AspectPassiveCue.ElementType = HeroRuntimeState.TransformedElement;
 	ApplyPassiveCueEffectMetadata(AspectPassiveCue, Effects, true);
 	const FJargonHeroAspectDefinition* AspectDefinition = ActiveHeroDefinition->FindAspectDefinitionByAspect(HeroRuntimeState.ActiveAspect);
 	AspectPassiveCue.TextOverride = BuildHeroAspectPassiveCueText(
@@ -2902,6 +3000,19 @@ ABattleTileEffect* AJargonCombatGameMode::SpawnPersistentTileEffectFromDefinitio
 
 	ActiveTileEffects.Add(SpawnedEffect);
 	return SpawnedEffect;
+}
+
+void AJargonCombatGameMode::UnregisterPersistentTileEffect(ABattleTileEffect* TileEffect)
+{
+	if (!TileEffect)
+	{
+		return;
+	}
+
+	ActiveTileEffects.RemoveAllSwap([TileEffect](const TObjectPtr<ABattleTileEffect>& ActiveTileEffect)
+	{
+		return ActiveTileEffect.Get() == TileEffect;
+	});
 }
 
 ABattleUnit* AJargonCombatGameMode::SpawnSummonedUnitFromDefinition(

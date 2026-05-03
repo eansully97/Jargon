@@ -4,7 +4,8 @@
 
 
 #include "Data/CardDefinition.h"
-#include "Components/HorizontalBox.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/PlayerController.h"
 #include "Combat/Widgets/CardEntryWidget.h"
@@ -33,13 +34,13 @@ void UCombatHUDWidget::RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& Ha
 {
 	SpawnedCardWidgets.Reset();
 
-	if (!HandContainer)
+	if (!HandCanvasPanel)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("CombatHUDWidget '%s' has no HandContainer bound."), *GetName());
+		UE_LOG(LogTemp, Warning, TEXT("CombatHUDWidget '%s' has no HandCanvasPanel bound."), *GetName());
 		return;
 	}
 
-	HandContainer->ClearChildren();
+	HandCanvasPanel->ClearChildren();
 
 	if (!CardEntryWidgetClass)
 	{
@@ -75,8 +76,10 @@ void UCombatHUDWidget::RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& Ha
 		CardWidget->InitializeFromCard(Card);
 
 		SpawnedCardWidgets.Add(CardWidget);
-		HandContainer->AddChild(CardWidget);
+		HandCanvasPanel->AddChild(CardWidget);
 	}
+
+	RefreshHandLayout();
 }
 
 void UCombatHUDWidget::HandleEndTurnButtonClicked()
@@ -128,7 +131,9 @@ void UCombatHUDWidget::RefreshPhaseText(ECombatPhase NewPhase)
 
 void UCombatHUDWidget::SetSelectedCard(UCardDefinition* SelectedCard)
 {
+	SelectedCardDefinition = SelectedCard;
 	RefreshSelectedCardText(SelectedCard);
+	RefreshHandLayout();
 }
 
 void UCombatHUDWidget::SetPhaseText(ECombatPhase NewPhase)
@@ -199,22 +204,27 @@ void UCombatHUDWidget::RefreshHeroIdentity(
 
 	if (DominantElementText)
 	{
-		DominantElementText->SetText(FText::Format(FText::FromString(TEXT("Dominant: {0}")), ElementName));
+		DominantElementText->SetText(FText::Format(FText::FromString(TEXT("Dominant Element: {0}")), ElementName));
 	}
 
 	if (ActiveAspectText)
 	{
 		if (bHasActiveAspect)
 		{
-			ActiveAspectText->SetText(FText::Format(FText::FromString(TEXT("Aspect: {0}")), AspectName));
+			ActiveAspectText->SetText(!HeroAspectInfo.StatusText.IsEmpty()
+				? HeroAspectInfo.StatusText
+				: FText::Format(FText::FromString(TEXT("{0} Active")), AspectName));
 		}
 		else if (bHasElement)
 		{
-			ActiveAspectText->SetText(FText::Format(FText::FromString(TEXT("Building: {0}")), AspectName));
+			ActiveAspectText->SetText(FText::Format(
+				FText::FromString(TEXT("No Transformation: save {0} {1} charges")),
+				FText::AsNumber(RequiredCharges),
+				ElementName));
 		}
 		else
 		{
-			ActiveAspectText->SetText(FText::FromString(TEXT("Aspect: None")));
+			ActiveAspectText->SetText(FText::FromString(TEXT("Transformation: None")));
 		}
 	}
 
@@ -237,10 +247,14 @@ void UCombatHUDWidget::RefreshHeroIdentity(
 
 	if (AspectProgressText)
 	{
-		if (bHasElement && RequiredCharges > 0)
+		if (!HeroAspectInfo.ProgressText.IsEmpty())
+		{
+			AspectProgressText->SetText(HeroAspectInfo.ProgressText);
+		}
+		else if (bHasElement && RequiredCharges > 0)
 		{
 			AspectProgressText->SetText(FText::Format(
-				FText::FromString(TEXT("{0} {1}/{2}")),
+				FText::FromString(TEXT("{0} Transformation: {1}/{2}")),
 				ElementName,
 				FText::AsNumber(CurrentCharges),
 				FText::AsNumber(RequiredCharges)));
@@ -256,7 +270,7 @@ void UCombatHUDWidget::RefreshHeroIdentity(
 		if (bHasActiveAspect && RequiredCharges > 0)
 		{
 			HeroIdentitySummaryText->SetText(FText::Format(
-				FText::FromString(TEXT("{0} / {1} ({2} {3}/{4})")),
+				FText::FromString(TEXT("{0} / {1} Transformed ({2} {3}/{4})")),
 				ClassName,
 				AspectName,
 				ElementName,
@@ -266,7 +280,7 @@ void UCombatHUDWidget::RefreshHeroIdentity(
 		else if (bHasElement && RequiredCharges > 0)
 		{
 			HeroIdentitySummaryText->SetText(FText::Format(
-				FText::FromString(TEXT("{0} / {1} {2}/{3}")),
+				FText::FromString(TEXT("{0} / No Transformation ({1} {2}/{3})")),
 				ClassName,
 				ElementName,
 				FText::AsNumber(CurrentCharges),
@@ -394,6 +408,66 @@ void UCombatHUDWidget::RefreshSelectedCardText(UCardDefinition* SelectedCard)
 	else
 	{
 		SelectedCardText->SetText(FText::FromString(TEXT("Selected: None")));
+	}
+}
+
+void UCombatHUDWidget::RefreshHandLayout()
+{
+	if (!HandCanvasPanel)
+	{
+		return;
+	}
+
+	const int32 CardCount = SpawnedCardWidgets.Num();
+	if (CardCount <= 0)
+	{
+		return;
+	}
+
+	const float CenterIndex = static_cast<float>(CardCount - 1) * 0.5f;
+	const float RotationStep = CenterIndex > KINDA_SMALL_NUMBER
+		? MaxCardRotation / CenterIndex
+		: 0.0f;
+	const bool bUseExplicitCardSize = CardSize.X > 0.0f && CardSize.Y > 0.0f;
+
+	for (int32 Index = 0; Index < CardCount; ++Index)
+	{
+		UCardEntryWidget* CardWidget = SpawnedCardWidgets[Index];
+		if (!CardWidget)
+		{
+			continue;
+		}
+
+		UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(CardWidget->Slot);
+		if (!CanvasSlot)
+		{
+			continue;
+		}
+
+		const float OffsetFromCenter = static_cast<float>(Index) - CenterIndex;
+		const float AbsOffsetFromCenter = FMath::Abs(OffsetFromCenter);
+		float Y = AbsOffsetFromCenter * CurveAmount;
+		int32 ZOrder = Index;
+
+
+		const float Rotation = FMath::Clamp(
+			OffsetFromCenter * RotationStep,
+			-MaxCardRotation,
+			MaxCardRotation);
+
+		CanvasSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+		CanvasSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+		CanvasSlot->SetPosition(HandCenterPosition + FVector2D(OffsetFromCenter * CardSpacing, Y));
+		CanvasSlot->SetZOrder(ZOrder);
+		CanvasSlot->SetAutoSize(!bUseExplicitCardSize);
+
+		if (bUseExplicitCardSize)
+		{
+			CanvasSlot->SetSize(CardSize);
+		}
+
+		CardWidget->SetRenderTransformPivot(FVector2D(0.5f, 1.0f));
+		CardWidget->SetRenderTransformAngle(Rotation);
 	}
 }
 

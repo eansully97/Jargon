@@ -6,6 +6,7 @@
 #include "Combat/Effects/JargonEffectTypes.h"
 #include "Combat/Presentation/JargonCombatCueTypes.h"
 #include "Core/JargonTypes.h"
+#include "Data/JargonStatusEffectDefinition.h"
 #include "GameFramework/Actor.h"
 #include "BattleUnit.generated.h"
 
@@ -144,6 +145,8 @@ public:
 
 	void ApplyDamageFromSource(int32 Amount, ABattleUnit* DamageSourceUnit);
 	void ApplyDamageFromEffectContext(int32 Amount, const FJargonEffectContext& EffectContext);
+	int32 ApplyDamageFromSourceAndGetHealthDamage(int32 Amount, ABattleUnit* DamageSourceUnit);
+	int32 ApplyDamageFromEffectContextAndGetHealthDamage(int32 Amount, const FJargonEffectContext& EffectContext);
 
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void ApplyHeal(int32 Amount);
@@ -277,6 +280,45 @@ public:
 		return VulnerableDamageBonus;
 	}
 
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	void ApplyRegen(int32 Stacks);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	bool ConsumeRegenTurn();
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	bool IsRegenerating() const
+	{
+		return RegenStacks > 0;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	int32 GetRegenStacks() const
+	{
+		return RegenStacks;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	void ApplyWeak(int32 DamageReduction);
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	bool IsWeakened() const
+	{
+		return WeakDamageReduction > 0;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Battle Unit | Status")
+	int32 GetWeakDamageReduction() const
+	{
+		return WeakDamageReduction;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	bool CleanseStatus(EJargonStatusEffectKind StatusKind);
+
+	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
+	bool CleanseAllNegativeStatuses();
+
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Presentation")
 	void SetActingHighlight(bool bInActingHighlight);
 
@@ -343,7 +385,8 @@ protected:
 	void PlayIdleAnimation();
 	void PlayDeathPresentation();
 	void FinalizeDeathAndDestroy();
-	void ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource);
+	int32 ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource);
+	int32 ConsumeWeakDamageReductionForOutgoingDamage(int32 Amount);
 	void EmitDamageCue(int32 Value, AGridTile* CueTile, const FJargonCombatCueEvent* DamageCueSource);
 	void EmitUnitCue(EJargonCombatCueType CueType, int32 Value = 0, AGridTile* CueTile = nullptr);
 
@@ -370,6 +413,12 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
 	void BP_OnVulnerableChanged(int32 NewVulnerableDamageBonus);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnRegenChanged(int32 NewRegenStacks);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Battle Unit|Presentation")
+	void BP_OnWeakChanged(int32 NewWeakDamageReduction);
 	
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
@@ -443,6 +492,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
 	int32 VulnerableDamageBonus = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
+	int32 RegenStacks = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Battle Unit | Status", meta = (AllowPrivateAccess = "true"))
+	int32 WeakDamageReduction = 0;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit|Status")
 	TObjectPtr<UAnimationAsset> DeathAnimation = nullptr;

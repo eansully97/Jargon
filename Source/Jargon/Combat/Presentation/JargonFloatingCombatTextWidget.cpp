@@ -87,7 +87,7 @@ FText UJargonFloatingCombatTextWidget::BuildDefaultTextForCue(const FJargonComba
 		return FText::FromString(TEXT("Hero Aspect"));
 
 	case EJargonCombatCueType::HeroAspectActivated:
-		return FText::FromString(TEXT("Hero Aspect Awakened"));
+		return FText::FromString(TEXT("Hero Transformed"));
 
 	case EJargonCombatCueType::ElementalBonusTriggered:
 		return FText::FromString(TEXT("Elemental Bonus"));

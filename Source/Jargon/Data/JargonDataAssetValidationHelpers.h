@@ -7,6 +7,7 @@
 class FDataValidationContext;
 class UObject;
 enum class EJargonEffectOperation : uint8;
+enum class EJargonEffectTrigger : uint8;
 struct FJargonEffectSpec;
 
 namespace JargonDataAssetValidation
@@ -20,6 +21,13 @@ namespace JargonDataAssetValidation
 		const UObject* Source,
 		const FJargonEffectSpec& EffectSpec,
 		const FString& EffectLabel,
+		FDataValidationContext& Context);
+
+	bool ValidateJargonEffectSpecForTrigger(
+		const UObject* Source,
+		const FJargonEffectSpec& EffectSpec,
+		const FString& EffectLabel,
+		EJargonEffectTrigger Trigger,
 		FDataValidationContext& Context);
 }
 

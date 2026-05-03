@@ -28,6 +28,7 @@ class UJargonDeckDefinition;
 class UJargonHeroDefinition;
 class UJargonSummonedUnitDefinition;
 class UJargonTileEffectDefinition;
+struct FJargonHeroAspectDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatPhaseChangedSignature, ECombatPhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatEnergyChangedSignature, int32, NewEnergy);
@@ -142,6 +143,7 @@ public:
 		AGridTile* TargetTile,
 		bool bAttackExhaustedOverride,
 		bool bUseAttackExhaustedOverride);
+	void UnregisterPersistentTileEffect(ABattleTileEffect* TileEffect);
 	void NotifyTileEffectsUnitEntered(ABattleUnit* EnteringUnit, AGridTile* EnteredTile);
 	
 	void RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card);
@@ -232,6 +234,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Elements")
 	int32 GetElementCharges(EJargonElementType Element) const;
 
+	UFUNCTION(BlueprintPure, Category = "Combat|Elements")
+	int32 GetElementChargeCap() const
+	{
+		return 10;
+	}
+
 	UFUNCTION(BlueprintCallable, Category = "Combat|Elements")
 	void GainElementCharges(EJargonElementType Element, int32 Amount);
 
@@ -301,9 +309,9 @@ public:
 	FText GetActiveHeroDominantElementDisplayName() const;
 
 	UFUNCTION(BlueprintPure, Category = "Combat|Hero|Aspect")
-	int32 GetRuntimeHeroAspectThreshold() const
+	int32 GetHeroAspectActivationChargeThreshold() const
 	{
-		return FMath::Max(1, RuntimeHeroAspectThreshold);
+		return GetElementChargeCap();
 	}
 
 	bool DrawCardsForPlayer(int32 Count);
@@ -433,7 +441,9 @@ protected:
 	void SetCurrentEnergy(int32 NewEnergy);
 	void RefreshHeroRuntimeStateFromElements();
 	EJargonElementType ResolveDominantElementFromCharges(EJargonElementType PreviousDominantElement) const;
-	EJargonHeroAspect ResolveHeroAspect(EJargonHeroClass HeroClass, EJargonElementType DominantElement, int32 DominantElementCharges) const;
+	bool TryLockHeroAspectTransformation(EJargonElementType Element, int32 OldCharges, int32 NewCharges);
+	void EmitHeroAspectTransformationCue(const FJargonHeroAspectDefinition* AspectDefinition);
+	void ResolveHeroAspectTransformationEffects(const FJargonHeroAspectDefinition& AspectDefinition);
 	bool IsHeroRuntimeStateDifferent(const FJargonHeroRuntimeState& First, const FJargonHeroRuntimeState& Second) const;
 	void SetCurrentActingEnemy(ABattleUnit* NewActingEnemy);
 	void BroadcastPlayerActionAvailabilityChanged();
@@ -542,12 +552,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Combat|Elements")
 	TMap<EJargonElementType, int32> ElementCharges;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Elements", meta = (ClampMin = "1"))
-	int32 MaxElementChargesPerType = 9;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Hero", meta = (ClampMin = "1", ToolTip = "Legacy compatibility value retained for existing Blueprint/UI bindings. Authored Hero Definition aspect entries now own their Required Element Charges."))
-	int32 RuntimeHeroAspectThreshold = 5;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn", meta = (ClampMin = "0", DisplayName = "Starting Max Energy"))
 	int32 EnergyPerTurn = 1;

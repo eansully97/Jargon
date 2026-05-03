@@ -446,6 +446,8 @@ bool EffectSuggestsElementalIdentity(const FJargonEffectSpec& EffectSpec)
 		case EJargonStatusEffectKind::Burn:
 		case EJargonStatusEffectKind::Root:
 		case EJargonStatusEffectKind::Vulnerable:
+		case EJargonStatusEffectKind::Regen:
+		case EJargonStatusEffectKind::Weak:
 			return true;
 		default:
 			break;

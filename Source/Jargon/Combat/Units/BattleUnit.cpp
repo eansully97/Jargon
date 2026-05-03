@@ -89,6 +89,8 @@ void ABattleUnit::BeginPlay()
 void ABattleUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopPathMovement();
+	ClearCurrentTileOccupancy();
+	CurrentTile = nullptr;
 
 	if (UWorld* World = GetWorld())
 	{
@@ -323,7 +325,7 @@ void ABattleUnit::PlaceOnTile(AGridTile* Tile)
 
 void ABattleUnit::ClearCurrentTileOccupancy()
 {
-	if (CurrentTile && CurrentTile->GetOccupyingUnit() == this)
+	if (IsValid(CurrentTile) && CurrentTile->GetOccupyingUnit() == this)
 	{
 		CurrentTile->SetOccupyingUnit(nullptr);
 	}
@@ -390,18 +392,30 @@ void ABattleUnit::ApplyDamage(int32 Amount)
 
 void ABattleUnit::ApplyDamageFromSource(int32 Amount, ABattleUnit* DamageSourceUnit)
 {
+	ApplyDamageFromSourceAndGetHealthDamage(Amount, DamageSourceUnit);
+}
+
+int32 ABattleUnit::ApplyDamageFromSourceAndGetHealthDamage(int32 Amount, ABattleUnit* DamageSourceUnit)
+{
 	FJargonCombatCueEvent DamageCueSource;
+	int32 AdjustedAmount = Amount;
 	if (DamageSourceUnit)
 	{
+		AdjustedAmount = DamageSourceUnit->ConsumeWeakDamageReductionForOutgoingDamage(AdjustedAmount);
 		DamageCueSource.SourceObject = DamageSourceUnit;
 		DamageCueSource.SourceUnit = DamageSourceUnit;
 		DamageCueSource.SourceTile = DamageSourceUnit->GetCurrentTile();
 	}
 
-	ApplyDamageInternal(Amount, DamageSourceUnit ? &DamageCueSource : nullptr);
+	return ApplyDamageInternal(AdjustedAmount, DamageSourceUnit ? &DamageCueSource : nullptr);
 }
 
 void ABattleUnit::ApplyDamageFromEffectContext(int32 Amount, const FJargonEffectContext& EffectContext)
+{
+	ApplyDamageFromEffectContextAndGetHealthDamage(Amount, EffectContext);
+}
+
+int32 ABattleUnit::ApplyDamageFromEffectContextAndGetHealthDamage(int32 Amount, const FJargonEffectContext& EffectContext)
 {
 	FJargonCombatCueEvent DamageCueSource;
 	DamageCueSource.Operation = EJargonEffectOperation::DealDamage;
@@ -413,14 +427,20 @@ void ABattleUnit::ApplyDamageFromEffectContext(int32 Amount, const FJargonEffect
 	DamageCueSource.SourceCard = EffectContext.SourceCard;
 	DamageCueSource.SourceRelic = Cast<UJargonRelicDefinition>(EffectContext.SourceObject.Get());
 
-	ApplyDamageInternal(Amount, &DamageCueSource);
+	int32 AdjustedAmount = Amount;
+	if (ABattleUnit* SourceUnit = EffectContext.SourceUnit.Get())
+	{
+		AdjustedAmount = SourceUnit->ConsumeWeakDamageReductionForOutgoingDamage(AdjustedAmount);
+	}
+
+	return ApplyDamageInternal(AdjustedAmount, &DamageCueSource);
 }
 
-void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource)
+int32 ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource)
 {
 	if (bIsDead || Amount <= 0)
 	{
-		return;
+		return 0;
 	}
 
 	int32 RemainingDamage = Amount;
@@ -456,7 +476,7 @@ void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent*
 				EmitUnitCue(EJargonCombatCueType::ShieldBroken, IncomingDamage, CurrentTile);
 			}
 		}
-		return;
+		return 0;
 	}
 
 	PlayHitFlash();
@@ -485,7 +505,7 @@ void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent*
 
 	if (CurrentHP > 0)
 	{
-		return;
+		return RemainingDamage;
 	}
 
 	bIsDead = true;
@@ -515,6 +535,8 @@ void ABattleUnit::ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent*
 			false
 		);
 	}
+
+	return RemainingDamage;
 }
 
 void ABattleUnit::ApplyHeal(int32 Amount)
@@ -1098,6 +1120,192 @@ void ABattleUnit::ApplyVulnerable(int32 BonusDamage)
 	RefreshStatusWidget();
 	BP_OnVulnerableChanged(VulnerableDamageBonus);
 	EmitUnitCue(EJargonCombatCueType::VulnerableApplied, SafeBonusDamage, CurrentTile);
+}
+
+void ABattleUnit::ApplyRegen(int32 Stacks)
+{
+	const int32 SafeStacks = FMath::Max(0, Stacks);
+	if (SafeStacks <= 0 || bIsDead)
+	{
+		return;
+	}
+
+	RegenStacks += SafeStacks;
+	RefreshStatusWidget();
+	BP_OnRegenChanged(RegenStacks);
+	EmitUnitCue(EJargonCombatCueType::RegenApplied, SafeStacks, CurrentTile);
+}
+
+bool ABattleUnit::ConsumeRegenTurn()
+{
+	if (RegenStacks <= 0 || bIsDead)
+	{
+		return false;
+	}
+
+	const int32 RegenHealing = RegenStacks;
+	EmitUnitCue(EJargonCombatCueType::RegenTick, RegenHealing, CurrentTile);
+	ApplyHeal(RegenHealing);
+
+	if (!bIsDead)
+	{
+		RegenStacks = FMath::Max(0, RegenStacks - 1);
+		RefreshStatusWidget();
+		BP_OnRegenChanged(RegenStacks);
+	}
+
+	return true;
+}
+
+void ABattleUnit::ApplyWeak(int32 DamageReduction)
+{
+	const int32 SafeDamageReduction = FMath::Max(0, DamageReduction);
+	if (SafeDamageReduction <= 0 || bIsDead)
+	{
+		return;
+	}
+
+	WeakDamageReduction += SafeDamageReduction;
+	RefreshStatusWidget();
+	BP_OnWeakChanged(WeakDamageReduction);
+	EmitUnitCue(EJargonCombatCueType::WeakApplied, SafeDamageReduction, CurrentTile);
+}
+
+int32 ABattleUnit::ConsumeWeakDamageReductionForOutgoingDamage(int32 Amount)
+{
+	if (Amount <= 0 || WeakDamageReduction <= 0 || bIsDead)
+	{
+		return Amount;
+	}
+
+	const int32 ConsumedWeakReduction = FMath::Min(WeakDamageReduction, Amount);
+	WeakDamageReduction = 0;
+	RefreshStatusWidget();
+	BP_OnWeakChanged(WeakDamageReduction);
+	EmitUnitCue(EJargonCombatCueType::WeakConsumed, ConsumedWeakReduction, CurrentTile);
+
+	return FMath::Max(0, Amount - ConsumedWeakReduction);
+}
+
+bool ABattleUnit::CleanseStatus(EJargonStatusEffectKind StatusKind)
+{
+	if (bIsDead)
+	{
+		return false;
+	}
+
+	if (StatusKind == EJargonStatusEffectKind::None)
+	{
+		return CleanseAllNegativeStatuses();
+	}
+
+	bool bCleansed = false;
+	switch (StatusKind)
+	{
+	case EJargonStatusEffectKind::Stun:
+		bCleansed = StunTurnsRemaining > 0;
+		StunTurnsRemaining = 0;
+		BP_OnStunChanged(StunTurnsRemaining);
+		break;
+	case EJargonStatusEffectKind::Freeze:
+		bCleansed = FreezeTurnsRemaining > 0;
+		FreezeTurnsRemaining = 0;
+		BP_OnFreezeChanged(FreezeTurnsRemaining);
+		break;
+	case EJargonStatusEffectKind::Burn:
+		bCleansed = BurnStacks > 0;
+		BurnStacks = 0;
+		BP_OnBurnChanged(BurnStacks);
+		break;
+	case EJargonStatusEffectKind::Root:
+		bCleansed = RootTurnsRemaining > 0;
+		RootTurnsRemaining = 0;
+		bMovementBlockedByRootThisTurn = false;
+		BP_OnRootChanged(RootTurnsRemaining);
+		break;
+	case EJargonStatusEffectKind::Vulnerable:
+		bCleansed = VulnerableDamageBonus > 0;
+		VulnerableDamageBonus = 0;
+		BP_OnVulnerableChanged(VulnerableDamageBonus);
+		break;
+	case EJargonStatusEffectKind::Regen:
+		bCleansed = RegenStacks > 0;
+		RegenStacks = 0;
+		BP_OnRegenChanged(RegenStacks);
+		break;
+	case EJargonStatusEffectKind::Weak:
+		bCleansed = WeakDamageReduction > 0;
+		WeakDamageReduction = 0;
+		BP_OnWeakChanged(WeakDamageReduction);
+		break;
+	default:
+		break;
+	}
+
+	if (!bCleansed)
+	{
+		return false;
+	}
+
+	RefreshStatusWidget();
+	EmitUnitCue(EJargonCombatCueType::StatusCleansed, 1, CurrentTile);
+	return true;
+}
+
+bool ABattleUnit::CleanseAllNegativeStatuses()
+{
+	if (bIsDead)
+	{
+		return false;
+	}
+
+	int32 CleansedCount = 0;
+	if (StunTurnsRemaining > 0)
+	{
+		StunTurnsRemaining = 0;
+		++CleansedCount;
+		BP_OnStunChanged(StunTurnsRemaining);
+	}
+	if (FreezeTurnsRemaining > 0)
+	{
+		FreezeTurnsRemaining = 0;
+		++CleansedCount;
+		BP_OnFreezeChanged(FreezeTurnsRemaining);
+	}
+	if (BurnStacks > 0)
+	{
+		BurnStacks = 0;
+		++CleansedCount;
+		BP_OnBurnChanged(BurnStacks);
+	}
+	if (RootTurnsRemaining > 0)
+	{
+		RootTurnsRemaining = 0;
+		bMovementBlockedByRootThisTurn = false;
+		++CleansedCount;
+		BP_OnRootChanged(RootTurnsRemaining);
+	}
+	if (VulnerableDamageBonus > 0)
+	{
+		VulnerableDamageBonus = 0;
+		++CleansedCount;
+		BP_OnVulnerableChanged(VulnerableDamageBonus);
+	}
+	if (WeakDamageReduction > 0)
+	{
+		WeakDamageReduction = 0;
+		++CleansedCount;
+		BP_OnWeakChanged(WeakDamageReduction);
+	}
+
+	if (CleansedCount <= 0)
+	{
+		return false;
+	}
+
+	RefreshStatusWidget();
+	EmitUnitCue(EJargonCombatCueType::StatusCleansed, CleansedCount, CurrentTile);
+	return true;
 }
 
 void ABattleUnit::SetActingHighlight(bool bInActingHighlight)

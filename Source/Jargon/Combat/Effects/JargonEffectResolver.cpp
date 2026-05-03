@@ -53,7 +53,8 @@ namespace
 			|| Operation == EJargonEffectOperation::ApplyBurn
 			|| Operation == EJargonEffectOperation::ApplyRoot
 			|| Operation == EJargonEffectOperation::ApplyVulnerable
-			|| Operation == EJargonEffectOperation::ApplyStatus;
+			|| Operation == EJargonEffectOperation::ApplyStatus
+			|| Operation == EJargonEffectOperation::CleanseStatus;
 	}
 
 	bool IsLiveSourceUnit(const FJargonEffectContext& Context)
@@ -132,6 +133,8 @@ namespace
 			return TEXT("ApplyVulnerable");
 		case EJargonEffectOperation::ApplyStatus:
 			return TEXT("ApplyStatus");
+		case EJargonEffectOperation::CleanseStatus:
+			return TEXT("CleanseStatus");
 		case EJargonEffectOperation::MoveSource:
 			return TEXT("MoveSource");
 		case EJargonEffectOperation::PushTarget:
@@ -388,7 +391,7 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 
 	if (IsUnitPayloadOperation(EffectSpec.Operation))
 	{
-		if (EffectSpec.Value <= 0)
+		if (JargonEffectContracts::RequiresValue(EffectSpec.Operation) && EffectSpec.Value <= 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Effect %s requires Value > 0."),
 				OperationName);
@@ -425,7 +428,8 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 		{
 			const bool bCanFallbackToSource =
 				(EffectSpec.Operation == EJargonEffectOperation::Heal ||
-					EffectSpec.Operation == EJargonEffectOperation::ApplyShield) &&
+					EffectSpec.Operation == EJargonEffectOperation::ApplyShield ||
+					EffectSpec.Operation == EJargonEffectOperation::CleanseStatus) &&
 				IsLiveSourceUnit(Context);
 
 			if (!bCanFallbackToSource)
@@ -490,7 +494,8 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 		ABattleUnit* InitialTarget = GetResolvedTargetUnit(Context);
 		const bool bCanFallbackToSource =
 			(EffectSpec.Operation == EJargonEffectOperation::Heal ||
-				EffectSpec.Operation == EJargonEffectOperation::ApplyShield) &&
+				EffectSpec.Operation == EJargonEffectOperation::ApplyShield ||
+				EffectSpec.Operation == EJargonEffectOperation::CleanseStatus) &&
 			IsLiveSourceUnit(Context);
 
 		if ((!IsValid(InitialTarget) || InitialTarget->IsDead()) && !bCanFallbackToSource)
@@ -513,6 +518,15 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 		if (!EffectSpec.StatusEffectDefinition->IsValidDefinition())
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ApplyStatus requires a valid StatusEffectDefinition. Definition='%s'."),
+				*GetPathNameSafe(EffectSpec.StatusEffectDefinition.Get()));
+			return false;
+		}
+		break;
+
+	case EJargonEffectOperation::CleanseStatus:
+		if (EffectSpec.StatusEffectDefinition && !EffectSpec.StatusEffectDefinition->IsValidDefinition())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CleanseStatus references an invalid StatusEffectDefinition. Definition='%s'."),
 				*GetPathNameSafe(EffectSpec.StatusEffectDefinition.Get()));
 			return false;
 		}
@@ -1320,7 +1334,7 @@ bool FJargonEffectResolver::ResolveUnitPayloadEffect(
 	int32 EffectIndex)
 {
 	const int32 Amount = FMath::Max(0, EffectSpec.Value);
-	if (Amount <= 0)
+	if (JargonEffectContracts::RequiresValue(EffectSpec.Operation) && Amount <= 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Unit payload effect %d requires Value > 0."), static_cast<int32>(EffectSpec.Operation));
 		return false;
@@ -1402,7 +1416,8 @@ TArray<ABattleUnit*> FJargonEffectResolver::GatherTargetUnits(
 	{
 		const bool bCanFallbackToSource =
 			(EffectSpec.Operation == EJargonEffectOperation::Heal ||
-				EffectSpec.Operation == EJargonEffectOperation::ApplyShield) &&
+				EffectSpec.Operation == EJargonEffectOperation::ApplyShield ||
+				EffectSpec.Operation == EJargonEffectOperation::CleanseStatus) &&
 			Context.SourceUnit &&
 			DoesUnitPassTargetFilter(Context.SourceUnit, EffectSpec, Context);
 
@@ -1691,8 +1706,21 @@ bool FJargonEffectResolver::ApplyUnitPayload(
 	switch (EffectSpec.Operation)
 	{
 	case EJargonEffectOperation::DealDamage:
-		TargetUnit->ApplyDamageFromEffectContext(Amount, Context);
+	{
+		const int32 ActualHealthDamage = TargetUnit->ApplyDamageFromEffectContextAndGetHealthDamage(Amount, Context);
+		if (EffectSpec.bLifesteal && ActualHealthDamage > 0 && IsLiveSourceUnit(Context))
+		{
+			Context.SourceUnit->ApplyHeal(ActualHealthDamage);
+			EmitEffectResolverCue(
+				Context,
+				EffectSpec,
+				EJargonCombatCueType::Lifesteal,
+				Context.SourceUnit.Get(),
+				Context.SourceUnit->GetCurrentTile(),
+				ActualHealthDamage);
+		}
 		return true;
+	}
 
 	case EJargonEffectOperation::Heal:
 		TargetUnit->ApplyHeal(Amount);
@@ -1745,10 +1773,27 @@ bool FJargonEffectResolver::ApplyUnitPayload(
 		case EJargonStatusEffectKind::Vulnerable:
 			TargetUnit->ApplyVulnerable(Amount);
 			return true;
+		case EJargonStatusEffectKind::Regen:
+			TargetUnit->ApplyRegen(Amount);
+			return true;
+		case EJargonStatusEffectKind::Weak:
+			TargetUnit->ApplyWeak(Amount);
+			return true;
 		case EJargonStatusEffectKind::None:
 		default:
 			return false;
 		}
+
+	case EJargonEffectOperation::CleanseStatus:
+		if (EffectSpec.StatusEffectDefinition)
+		{
+			TargetUnit->CleanseStatus(EffectSpec.StatusEffectDefinition->StatusKind);
+		}
+		else
+		{
+			TargetUnit->CleanseAllNegativeStatuses();
+		}
+		return true;
 
 	default:
 		return false;

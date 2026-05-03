@@ -39,6 +39,12 @@ void ABattleTileEffect::Destroyed()
 {
 	EmitTileEffectCue(EJargonCombatCueType::TileEffectExpired);
 
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (CombatGameMode)
+	{
+		CombatGameMode->UnregisterPersistentTileEffect(this);
+	}
+
 	if (CurrentTile)
 	{
 		CurrentTile->RemoveTileEffect(this);

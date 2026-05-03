@@ -23,7 +23,7 @@ enum class EJargonHeroAspect : uint8
 	// Legacy/compatibility aspect. Runtime aspect selection no longer assigns this directly.
 	RadiantChampion UMETA(DisplayName = "Radiant Champion"),
 
-	// Mage aspects: Mage + element threshold determines the active specialization.
+	// Mage aspects: the first authored element to reach the charge cap locks the combat transformation.
 	Pyromancer UMETA(DisplayName = "Mage / Fire - Pyromancer"),
 	Cryomancer UMETA(DisplayName = "Mage / Frost - Cryomancer"),
 	Stormcaller UMETA(DisplayName = "Mage / Storm - Stormcaller"),
@@ -31,7 +31,7 @@ enum class EJargonHeroAspect : uint8
 	Lightweaver UMETA(DisplayName = "Mage / Radiance - Lightweaver"),
 	Necromancer UMETA(DisplayName = "Mage / Quietus - Necromancer"),
 
-	// Rogue aspects: Rogue + element threshold determines the active specialization.
+	// Rogue aspects: the first authored element to reach the charge cap locks the combat transformation.
 	Ashblade UMETA(DisplayName = "Rogue / Fire - Ashblade"),
 	Frostknife UMETA(DisplayName = "Rogue / Frost - Frostknife"),
 	Tempest UMETA(DisplayName = "Rogue / Storm - Tempest"),
@@ -39,7 +39,7 @@ enum class EJargonHeroAspect : uint8
 	Inquisitor UMETA(DisplayName = "Rogue / Radiance - Inquisitor"),
 	Reaper UMETA(DisplayName = "Rogue / Quietus - Reaper"),
 
-	// Paladin aspects: Paladin + element threshold determines the active specialization.
+	// Paladin aspects: the first authored element to reach the charge cap locks the combat transformation.
 	Sunbreaker UMETA(DisplayName = "Paladin / Fire - Sunbreaker"),
 	Frostwarden UMETA(DisplayName = "Paladin / Frost - Frostwarden"),
 	Stormguard UMETA(DisplayName = "Paladin / Storm - Stormguard"),
@@ -120,6 +120,12 @@ struct JARGON_API FJargonHeroAspectInfo
 	FText PassiveDescription;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	FText ProgressText;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	FText StatusText;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
 	bool bHasRequiredCharges = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
@@ -127,6 +133,15 @@ struct JARGON_API FJargonHeroAspectInfo
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
 	bool bIsActive = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	bool bIsTransformed = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	bool bCanTransformNow = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	bool bTransformationLocked = false;
 };
 
 USTRUCT(BlueprintType)
@@ -151,6 +166,18 @@ struct JARGON_API FJargonHeroRuntimeState
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
 	int32 AspectThreshold = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	EJargonElementType TransformedElement = EJargonElementType::None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	EJargonHeroAspect TransformedAspect = EJargonHeroAspect::None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	bool bHasTransformedAspect = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Aspect")
+	int32 TransformationThreshold = 0;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hero|Elements")
 	int32 FireCharges = 0;

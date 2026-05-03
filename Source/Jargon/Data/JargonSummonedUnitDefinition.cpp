@@ -172,28 +172,31 @@ EDataValidationResult UJargonSummonedUnitDefinition::IsDataValid(FDataValidation
 
 	for (int32 EffectIndex = 0; EffectIndex < OnSummonedEffects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			OnSummonedEffects[EffectIndex],
 			FString::Printf(TEXT("OnSummonedEffects effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnSummoned,
 			Context);
 	}
 
 	for (int32 EffectIndex = 0; EffectIndex < OnTurnStartEffects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			OnTurnStartEffects[EffectIndex],
 			FString::Printf(TEXT("OnTurnStartEffects effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnTurnStart,
 			Context);
 	}
 
 	for (int32 EffectIndex = 0; EffectIndex < OnDeathEffects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			OnDeathEffects[EffectIndex],
 			FString::Printf(TEXT("OnDeathEffects effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnDeath,
 			Context);
 	}
 

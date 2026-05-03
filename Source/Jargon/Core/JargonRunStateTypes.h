@@ -120,6 +120,9 @@ public:
 	FText SummaryText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
+	bool bHasAnyNonNeutralElements = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Deck Elements")
 	bool bIsWithinLimit = true;
 };
 

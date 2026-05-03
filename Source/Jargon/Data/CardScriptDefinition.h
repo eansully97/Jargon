@@ -35,7 +35,9 @@ enum class EJargonCardKeyword : uint8
 	Draw UMETA(DisplayName = "Draw"),
 	GainEnergy UMETA(DisplayName = "Gain Energy"),
 	GainElement UMETA(DisplayName = "Gain Element"),
-	Chain UMETA(DisplayName = "Chain")
+	Chain UMETA(DisplayName = "Chain"),
+	CleanseStatus UMETA(DisplayName = "Cleanse Status"),
+	Lifesteal UMETA(DisplayName = "Lifesteal")
 };
 
 UENUM(BlueprintType)
@@ -88,6 +90,34 @@ public:
 	int32 Damage = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Delivery", meta = (ClampMin = "0", ToolTip = "Delivery: 0 means the chosen enemy only. Higher values deliver the damage to enemies around the chosen tile."))
+	int32 Radius = 0;
+
+	virtual void BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const override;
+	virtual bool HasRuntimeOperation(EJargonEffectOperation Operation) const override;
+	virtual EJargonCardKeyword GetKeyword() const override;
+	virtual FString GetKeywordName() const override;
+	virtual FString GetDeliverySummary() const override;
+	virtual FString GetPayloadSummary() const override;
+	virtual FString GetActionSummary() const override;
+	virtual FString GetRulesText() const override;
+
+#if WITH_EDITOR
+	virtual bool ValidateAction(const UCardDefinition* Card, const FString& ActionLabel, FDataValidationContext& Context) const override;
+#endif
+};
+
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Lifesteal")
+class JARGON_API UJargonCardLifestealAction : public UJargonCardAction
+{
+	GENERATED_BODY()
+
+public:
+	UJargonCardLifestealAction();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: damage dealt to the delivered enemy target or each enemy in the radius. The source heals for unblocked HP damage dealt."))
+	int32 Damage = 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Delivery", meta = (ClampMin = "0", ToolTip = "Delivery: 0 means the chosen enemy only. Higher values deliver the lifesteal damage to enemies around the chosen tile."))
 	int32 Radius = 0;
 
 	virtual void BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -175,6 +205,34 @@ public:
 	int32 Amount = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Delivery", meta = (ClampMin = "0", ToolTip = "Delivery: 0 means the chosen enemy only. Higher values deliver the status to enemies around the chosen tile."))
+	int32 Radius = 0;
+
+	virtual void BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const override;
+	virtual bool HasRuntimeOperation(EJargonEffectOperation Operation) const override;
+	virtual EJargonCardKeyword GetKeyword() const override;
+	virtual FString GetKeywordName() const override;
+	virtual FString GetDeliverySummary() const override;
+	virtual FString GetPayloadSummary() const override;
+	virtual FString GetActionSummary() const override;
+	virtual FString GetRulesText() const override;
+
+#if WITH_EDITOR
+	virtual bool ValidateAction(const UCardDefinition* Card, const FString& ActionLabel, FDataValidationContext& Context) const override;
+#endif
+};
+
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Cleanse Status")
+class JARGON_API UJargonCardCleanseStatusAction : public UJargonCardAction
+{
+	GENERATED_BODY()
+
+public:
+	UJargonCardCleanseStatusAction();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: optional status keyword definition to cleanse. Leave empty to cleanse all negative statuses."))
+	TObjectPtr<UJargonStatusEffectDefinition> StatusEffectDefinition = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Delivery", meta = (ClampMin = "0", ToolTip = "Delivery: 0 means the chosen ally or self fallback. Higher values cleanse allies around the chosen tile."))
 	int32 Radius = 0;
 
 	virtual void BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const override;

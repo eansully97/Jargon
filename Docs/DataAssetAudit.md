@@ -36,7 +36,7 @@ The biggest remaining architecture risk is not the base class of the assets. It 
 | `FJargonEffectSpec` | Shared effect payload | Used by hero passives, boons, summons, and shared resolver. Validation helper now checks common invalid combinations. |
 | `FWeightedCardPackEntry` | Card pack entry | Added editor ToolTips and pack array `TitleProperty`. Validation checks null card and invalid weight. |
 | `FJargonHeroClassPassiveDefinition` | Hero passive authoring | Added `TitleProperty` to effect arrays. Validation checks authored effect specs. |
-| `FJargonHeroAspectDefinition` | Hero aspect authoring | Added `TitleProperty` to effect arrays. Validation warns about duplicate or incomplete aspect entries. |
+| `FJargonHeroAspectDefinition` | Hero aspect authoring | Added `TitleProperty` to effect arrays. Aspect transformation uses the global element charge cap, currently 10, rather than per-aspect thresholds. Transformation effects fire once when the first eligible element reaches the cap; turn-start and enemy-death effects fire only while transformed. Validation warns about duplicate or incomplete aspect entries. |
 | `FEncounterEnemySpawn` | Encounter authoring | Forward-declared `ABattleUnit`, added ToolTips, and made encounter arrays readable by unit class. |
 | `FJargonCurrencyAmount` | Currency values | Used in packs and encounter rewards. Validation now catches negative denominations where definitions own rewards/prices. |
 
@@ -168,8 +168,8 @@ Validation should still report:
 - Invalid class passive effect specs.
 - Duplicate aspect entries.
 - Duplicate required element entries.
-- Aspect entries with `Aspect=None`, `RequiredElement=None`, or invalid charge counts.
-- Aspect entries with no passive effects.
+- Aspect entries with `Aspect=None` or `RequiredElement=None`.
+- Aspect entries with no transformation or passive effects.
 - Invalid aspect passive effect specs.
 
 ### Hero Boons / Relics

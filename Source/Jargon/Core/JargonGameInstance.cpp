@@ -227,9 +227,10 @@ TArray<EJargonElementType> UJargonGameInstance::GetRunDeckElements() const
 FJargonDeckElementSummary UJargonGameInstance::GetRunDeckElementSummary() const
 {
 	FJargonDeckElementSummary Summary;
-	Summary.MaxElementCount = GetMaxRunDeckElements();
 	Summary.ActiveElements = GetRunDeckElements();
 	Summary.CurrentElementCount = Summary.ActiveElements.Num();
+	Summary.MaxElementCount = GetMaxRunDeckElements();
+	Summary.bHasAnyNonNeutralElements = Summary.CurrentElementCount > 0;
 	Summary.bIsWithinLimit = Summary.CurrentElementCount <= Summary.MaxElementCount;
 
 	for (const EJargonElementType Element : Summary.ActiveElements)
@@ -240,7 +241,7 @@ FJargonDeckElementSummary UJargonGameInstance::GetRunDeckElementSummary() const
 	if (Summary.ActiveElementTexts.Num() == 0)
 	{
 		Summary.SummaryText = FText::Format(
-			NSLOCTEXT("JargonDeck", "DeckElementSummaryNeutralOnly", "Elements: Neutral only ({0} / {1})"),
+			NSLOCTEXT("JargonDeck", "DeckElementSummaryNeutralOnlyWithLimit", "Deck elements: Neutral only ({0} / {1})"),
 			FText::AsNumber(Summary.CurrentElementCount),
 			FText::AsNumber(Summary.MaxElementCount));
 	}
@@ -254,7 +255,7 @@ FJargonDeckElementSummary UJargonGameInstance::GetRunDeckElementSummary() const
 		}
 
 		Summary.SummaryText = FText::Format(
-			NSLOCTEXT("JargonDeck", "DeckElementSummaryWithElements", "Elements: {0} ({1} / {2})"),
+			NSLOCTEXT("JargonDeck", "DeckElementSummaryWithElementsAndLimit", "Deck elements: {0} ({1} / {2})"),
 			FText::FromString(FString::Join(ElementNames, TEXT(", "))),
 			FText::AsNumber(Summary.CurrentElementCount),
 			FText::AsNumber(Summary.MaxElementCount));
@@ -270,12 +271,13 @@ FText UJargonGameInstance::GetCardElementDisplayText(EJargonElementType CardElem
 
 bool UJargonGameInstance::WouldRunDeckRespectElementLimitWithCard(const UCardDefinition* Card) const
 {
-	TArray<TObjectPtr<UCardDefinition>> CandidateDeck = ActiveRunDeck;
-	if (Card)
+	if (!Card)
 	{
-		CandidateDeck.Add(const_cast<UCardDefinition*>(Card));
+		return DoesCardCollectionRespectElementLimit(ActiveRunDeck);
 	}
 
+	TArray<TObjectPtr<UCardDefinition>> CandidateDeck = ActiveRunDeck;
+	CandidateDeck.Add(const_cast<UCardDefinition*>(Card));
 	return DoesCardCollectionRespectElementLimit(CandidateDeck);
 }
 
@@ -408,11 +410,9 @@ bool UJargonGameInstance::MoveCardFromReserveToDeck(UCardDefinition* Card)
 
 	if (!WouldRunDeckRespectElementLimitWithCard(Card))
 	{
-		UE_LOG(LogJargon, Log, TEXT("MoveCardFromReserveToDeck rejected. Adding '%s' would exceed the max unique non-neutral deck element count. Current=%d Max=%d CardElement=%s"),
+		UE_LOG(LogJargon, Log, TEXT("MoveCardFromReserveToDeck rejected. Adding '%s' would exceed the deck element limit of %d unique non-neutral elements."),
 			*GetNameSafe(Card),
-			GetRunDeckElementCount(),
-			GetMaxRunDeckElements(),
-			*Card->GetCardElementDisplayText().ToString());
+			GetMaxRunDeckElements());
 		return false;
 	}
 
@@ -970,7 +970,7 @@ void UJargonGameInstance::SetRunDeckInternal(const TArray<UCardDefinition*>& Ini
 
 	if (!DoesCardCollectionRespectElementLimit(ActiveRunDeck))
 	{
-		UE_LOG(LogJargon, Warning, TEXT("Run deck initialized with %d unique non-neutral elements, exceeding MaxRunDeckElements=%d. Existing contents are preserved, but additional deck adds are blocked until the deck is under the limit."),
+		UE_LOG(LogJargon, Warning, TEXT("Run deck initialized with %d unique non-neutral elements, exceeding MaxRunDeckElements=%d. Existing contents are preserved, but additional deck adds are blocked until the deck is within the element limit."),
 			GetRunDeckElementCount(),
 			GetMaxRunDeckElements());
 	}

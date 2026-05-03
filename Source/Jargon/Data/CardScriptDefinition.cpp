@@ -112,14 +112,36 @@ namespace
 		switch (StatusEffectDefinition ? StatusEffectDefinition->StatusKind : EJargonStatusEffectKind::None)
 		{
 		case EJargonStatusEffectKind::Burn:
+		case EJargonStatusEffectKind::Regen:
 			return TEXT("stack");
 		case EJargonStatusEffectKind::Vulnerable:
 			return TEXT("next-hit bonus damage");
+		case EJargonStatusEffectKind::Weak:
+			return TEXT("damage reduction");
 		case EJargonStatusEffectKind::Stun:
 		case EJargonStatusEffectKind::Freeze:
 		case EJargonStatusEffectKind::Root:
 		default:
 			return TEXT("turn");
+		}
+	}
+
+	EJargonEffectTargetFilter GetTargetFilterForStatusDefinition(const UJargonStatusEffectDefinition* StatusEffectDefinition)
+	{
+		if (!StatusEffectDefinition)
+		{
+			return EJargonEffectTargetFilter::EnemyToSource;
+		}
+
+		switch (StatusEffectDefinition->TargetIntent)
+		{
+		case EJargonStatusEffectIntent::Friendly:
+			return EJargonEffectTargetFilter::FriendlyToSource;
+		case EJargonStatusEffectIntent::Any:
+			return EJargonEffectTargetFilter::Any;
+		case EJargonStatusEffectIntent::Hostile:
+		default:
+			return EJargonEffectTargetFilter::EnemyToSource;
 		}
 	}
 
@@ -308,6 +330,62 @@ bool UJargonCardDamageAction::ValidateAction(const UCardDefinition* Card, const 
 }
 #endif
 
+UJargonCardLifestealAction::UJargonCardLifestealAction()
+{
+	EditorTitle = FText::FromString(TEXT("Lifesteal"));
+}
+
+void UJargonCardLifestealAction::BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const
+{
+	FJargonEffectSpec Effect = MakeUnitEffect(EJargonEffectOperation::DealDamage, Damage, Radius, EJargonEffectTargetFilter::EnemyToSource);
+	Effect.bLifesteal = true;
+	OutEffects.Add(Effect);
+}
+
+bool UJargonCardLifestealAction::HasRuntimeOperation(EJargonEffectOperation Operation) const
+{
+	return Operation == EJargonEffectOperation::DealDamage;
+}
+
+EJargonCardKeyword UJargonCardLifestealAction::GetKeyword() const
+{
+	return EJargonCardKeyword::Lifesteal;
+}
+
+FString UJargonCardLifestealAction::GetKeywordName() const
+{
+	return GetCardKeywordToken(GetKeyword());
+}
+
+FString UJargonCardLifestealAction::GetDeliverySummary() const
+{
+	return UnitDeliverySummary(Radius, TEXT("Single Enemy"), TEXT("AOE Enemies"));
+}
+
+FString UJargonCardLifestealAction::GetPayloadSummary() const
+{
+	return FString::Printf(TEXT("%d damage heal unblocked"), Damage);
+}
+
+FString UJargonCardLifestealAction::GetActionSummary() const
+{
+	return FormatKeywordSummary(GetKeywordName(), GetDeliverySummary(), GetPayloadSummary());
+}
+
+FString UJargonCardLifestealAction::GetRulesText() const
+{
+	return Radius > 0
+		? FString::Printf(TEXT("Deal %d damage in radius %d. Heal for unblocked damage dealt."), Damage, Radius)
+		: FString::Printf(TEXT("Deal %d damage. Heal for unblocked damage dealt."), Damage);
+}
+
+#if WITH_EDITOR
+bool UJargonCardLifestealAction::ValidateAction(const UCardDefinition* Card, const FString& ActionLabel, FDataValidationContext& Context) const
+{
+	return ValidatePositiveAmount(Card, ActionLabel, TEXT("Damage"), Damage, Context);
+}
+#endif
+
 UJargonCardHealAction::UJargonCardHealAction()
 {
 	EditorTitle = FText::FromString(TEXT("Heal"));
@@ -427,7 +505,7 @@ void UJargonCardStatusAction::BuildEffectSpecs(const UCardDefinition* Card, TArr
 		EJargonEffectOperation::ApplyStatus,
 		Amount,
 		Radius,
-		EJargonEffectTargetFilter::EnemyToSource);
+		GetTargetFilterForStatusDefinition(StatusEffectDefinition));
 	Effect.StatusEffectDefinition = StatusEffectDefinition;
 	OutEffects.Add(Effect);
 }
@@ -449,6 +527,14 @@ FString UJargonCardStatusAction::GetKeywordName() const
 
 FString UJargonCardStatusAction::GetDeliverySummary() const
 {
+	if (StatusEffectDefinition && StatusEffectDefinition->TargetIntent == EJargonStatusEffectIntent::Friendly)
+	{
+		return UnitDeliverySummary(Radius, TEXT("Single Ally"), TEXT("AOE Allies"));
+	}
+	if (StatusEffectDefinition && StatusEffectDefinition->TargetIntent == EJargonStatusEffectIntent::Any)
+	{
+		return UnitDeliverySummary(Radius, TEXT("Single Unit"), TEXT("AOE Units"));
+	}
 	return UnitDeliverySummary(Radius, TEXT("Single Enemy"), TEXT("AOE Enemies"));
 }
 
@@ -500,6 +586,78 @@ bool UJargonCardStatusAction::ValidateAction(const UCardDefinition* Card, const 
 	}
 
 	return bValid;
+}
+#endif
+
+UJargonCardCleanseStatusAction::UJargonCardCleanseStatusAction()
+{
+	EditorTitle = FText::FromString(TEXT("Cleanse Status"));
+}
+
+void UJargonCardCleanseStatusAction::BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const
+{
+	FJargonEffectSpec Effect;
+	Effect.Operation = EJargonEffectOperation::CleanseStatus;
+	Effect.Delivery = Radius > 0 ? EJargonEffectDelivery::UnitsInRadius : EJargonEffectDelivery::ExplicitUnit;
+	Effect.TargetFilter = EJargonEffectTargetFilter::FriendlyToSource;
+	Effect.Radius = FMath::Max(0, Radius);
+	Effect.StatusEffectDefinition = StatusEffectDefinition;
+	OutEffects.Add(Effect);
+}
+
+bool UJargonCardCleanseStatusAction::HasRuntimeOperation(EJargonEffectOperation Operation) const
+{
+	return Operation == EJargonEffectOperation::CleanseStatus;
+}
+
+EJargonCardKeyword UJargonCardCleanseStatusAction::GetKeyword() const
+{
+	return EJargonCardKeyword::CleanseStatus;
+}
+
+FString UJargonCardCleanseStatusAction::GetKeywordName() const
+{
+	return TEXT("Cleanse");
+}
+
+FString UJargonCardCleanseStatusAction::GetDeliverySummary() const
+{
+	return UnitDeliverySummary(Radius, TEXT("Single Ally"), TEXT("AOE Allies"));
+}
+
+FString UJargonCardCleanseStatusAction::GetPayloadSummary() const
+{
+	return StatusEffectDefinition
+		? FString::Printf(TEXT("%s Definition=%s"), *GetStatusName(StatusEffectDefinition), *GetNameSafe(StatusEffectDefinition.Get()))
+		: TEXT("All negative statuses");
+}
+
+FString UJargonCardCleanseStatusAction::GetActionSummary() const
+{
+	return FormatKeywordSummary(GetKeywordName(), GetDeliverySummary(), GetPayloadSummary());
+}
+
+FString UJargonCardCleanseStatusAction::GetRulesText() const
+{
+	const FString StatusName = StatusEffectDefinition ? GetStatusName(StatusEffectDefinition) : TEXT("all negative statuses");
+	return Radius > 0
+		? FString::Printf(TEXT("Cleanse %s in radius %d."), *StatusName, Radius)
+		: FString::Printf(TEXT("Cleanse %s."), *StatusName);
+}
+
+#if WITH_EDITOR
+bool UJargonCardCleanseStatusAction::ValidateAction(const UCardDefinition* Card, const FString& ActionLabel, FDataValidationContext& Context) const
+{
+	if (StatusEffectDefinition && !StatusEffectDefinition->IsValidDefinition())
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Card,
+			FString::Printf(TEXT("%s references invalid optional StatusEffectDefinition payload '%s'."), *ActionLabel, *GetPathNameSafe(StatusEffectDefinition.Get())));
+		return false;
+	}
+
+	return true;
 }
 #endif
 

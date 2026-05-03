@@ -129,21 +129,6 @@ void AJargonCombatPlayerController::InitializeCombatHoverInfoWidget()
 	}
 
 	CombatHoverInfoWidget->AddToViewport(CombatHoverInfoWidgetZOrder);
-
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-
-	if (GetMousePosition(MouseX, MouseY))
-	{
-		const FVector2D MouseScreenPosition(MouseX, MouseY);
-
-		// Top-left of the widget will be placed at the cursor.
-		CombatHoverInfoWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
-		
-		const FVector2D Offset(16.0f, 16.0f);
-		CombatHoverInfoWidget->SetPositionInViewport(MouseScreenPosition + Offset, true);
-	}
-
 	CombatHoverInfoWidget->SetHoverInfo(CurrentCombatHoverInfo);
 }
 

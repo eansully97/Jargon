@@ -75,8 +75,6 @@ void AJargonTownPlayerController::InitializeTownHoverInfoWidget()
 	}
 
 	TownHoverInfoWidget->AddToViewport(TownHoverInfoWidgetZOrder);
-	
-	PositionTownHoverInfoWidgetAtMouse();
 	TownHoverInfoWidget->SetHoverInfo(CurrentTownHoverInfo);
 }
 
@@ -204,26 +202,6 @@ void AJargonTownPlayerController::HidePostMatchReportWithoutInputUpdate()
 	{
 		PostMatchReportWidget->RemoveFromParent();
 	}
-}
-
-void AJargonTownPlayerController::PositionTownHoverInfoWidgetAtMouse()
-{
-	if (!TownHoverInfoWidget)
-	{
-		return;
-	}
-
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!GetMousePosition(MouseX, MouseY))
-	{
-		return;
-	}
-
-	const FVector2D MouseScreenPosition(MouseX, MouseY);
-	const FVector2D Offset(0.0f, 0.0f);
-	TownHoverInfoWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
-	TownHoverInfoWidget->SetPositionInViewport(MouseScreenPosition + Offset, true);
 }
 
 bool AJargonTownPlayerController::HasBlockingModalOpen() const
@@ -355,11 +333,6 @@ void AJargonTownPlayerController::SetCurrentTownHoverInfo(const FJargonCombatHov
 
 	if (TownHoverInfoWidget)
 	{
-		if (CurrentTownHoverInfo.bHasInfo)
-		{
-			PositionTownHoverInfoWidgetAtMouse();
-		}
-
 		TownHoverInfoWidget->SetHoverInfo(CurrentTownHoverInfo);
 	}
 

@@ -81,28 +81,31 @@ EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext
 
 	for (int32 EffectIndex = 0; EffectIndex < OnCombatStartEffects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			OnCombatStartEffects[EffectIndex],
 			FString::Printf(TEXT("OnCombatStartEffects effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnCombatStart,
 			Context);
 	}
 
 	for (int32 EffectIndex = 0; EffectIndex < OnPlayerTurnStartEffects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			OnPlayerTurnStartEffects[EffectIndex],
 			FString::Printf(TEXT("OnPlayerTurnStartEffects effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnTurnStart,
 			Context);
 	}
 
 	for (int32 EffectIndex = 0; EffectIndex < OnEnemyDeathEffects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			OnEnemyDeathEffects[EffectIndex],
 			FString::Printf(TEXT("OnEnemyDeathEffects effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnEnemyDeath,
 			Context);
 	}
 

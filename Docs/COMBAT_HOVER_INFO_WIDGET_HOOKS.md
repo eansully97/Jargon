@@ -16,8 +16,17 @@ Phase 1 exposes a minimal, description-only hover info channel so Blueprint UI c
 
 - `SetHoverInfo()`
 - `GetHoverInfo()`
+- `UpdateHoverPosition()`
 - `BP_OnHoverInfoChanged()`
 - optional `DescriptionText` TextBlock binding, updated automatically when present.
+- cursor-follow layout properties:
+  - `bFollowMouseCursor`
+  - `CursorOffset`
+  - `ViewportPadding`
+  - `bFlipToStayOnScreen`
+  - `bClampToViewport`
+
+By default, the shared hover widget follows the owning player's mouse cursor every tick with a fixed offset. It flips/clamps near viewport edges so the description remains visible. The widget remains `HitTestInvisible` while active and `Collapsed` when empty, so it should not contain clickable controls in this phase.
 
 `FJargonCombatHoverInfo` intentionally contains only:
 
@@ -58,5 +67,5 @@ The same `UCombatHoverInfoWidget` base can be reused in town:
 ## Notes
 
 - This hook is read-only presentation state and does not affect targeting, movement, card play, or combat resolution.
-- Blueprint owns styling and any later richer layout. The C++ base can optionally update a bound `DescriptionText` TextBlock and auto-hide/show itself.
+- Blueprint owns styling and any later richer layout. The C++ base can optionally update a bound `DescriptionText` TextBlock, auto-hide/show itself, and follow the cursor.
 - Future phases can add optional fields for names, stats, statuses, duration, radius, or rules summaries after the description-only widget feels good in play.

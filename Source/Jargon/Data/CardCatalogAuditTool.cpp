@@ -268,6 +268,23 @@ struct FCardContentRecommendationRow
 	FString SourceReport;
 };
 
+struct FEffectVocabularyFitAuditRow
+{
+	FString Scope;
+	int32 ProductionCards = 0;
+	int32 TotalEffectLines = 0;
+	int32 UniqueOperations = 0;
+	int32 UniqueDeliveries = 0;
+	FString StructuralCoverageStatus;
+	FString MechanicalVarietyStatus;
+	FString OperationMix;
+	FString DeliveryMix;
+	FString StatusTerms;
+	FString DominantOperation;
+	FString RecommendedFirstBatch;
+	FString Notes;
+};
+
 struct FCardBalanceEstimate
 {
 	int32 BaseBudget = 0;
@@ -512,7 +529,8 @@ bool IsChainDelivery(const FJargonEffectSpec& EffectSpec)
 bool IsFriendlyTargetingOperation(EJargonEffectOperation Operation)
 {
 	return Operation == EJargonEffectOperation::Heal
-		|| Operation == EJargonEffectOperation::ApplyShield;
+		|| Operation == EJargonEffectOperation::ApplyShield
+		|| Operation == EJargonEffectOperation::CleanseStatus;
 }
 
 bool IsHostileTargetingOperation(EJargonEffectOperation Operation)
@@ -523,6 +541,7 @@ bool IsHostileTargetingOperation(EJargonEffectOperation Operation)
 		|| Operation == EJargonEffectOperation::ApplyBurn
 		|| Operation == EJargonEffectOperation::ApplyRoot
 		|| Operation == EJargonEffectOperation::ApplyVulnerable
+		|| Operation == EJargonEffectOperation::ApplyStatus
 		|| Operation == EJargonEffectOperation::PushTarget
 		|| Operation == EJargonEffectOperation::PullTarget;
 }
@@ -590,8 +609,18 @@ FString BuildCardEffectPayloadSummary(const FJargonEffectSpec& EffectSpec)
 	case EJargonEffectOperation::GainElementCharge:
 		Fields.Add(FString::Printf(TEXT("Element=%s"), *GetElementTypeName(EffectSpec.ElementType)));
 		break;
+	case EJargonEffectOperation::CleanseStatus:
+		Fields.Add(EffectSpec.StatusEffectDefinition
+			? FString::Printf(TEXT("StatusDefinition=%s"), *GetNameSafe(EffectSpec.StatusEffectDefinition.Get()))
+			: TEXT("StatusDefinition=AllNegative"));
+		break;
 	default:
 		break;
+	}
+
+	if (EffectSpec.Operation == EJargonEffectOperation::DealDamage && EffectSpec.bLifesteal)
+	{
+		Fields.Add(TEXT("Lifesteal=true"));
 	}
 
 	return Fields.Num() > 0 ? FString::Join(Fields, TEXT(" ")) : TEXT("None");
@@ -641,6 +670,10 @@ void AddEffectArchitectureWarnings(const FJargonEffectSpec& EffectSpec, TArray<F
 	if (!IsChainDelivery(EffectSpec) && EffectSpec.ChainCount != 3)
 	{
 		OutWarnings.Add(FString::Printf(TEXT("Payload: '%s' ignores ChainCount=%d."), *OperationName, EffectSpec.ChainCount));
+	}
+	if (EffectSpec.Operation != EJargonEffectOperation::DealDamage && EffectSpec.bLifesteal)
+	{
+		OutWarnings.Add(FString::Printf(TEXT("Payload: '%s' ignores Lifesteal."), *OperationName));
 	}
 }
 
@@ -1298,7 +1331,9 @@ FString BuildRulesTextForEffect(const FJargonEffectSpec& EffectSpec)
 	switch (EffectSpec.Operation)
 	{
 	case EJargonEffectOperation::DealDamage:
-		return FString::Printf(TEXT("Deal %s damage."), *GetEffectValueText(EffectSpec.Value));
+		return EffectSpec.bLifesteal
+			? FString::Printf(TEXT("Deal %s damage. Heal for unblocked damage dealt."), *GetEffectValueText(EffectSpec.Value))
+			: FString::Printf(TEXT("Deal %s damage."), *GetEffectValueText(EffectSpec.Value));
 
 	case EJargonEffectOperation::Heal:
 		return FString::Printf(TEXT("Heal %s HP."), *GetEffectValueText(EffectSpec.Value));
@@ -1326,6 +1361,11 @@ FString BuildRulesTextForEffect(const FJargonEffectSpec& EffectSpec)
 			TEXT("Apply %s %s."),
 			*GetEffectValueText(EffectSpec.Value),
 			EffectSpec.StatusEffectDefinition ? *EffectSpec.StatusEffectDefinition->DisplayName.ToString() : TEXT("Status"));
+
+	case EJargonEffectOperation::CleanseStatus:
+		return EffectSpec.StatusEffectDefinition
+			? FString::Printf(TEXT("Cleanse %s."), *EffectSpec.StatusEffectDefinition->DisplayName.ToString())
+			: TEXT("Cleanse all negative statuses.");
 
 	case EJargonEffectOperation::MoveSource:
 		return FString::Printf(TEXT("Move up to %d tile%s."), FMath::Max(0, EffectSpec.MoveDistance), *GetPluralSuffix(EffectSpec.MoveDistance));
@@ -1464,6 +1504,9 @@ FString GetRulesKeywordForOperation(EJargonEffectOperation Operation)
 
 	case EJargonEffectOperation::ApplyStatus:
 		return TEXT("status");
+
+	case EJargonEffectOperation::CleanseStatus:
+		return TEXT("cleanse");
 
 	case EJargonEffectOperation::MoveSource:
 		return TEXT("move");
@@ -1616,7 +1659,7 @@ int32 EstimateEffectBudget(const FJargonEffectSpec& EffectSpec)
 	switch (EffectSpec.Operation)
 	{
 	case EJargonEffectOperation::DealDamage:
-		return FMath::Max(0, EffectSpec.Value) + FMath::Max(0, EffectSpec.Radius);
+		return FMath::Max(0, EffectSpec.Value) + FMath::Max(0, EffectSpec.Radius) + (EffectSpec.bLifesteal ? 1 : 0);
 
 	case EJargonEffectOperation::Heal:
 	case EJargonEffectOperation::ApplyShield:
@@ -1654,6 +1697,9 @@ int32 EstimateEffectBudget(const FJargonEffectSpec& EffectSpec)
 
 	case EJargonEffectOperation::ApplyStatus:
 		return FMath::Max(0, EffectSpec.Value) * (IsChainDelivery(EffectSpec) ? FMath::Max(1, EffectSpec.ChainCount) : 1);
+
+	case EJargonEffectOperation::CleanseStatus:
+		return 1 + FMath::Max(0, EffectSpec.Radius);
 
 	case EJargonEffectOperation::DestroyTileEffect:
 		return 1 + FMath::Max(0, EffectSpec.Radius);
@@ -1812,6 +1858,11 @@ TArray<FString> BuildRoleTagsForCard(const UCardDefinition* Card)
 		{
 		case EJargonEffectOperation::DealDamage:
 			AddUniqueString(RoleTags, TEXT("Damage"));
+			if (EffectSpec.bLifesteal)
+			{
+				AddUniqueString(RoleTags, TEXT("Healing"));
+				AddUniqueString(RoleTags, TEXT("Lifesteal"));
+			}
 			break;
 
 		case EJargonEffectOperation::ApplyBurn:
@@ -1853,6 +1904,16 @@ TArray<FString> BuildRoleTagsForCard(const UCardDefinition* Card)
 					AddUniqueString(RoleTags, TEXT("Control"));
 					break;
 
+				case EJargonStatusEffectKind::Regen:
+					AddUniqueString(RoleTags, TEXT("Healing"));
+					AddUniqueString(RoleTags, TEXT("Defense"));
+					break;
+
+				case EJargonStatusEffectKind::Weak:
+					AddUniqueString(RoleTags, TEXT("Control"));
+					AddUniqueString(RoleTags, TEXT("Defense"));
+					break;
+
 				case EJargonStatusEffectKind::Stun:
 				case EJargonStatusEffectKind::Freeze:
 				case EJargonStatusEffectKind::Root:
@@ -1870,6 +1931,11 @@ TArray<FString> BuildRoleTagsForCard(const UCardDefinition* Card)
 		case EJargonEffectOperation::ApplyVulnerable:
 			AddUniqueString(RoleTags, TEXT("Damage Setup"));
 			AddUniqueString(RoleTags, TEXT("Control"));
+			break;
+
+		case EJargonEffectOperation::CleanseStatus:
+			AddUniqueString(RoleTags, TEXT("Defense"));
+			AddUniqueString(RoleTags, TEXT("Utility"));
 			break;
 
 		case EJargonEffectOperation::MoveSource:
@@ -2718,6 +2784,218 @@ FString GetElementThemeNoun(const FString& ElementName)
 	}
 
 	return TEXT("neutral");
+}
+
+FString GetEffectVocabularyShortlistForScope(const FString& Scope)
+{
+	if (Scope == TEXT("All Production"))
+	{
+		return TEXT("Cleanse/Remove Status; Regen; Weak; Lifesteal");
+	}
+	if (Scope == TEXT("Nature"))
+	{
+		return TEXT("Regen first; Cleanse second");
+	}
+	if (Scope == TEXT("Radiance"))
+	{
+		return TEXT("Cleanse first; Regen second");
+	}
+	if (Scope == TEXT("Frost"))
+	{
+		return TEXT("Weak for softer control after Freeze/Root");
+	}
+	if (Scope == TEXT("Quietus"))
+	{
+		return TEXT("Weak next; Lifesteal for drain identity");
+	}
+	if (Scope == TEXT("Fire"))
+	{
+		return TEXT("Use existing Burn and hazards first; Poison/Bleed only if rules differ from Burn");
+	}
+	if (Scope == TEXT("Storm"))
+	{
+		return TEXT("Use existing chain, draw, push, pull, and movement before adding new status verbs");
+	}
+	if (Scope == TEXT("Neutral"))
+	{
+		return TEXT("Use existing draw, energy, move, push, summon, and tile tools");
+	}
+
+	return TEXT("Cleanse/Remove Status; Regen; Weak; Lifesteal");
+}
+
+FString GetMechanicalVarietyStatus(
+	const TMap<FString, int32>& OperationCounts,
+	int32 TotalEffectLines,
+	FString& OutDominantOperation)
+{
+	OutDominantOperation = TEXT("None");
+	if (TotalEffectLines <= 0)
+	{
+		return TEXT("NoEffects");
+	}
+
+	FString DominantOperation;
+	int32 DominantCount = 0;
+	for (const TPair<FString, int32>& Pair : OperationCounts)
+	{
+		if (Pair.Value > DominantCount)
+		{
+			DominantOperation = Pair.Key;
+			DominantCount = Pair.Value;
+		}
+	}
+
+	const float DominantPercent = TotalEffectLines > 0
+		? (static_cast<float>(DominantCount) / static_cast<float>(TotalEffectLines)) * 100.f
+		: 0.f;
+	OutDominantOperation = FString::Printf(TEXT("%s=%d/%d (%.0f%%)"), *DominantOperation, DominantCount, TotalEffectLines, DominantPercent);
+
+	TArray<int32> OperationUseCounts;
+	OperationCounts.GenerateValueArray(OperationUseCounts);
+	OperationUseCounts.Sort([](int32 Left, int32 Right)
+	{
+		return Left > Right;
+	});
+	int32 TopThreeCount = 0;
+	for (int32 Index = 0; Index < FMath::Min(3, OperationUseCounts.Num()); ++Index)
+	{
+		TopThreeCount += OperationUseCounts[Index];
+	}
+	const float TopThreePercent = TotalEffectLines > 0
+		? (static_cast<float>(TopThreeCount) / static_cast<float>(TotalEffectLines)) * 100.f
+		: 0.f;
+
+	if (OperationCounts.Num() < 4)
+	{
+		return TEXT("ThinOperationVocabulary");
+	}
+	if (DominantPercent >= 45.f)
+	{
+		return TEXT("StructurallyCoveredButConcentrated");
+	}
+	if (TopThreePercent >= 60.f)
+	{
+		return TEXT("BroadButTopHeavy");
+	}
+	if (OperationCounts.Num() < 6)
+	{
+		return TEXT("ModerateOperationVariety");
+	}
+
+	return TEXT("BroadOperationVariety");
+}
+
+void AccumulateEffectVocabularyCounts(
+	const FJargonEffectSpec& EffectSpec,
+	TMap<FString, int32>& InOutOperationCounts,
+	TMap<FString, int32>& InOutDeliveryCounts,
+	TArray<FString>& InOutStatusTerms,
+	int32& InOutTotalEffectLines)
+{
+	InOutTotalEffectLines++;
+	InOutOperationCounts.FindOrAdd(GetCardEffectOperationName(EffectSpec.Operation))++;
+	InOutDeliveryCounts.FindOrAdd(GetEffectDeliverySummary(EffectSpec))++;
+	AddStatusTermForEffect(EffectSpec, InOutStatusTerms);
+}
+
+FEffectVocabularyFitAuditRow BuildEffectVocabularyFitRow(
+	const FString& Scope,
+	const TArray<UCardDefinition*>& Cards,
+	const TMap<FString, FString>& StructuralCoverageByElement)
+{
+	FEffectVocabularyFitAuditRow Row;
+	Row.Scope = Scope;
+	if (const FString* StructuralCoverage = StructuralCoverageByElement.Find(Scope))
+	{
+		Row.StructuralCoverageStatus = *StructuralCoverage;
+	}
+	else
+	{
+		Row.StructuralCoverageStatus = TEXT("AllScopes");
+	}
+
+	TMap<FString, int32> OperationCounts;
+	TMap<FString, int32> DeliveryCounts;
+	TArray<FString> StatusTerms;
+
+	for (const UCardDefinition* Card : Cards)
+	{
+		if (!IsProductionCard(Card))
+		{
+			continue;
+		}
+
+		const FString CardElementName = GetCardOwnedElementName(Card);
+		if (Scope != TEXT("All Production") && CardElementName != Scope)
+		{
+			continue;
+		}
+
+		Row.ProductionCards++;
+
+		TArray<FJargonEffectSpec> AuditEffects;
+		TArray<FCardAuditElementalBonusGroup> AuditBonusGroups;
+		BuildAuditEffectSpecs(Card, AuditEffects);
+		BuildAuditElementalBonusGroups(Card, AuditBonusGroups);
+
+		for (const FJargonEffectSpec& EffectSpec : AuditEffects)
+		{
+			AccumulateEffectVocabularyCounts(EffectSpec, OperationCounts, DeliveryCounts, StatusTerms, Row.TotalEffectLines);
+		}
+		for (const FCardAuditElementalBonusGroup& BonusGroup : AuditBonusGroups)
+		{
+			for (const FJargonEffectSpec& BonusEffectSpec : BonusGroup.BonusEffects)
+			{
+				AccumulateEffectVocabularyCounts(BonusEffectSpec, OperationCounts, DeliveryCounts, StatusTerms, Row.TotalEffectLines);
+			}
+		}
+	}
+
+	StatusTerms.Sort();
+	Row.UniqueOperations = OperationCounts.Num();
+	Row.UniqueDeliveries = DeliveryCounts.Num();
+	Row.OperationMix = OperationCounts.Num() > 0 ? BuildStringCountSummary(OperationCounts) : TEXT("None");
+	Row.DeliveryMix = DeliveryCounts.Num() > 0 ? BuildStringCountSummary(DeliveryCounts) : TEXT("None");
+	Row.StatusTerms = StatusTerms.Num() > 0 ? JoinStrings(StatusTerms, TEXT("; ")) : TEXT("None");
+	Row.MechanicalVarietyStatus = GetMechanicalVarietyStatus(OperationCounts, Row.TotalEffectLines, Row.DominantOperation);
+	Row.RecommendedFirstBatch = GetEffectVocabularyShortlistForScope(Scope);
+
+	if (Row.StructuralCoverageStatus == TEXT("Covered") &&
+		(Row.MechanicalVarietyStatus == TEXT("ThinOperationVocabulary") || Row.MechanicalVarietyStatus == TEXT("StructurallyCoveredButConcentrated")))
+	{
+		Row.Notes = TEXT("Card type/role coverage is present, but effect vocabulary is still concentrated; add effects before adding more same-shaped cards.");
+	}
+	else if (Scope == TEXT("All Production"))
+	{
+		Row.Notes = TEXT("Use this row to judge global operation pressure; card creation should prefer existing primitives plus the first expansion batch.");
+	}
+	else
+	{
+		Row.Notes = FString::Printf(TEXT("Lane direction: %s."), *GetElementLaneDirection(Scope));
+	}
+
+	return Row;
+}
+
+TArray<FEffectVocabularyFitAuditRow> BuildEffectVocabularyFitRows(
+	const TArray<UCardDefinition*>& Cards,
+	const TArray<FCardElementCoverageAuditRow>& ElementCoverageRows)
+{
+	TArray<FEffectVocabularyFitAuditRow> Rows;
+	TMap<FString, FString> StructuralCoverageByElement;
+	for (const FCardElementCoverageAuditRow& CoverageRow : ElementCoverageRows)
+	{
+		StructuralCoverageByElement.Add(CoverageRow.Element, CoverageRow.CoverageStatus);
+	}
+
+	Rows.Add(BuildEffectVocabularyFitRow(TEXT("All Production"), Cards, StructuralCoverageByElement));
+	for (const EJargonElementType ElementType : GetOrderedContentGapElements())
+	{
+		Rows.Add(BuildEffectVocabularyFitRow(GetElementTypeName(ElementType), Cards, StructuralCoverageByElement));
+	}
+
+	return Rows;
 }
 
 void BuildRecommendationDetails(
@@ -3754,6 +4032,25 @@ void AppendCardContentRecommendationCsvLine(const FCardContentRecommendationRow&
 	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
 }
 
+void AppendEffectVocabularyFitCsvLine(const FEffectVocabularyFitAuditRow& Row, FString& Csv)
+{
+	TArray<FString> Fields;
+	Fields.Add(CsvEscape(Row.Scope));
+	Fields.Add(CsvEscapeInt(Row.ProductionCards));
+	Fields.Add(CsvEscapeInt(Row.TotalEffectLines));
+	Fields.Add(CsvEscapeInt(Row.UniqueOperations));
+	Fields.Add(CsvEscapeInt(Row.UniqueDeliveries));
+	Fields.Add(CsvEscape(Row.StructuralCoverageStatus));
+	Fields.Add(CsvEscape(Row.MechanicalVarietyStatus));
+	Fields.Add(CsvEscape(Row.OperationMix));
+	Fields.Add(CsvEscape(Row.DeliveryMix));
+	Fields.Add(CsvEscape(Row.StatusTerms));
+	Fields.Add(CsvEscape(Row.DominantOperation));
+	Fields.Add(CsvEscape(Row.RecommendedFirstBatch));
+	Fields.Add(CsvEscape(Row.Notes));
+	Csv += FString::Join(Fields, TEXT(",")) + LINE_TERMINATOR;
+}
+
 void AppendPackCsvLine(const FPackAuditRow& Row, FString& Csv)
 {
 	TArray<FString> Fields;
@@ -4134,6 +4431,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 	const TArray<FCardElementCoverageAuditRow> ElementCoverageRows = BuildCardElementCoverageRows(Cards);
 	const TArray<FElementPackGapAuditRow> ElementPackGapRows = BuildElementPackGapRows(Packs);
 	const TArray<FCardContentRecommendationRow> ContentRecommendationRows = BuildCardContentRecommendationRows(ElementCoverageRows, ElementPackGapRows);
+	const TArray<FEffectVocabularyFitAuditRow> EffectVocabularyFitRows = BuildEffectVocabularyFitRows(Cards, ElementCoverageRows);
 
 	TArray<FPackAuditRow> PackRows;
 	PackRows.Reserve(Packs.Num());
@@ -4431,6 +4729,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		ElementPackGapReviewCount,
 		ContentRecommendationRows.Num(),
 		HighPriorityRecommendationCount);
+	UE_LOG(LogCardCatalogAudit, Display, TEXT("Effect vocabulary fit rows: %d | First expansion batch: Cleanse/Remove Status, Regen, Weak, Lifesteal"), EffectVocabularyFitRows.Num());
 	if (Cards.Num() > 0 && ElementGeneratorCardCount == 0)
 	{
 		UE_LOG(LogCardCatalogAudit, Warning, TEXT("Element charge backend exists, but no scanned card currently gains element charges."));
@@ -4537,6 +4836,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		FString ElementCoverageCsv;
 		FString ElementPackGapCsv;
 		FString ContentRecommendationsCsv;
+		FString EffectVocabularyFitCsv;
 		if (bExportBalanceReports)
 		{
 			BalanceCsv += TEXT("CardAssetPath,CardAssetName,DisplayName,Category,TargetType,Cost,BaseBalanceBudget,ElementalBonusBudget,ExpectedCostMin,ExpectedCostMax,SuggestedCost,BalanceStatus,RoleTags,ElementTags,ProductionStatus,PackStatus,EffectsSummary,Warnings") LINE_TERMINATOR;
@@ -4598,6 +4898,12 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			{
 				AppendCardContentRecommendationCsvLine(Row, ContentRecommendationsCsv);
 			}
+
+			EffectVocabularyFitCsv += TEXT("Scope,ProductionCards,TotalEffectLines,UniqueOperations,UniqueDeliveries,StructuralCoverageStatus,MechanicalVarietyStatus,OperationMix,DeliveryMix,StatusTerms,DominantOperation,RecommendedFirstBatch,Notes") LINE_TERMINATOR;
+			for (const FEffectVocabularyFitAuditRow& Row : EffectVocabularyFitRows)
+			{
+				AppendEffectVocabularyFitCsvLine(Row, EffectVocabularyFitCsv);
+			}
 		}
 
 		const FString CardCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardCatalog.csv"));
@@ -4613,6 +4919,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		const FString ElementCoverageCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardElementCoverageAudit.csv"));
 		const FString ElementPackGapCsvPath = FPaths::Combine(OutputDirectory, TEXT("ElementPackGapAudit.csv"));
 		const FString ContentRecommendationsCsvPath = FPaths::Combine(OutputDirectory, TEXT("CardContentRecommendations.csv"));
+		const FString EffectVocabularyFitCsvPath = FPaths::Combine(OutputDirectory, TEXT("EffectVocabularyFitAudit.csv"));
 
 		const bool bSavedCardCsv = FFileHelper::SaveStringToFile(CardCsv, *CardCsvPath);
 		const bool bSavedPackCsv = FFileHelper::SaveStringToFile(PackCsv, *PackCsvPath);
@@ -4627,6 +4934,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		bool bSavedElementCoverageCsv = false;
 		bool bSavedElementPackGapCsv = false;
 		bool bSavedContentRecommendationsCsv = false;
+		bool bSavedEffectVocabularyFitCsv = false;
 		if (bExportBalanceReports)
 		{
 			bSavedBalanceCsv = FFileHelper::SaveStringToFile(BalanceCsv, *BalanceCsvPath);
@@ -4639,6 +4947,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			bSavedElementCoverageCsv = FFileHelper::SaveStringToFile(ElementCoverageCsv, *ElementCoverageCsvPath);
 			bSavedElementPackGapCsv = FFileHelper::SaveStringToFile(ElementPackGapCsv, *ElementPackGapCsvPath);
 			bSavedContentRecommendationsCsv = FFileHelper::SaveStringToFile(ContentRecommendationsCsv, *ContentRecommendationsCsvPath);
+			bSavedEffectVocabularyFitCsv = FFileHelper::SaveStringToFile(EffectVocabularyFitCsv, *EffectVocabularyFitCsvPath);
 		}
 
 		if (bSavedCardCsv)
@@ -4758,6 +5067,15 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 			else
 			{
 				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write card content recommendations CSV: %s"), *ContentRecommendationsCsvPath);
+			}
+
+			if (bSavedEffectVocabularyFitCsv)
+			{
+				UE_LOG(LogCardCatalogAudit, Display, TEXT("Wrote effect vocabulary fit audit CSV: %s"), *EffectVocabularyFitCsvPath);
+			}
+			else
+			{
+				UE_LOG(LogCardCatalogAudit, Error, TEXT("Failed to write effect vocabulary fit audit CSV: %s"), *EffectVocabularyFitCsvPath);
 			}
 		}
 	}

@@ -46,7 +46,13 @@ enum class EJargonCombatCueType : uint8
 	VulnerableApplied UMETA(DisplayName = "Vulnerable Applied"),
 	VulnerableConsumed UMETA(DisplayName = "Vulnerable Consumed"),
 	ElementalBonusTriggered UMETA(DisplayName = "Elemental Bonus Triggered"),
-	HeroAspectActivated UMETA(DisplayName = "Hero Aspect Activated")
+	HeroAspectActivated UMETA(DisplayName = "Hero Aspect Activated"),
+	RegenApplied UMETA(DisplayName = "Regen Applied"),
+	RegenTick UMETA(DisplayName = "Regen Tick"),
+	WeakApplied UMETA(DisplayName = "Weak Applied"),
+	WeakConsumed UMETA(DisplayName = "Weak Consumed"),
+	StatusCleansed UMETA(DisplayName = "Status Cleansed"),
+	Lifesteal UMETA(DisplayName = "Lifesteal")
 };
 
 USTRUCT(BlueprintType)

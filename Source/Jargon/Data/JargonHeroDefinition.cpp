@@ -108,17 +108,9 @@ bool UJargonHeroDefinition::IsValidDefinition() const
 			SeenRequiredElements.Add(AspectDefinition.RequiredElement);
 		}
 
-		if (AspectDefinition.RequiredElementCharges <= 0)
+		if (!AspectDefinition.HasAnyTransformationOrPassiveEffects())
 		{
-			UE_LOG(LogJargonHeroDefinition, Warning, TEXT("Hero definition '%s' has aspect '%s' with RequiredElementCharges=%d."),
-				*GetNameSafe(this),
-				*StaticEnum<EJargonHeroAspect>()->GetNameStringByValue(static_cast<int64>(AspectDefinition.Aspect)),
-				AspectDefinition.RequiredElementCharges);
-		}
-
-		if (!AspectDefinition.HasAnyPassiveEffects())
-		{
-			UE_LOG(LogJargonHeroDefinition, Warning, TEXT("Hero definition '%s' has aspect '%s' with no passive effects."),
+			UE_LOG(LogJargonHeroDefinition, Warning, TEXT("Hero definition '%s' has aspect '%s' with no transformation or passive effects."),
 				*GetNameSafe(this),
 				*StaticEnum<EJargonHeroAspect>()->GetNameStringByValue(static_cast<int64>(AspectDefinition.Aspect)));
 		}
@@ -190,19 +182,21 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 
 	for (int32 EffectIndex = 0; EffectIndex < CombatStartPassive.Effects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			CombatStartPassive.Effects[EffectIndex],
 			FString::Printf(TEXT("CombatStartPassive effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnCombatStart,
 			Context);
 	}
 
 	for (int32 EffectIndex = 0; EffectIndex < PlayerTurnStartPassive.Effects.Num(); ++EffectIndex)
 	{
-		JargonDataAssetValidation::ValidateJargonEffectSpec(
+		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 			this,
 			PlayerTurnStartPassive.Effects[EffectIndex],
 			FString::Printf(TEXT("PlayerTurnStartPassive effect %d"), EffectIndex),
+			EJargonEffectTrigger::OnTurnStart,
 			Context);
 	}
 
@@ -237,31 +231,38 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 			SeenRequiredElements.Add(AspectDefinition.RequiredElement);
 		}
 
-		if (AspectDefinition.RequiredElementCharges <= 0)
+		if (!AspectDefinition.HasAnyTransformationOrPassiveEffects())
 		{
-			JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("HeroAspects entry %d requires RequiredElementCharges > 0."), AspectIndex));
+			JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has no transformation or passive effects."), AspectIndex));
 		}
 
-		if (!AspectDefinition.HasAnyPassiveEffects())
+		for (int32 EffectIndex = 0; EffectIndex < AspectDefinition.TransformationEffects.Num(); ++EffectIndex)
 		{
-			JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has no passive effects."), AspectIndex));
+			JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
+				this,
+				AspectDefinition.TransformationEffects[EffectIndex],
+				FString::Printf(TEXT("HeroAspects entry %d TransformationEffects effect %d"), AspectIndex, EffectIndex),
+				EJargonEffectTrigger::Activated,
+				Context);
 		}
 
 		for (int32 EffectIndex = 0; EffectIndex < AspectDefinition.TurnStartEffects.Num(); ++EffectIndex)
 		{
-			JargonDataAssetValidation::ValidateJargonEffectSpec(
+			JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 				this,
 				AspectDefinition.TurnStartEffects[EffectIndex],
 				FString::Printf(TEXT("HeroAspects entry %d TurnStartEffects effect %d"), AspectIndex, EffectIndex),
+				EJargonEffectTrigger::OnTurnStart,
 				Context);
 		}
 
 		for (int32 EffectIndex = 0; EffectIndex < AspectDefinition.EnemyDeathEffects.Num(); ++EffectIndex)
 		{
-			JargonDataAssetValidation::ValidateJargonEffectSpec(
+			JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
 				this,
 				AspectDefinition.EnemyDeathEffects[EffectIndex],
 				FString::Printf(TEXT("HeroAspects entry %d EnemyDeathEffects effect %d"), AspectIndex, EffectIndex),
+				EJargonEffectTrigger::OnEnemyDeath,
 				Context);
 		}
 	}

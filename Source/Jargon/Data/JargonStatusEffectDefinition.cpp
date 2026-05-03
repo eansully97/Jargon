@@ -21,6 +21,10 @@ const TCHAR* GetStatusDefinitionKindName(EJargonStatusEffectKind StatusKind)
 		return TEXT("Root");
 	case EJargonStatusEffectKind::Vulnerable:
 		return TEXT("Vulnerable");
+	case EJargonStatusEffectKind::Regen:
+		return TEXT("Regen");
+	case EJargonStatusEffectKind::Weak:
+		return TEXT("Weak");
 	case EJargonStatusEffectKind::None:
 	default:
 		return TEXT("None");

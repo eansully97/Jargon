@@ -811,7 +811,9 @@ void UDeckEditWidget::RebuildViewData()
 		LibraryEntry.bAddBlockedByOwnership = LibraryEntry.ReserveCount <= 0;
 		LibraryEntry.bAddBlockedByMaxCopies = Counts.DeckCount >= MaxCopiesPerDeckCard;
 		LibraryEntry.bAddBlockedByDeckSize = RunDeckCards.Num() >= MaxRunDeckSize;
-		LibraryEntry.bAddBlockedByElementLimit = CachedRunState && !CachedRunState->WouldRunDeckRespectElementLimitWithCard(Card);
+		LibraryEntry.bAddBlockedByElementLimit = CachedRunState
+			? !CachedRunState->WouldRunDeckRespectElementLimitWithCard(Card)
+			: false;
 		LibraryEntry.bCanAddToDeck =
 			!LibraryEntry.bAddBlockedByOwnership &&
 			!LibraryEntry.bAddBlockedByMaxCopies &&

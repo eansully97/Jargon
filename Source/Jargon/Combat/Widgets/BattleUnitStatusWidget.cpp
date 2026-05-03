@@ -49,6 +49,14 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 		{
 			VulnerableText->SetText(FText::GetEmpty());
 		}
+		if (RegenText)
+		{
+			RegenText->SetText(FText::GetEmpty());
+		}
+		if (WeakText)
+		{
+			WeakText->SetText(FText::GetEmpty());
+		}
 		return;
 	}
 
@@ -116,6 +124,22 @@ void UBattleUnitStatusWidget::RefreshFromObservedUnit()
 		const int32 VulnerableBonus = ObservedUnit->GetVulnerableDamageBonus();
 		VulnerableText->SetText(VulnerableBonus > 0
 			? FText::Format(FText::FromString(TEXT("Vuln +{0}")), FText::AsNumber(VulnerableBonus))
+			: FText::GetEmpty());
+	}
+
+	if (RegenText)
+	{
+		const int32 RegenStacks = ObservedUnit->GetRegenStacks();
+		RegenText->SetText(RegenStacks > 0
+			? FText::Format(FText::FromString(TEXT("Regen {0}")), FText::AsNumber(RegenStacks))
+			: FText::GetEmpty());
+	}
+
+	if (WeakText)
+	{
+		const int32 WeakReduction = ObservedUnit->GetWeakDamageReduction();
+		WeakText->SetText(WeakReduction > 0
+			? FText::Format(FText::FromString(TEXT("Weak -{0}")), FText::AsNumber(WeakReduction))
 			: FText::GetEmpty());
 	}
 }
