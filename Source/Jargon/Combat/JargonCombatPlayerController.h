@@ -77,6 +77,12 @@ public:
 		return Hand.Num();
 	}
 
+	UFUNCTION(BlueprintCallable, Category = "Combat|Cards")
+	int32 GetDiscardCount() const
+	{
+		return DiscardPile.Num();
+	}
+
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Cards")
 	FOnDeckChangedSignature OnDeckChanged;
 

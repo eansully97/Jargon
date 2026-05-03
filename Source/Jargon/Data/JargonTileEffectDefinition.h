@@ -39,7 +39,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ClampMin = "0", ToolTip = "How many player turn starts this placed tile effect lasts. 0 means infinite."))
 	int32 Duration = 0;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Targeting", meta = (ClampMin = "0", ToolTip = "Default radius used by the runtime tile effect. Individual Effects may also use their own Radius values."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Targeting", meta = (ClampMin = "0", ToolTip = "Default radius used by the runtime tile-effect actor for presentation and legacy behavior. This does not automatically populate Radius on entries in Effects; set per-effect Radius for shared effect AOE."))
 	int32 EffectRadius = 0;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ToolTip = "Whether this definition destroys its runtime tile-effect actor after successfully resolving on unit enter.", EditCondition = "Trigger == EJargonTileEffectTrigger::OnUnitEnter", EditConditionHides))

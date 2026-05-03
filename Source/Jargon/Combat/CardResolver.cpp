@@ -140,7 +140,7 @@ bool FCardResolver::ResolveCard(
 
 	if (!Card->UsesCardScript())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has no CardScript authored. Cards now resolve through inline archetype actions only."),
+		UE_LOG(LogTemp, Warning, TEXT("Card '%s' has no CardScript authored. Cards resolve through CardScript effect lines only."),
 			*Card->DisplayName.ToString());
 		return false;
 	}

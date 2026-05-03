@@ -436,7 +436,6 @@ void AJargonCombatPlayerController::RequestPlayCardOnTile(AGridTile* TileTarget)
 
 	// Only now consume/remove/discard the card.
 	RemoveCardFromHand(CardToPlay);
-	DiscardPile.Add(CardToPlay);
 	SelectedCard = nullptr;
 	bCardTargetingMode = false;
 

@@ -221,7 +221,7 @@ void AJargonTownPlayerController::PositionTownHoverInfoWidgetAtMouse()
 	}
 
 	const FVector2D MouseScreenPosition(MouseX, MouseY);
-	const FVector2D Offset(16.0f, 16.0f);
+	const FVector2D Offset(0.0f, 0.0f);
 	TownHoverInfoWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
 	TownHoverInfoWidget->SetPositionInViewport(MouseScreenPosition + Offset, true);
 }

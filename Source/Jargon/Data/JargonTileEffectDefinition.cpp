@@ -44,6 +44,27 @@ EDataValidationResult UJargonTileEffectDefinition::IsDataValid(FDataValidationCo
 		JargonDataAssetValidation::AddError(Context, this, TEXT("Effects is empty."));
 	}
 
+	if (EffectRadius > 0 && Effects.Num() > 0)
+	{
+		bool bAnySharedEffectUsesRadius = false;
+		for (const FJargonEffectSpec& Effect : Effects)
+		{
+			if (Effect.Radius > 0)
+			{
+				bAnySharedEffectUsesRadius = true;
+				break;
+			}
+		}
+
+		if (!bAnySharedEffectUsesRadius)
+		{
+			JargonDataAssetValidation::AddWarning(
+				Context,
+				this,
+				TEXT("EffectRadius is set, but no shared Effects entry has Radius > 0. Runtime shared effect resolution uses each effect's own Radius value."));
+		}
+	}
+
 	for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)
 	{
 		JargonDataAssetValidation::ValidateJargonEffectSpec(
