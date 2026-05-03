@@ -516,9 +516,9 @@ bool UJargonGameInstance::CanRecycleOwnedRunCard(const UCardDefinition* Card, FT
 		return false;
 	}
 
-	if (GetOwnedRunReserveCardCopyCount(Card) <= 0)
+	if (GetRecyclableOwnedRunCardCopyCount(Card) <= 0)
 	{
-		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleBlockedNoReserveCopies", "No owned reserve copies are available to recycle.");
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleBlockedNoExtraUsefulCopies", "No owned copies above the useful deck copy limit are available to recycle.");
 		return false;
 	}
 
@@ -567,14 +567,14 @@ bool UJargonGameInstance::RecycleOwnedRunCard(
 int32 UJargonGameInstance::GetRecycleAllExtraReserveCardCopyCount() const
 {
 	TArray<UCardDefinition*> RecyclableCards;
-	GatherOwnedRunReserveCardCopies(RecyclableCards);
+	GatherRecyclableExtraOwnedRunCardCopies(RecyclableCards);
 	return RecyclableCards.Num();
 }
 
 FJargonCurrencyAmount UJargonGameInstance::GetRecycleAllExtraReserveCardsValue() const
 {
 	TArray<UCardDefinition*> RecyclableCards;
-	GatherOwnedRunReserveCardCopies(RecyclableCards);
+	GatherRecyclableExtraOwnedRunCardCopies(RecyclableCards);
 
 	int32 TotalCopper = 0;
 	for (const UCardDefinition* Card : RecyclableCards)
@@ -597,7 +597,7 @@ bool UJargonGameInstance::CanRecycleAllExtraReserveCards(FText& OutBlockedReason
 
 	if (GetRecycleAllExtraReserveCardCopyCount() <= 0)
 	{
-		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleAllBlockedNoExtraCopies", "No extra reserve copies are available to recycle.");
+		OutBlockedReason = NSLOCTEXT("JargonDeck", "RecycleAllBlockedNoExtraUsefulCopies", "No owned copies above the useful deck copy limit are available to recycle.");
 		return false;
 	}
 
@@ -626,7 +626,7 @@ bool UJargonGameInstance::RecycleAllExtraReserveCards(
 	}
 
 	TArray<UCardDefinition*> RecyclableCards;
-	GatherOwnedRunReserveCardCopies(RecyclableCards);
+	GatherRecyclableExtraOwnedRunCardCopies(RecyclableCards);
 
 	OutCurrencyAwarded = GetRecycleAllExtraReserveCardsValue();
 	for (UCardDefinition* Card : RecyclableCards)
@@ -648,7 +648,7 @@ bool UJargonGameInstance::RecycleAllExtraReserveCards(
 	AddCurrency(OutCurrencyAwarded);
 	RefreshRunReserveCardsFromAvailableShopPacks();
 
-	UE_LOG(LogJargon, Log, TEXT("Recycled %d extra reserve card copies for %d copper. Owned=%d Deck=%d Currency=%d"),
+	UE_LOG(LogJargon, Log, TEXT("Recycled %d owned card copies above the useful copy limit for %d copper. Owned=%d Deck=%d Currency=%d"),
 		OutCardsRecycled,
 		OutCurrencyAwarded.GetTotalCopperValue(),
 		RunOwnedCards.Num(),
@@ -1025,18 +1025,28 @@ int32 UJargonGameInstance::CountCardCopiesInCollection(
 	return Count;
 }
 
-void UJargonGameInstance::GatherOwnedRunReserveCardCopies(TArray<UCardDefinition*>& OutCards) const
+int32 UJargonGameInstance::GetUsefulOwnedRunCardCopyFloor(const UCardDefinition* Card) const
+{
+	return Card
+		? FMath::Max(GetMaxCopiesPerDeckCard(), GetRunDeckCardCopyCount(Card))
+		: GetMaxCopiesPerDeckCard();
+}
+
+int32 UJargonGameInstance::GetRecyclableOwnedRunCardCopyCount(const UCardDefinition* Card) const
+{
+	if (!Card)
+	{
+		return 0;
+	}
+
+	return FMath::Max(0, GetOwnedRunCardCopyCount(Card) - GetUsefulOwnedRunCardCopyFloor(Card));
+}
+
+void UJargonGameInstance::GatherRecyclableExtraOwnedRunCardCopies(TArray<UCardDefinition*>& OutCards) const
 {
 	OutCards.Reset();
 
-	TMap<UCardDefinition*, int32> ProtectedDeckCopies;
-	for (UCardDefinition* DeckCard : ActiveRunDeck)
-	{
-		if (DeckCard)
-		{
-			ProtectedDeckCopies.FindOrAdd(DeckCard)++;
-		}
-	}
+	TMap<UCardDefinition*, int32> CopiesToRecycleByCard;
 
 	for (UCardDefinition* OwnedCard : RunOwnedCards)
 	{
@@ -1045,13 +1055,16 @@ void UJargonGameInstance::GatherOwnedRunReserveCardCopies(TArray<UCardDefinition
 			continue;
 		}
 
-		int32& ProtectedCopyCount = ProtectedDeckCopies.FindOrAdd(OwnedCard);
-		if (ProtectedCopyCount > 0)
+		int32* CopiesToRecyclePtr = CopiesToRecycleByCard.Find(OwnedCard);
+		if (!CopiesToRecyclePtr)
 		{
-			--ProtectedCopyCount;
-			continue;
+			CopiesToRecyclePtr = &CopiesToRecycleByCard.Add(OwnedCard, GetRecyclableOwnedRunCardCopyCount(OwnedCard));
 		}
 
-		OutCards.Add(OwnedCard);
+		if (*CopiesToRecyclePtr > 0)
+		{
+			OutCards.Add(OwnedCard);
+			--(*CopiesToRecyclePtr);
+		}
 	}
 }

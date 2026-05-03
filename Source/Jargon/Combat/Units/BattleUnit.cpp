@@ -592,6 +592,7 @@ void ABattleUnit::ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Def
 		return;
 	}
 
+	AppliedSummonedUnitDefinition = Definition;
 	Team = Definition->Team;
 	SetBaseCombatStats(
 		Definition->MaxHP,

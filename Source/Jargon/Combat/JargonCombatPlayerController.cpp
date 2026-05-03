@@ -6,12 +6,15 @@
 #include "Combat/JargonCombatGameMode.h"
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
+#include "Data/JargonSummonedUnitDefinition.h"
+#include "Data/JargonTileEffectDefinition.h"
 #include "GameFramework/PlayerController.h"
 #include "Grid/Effects/BattleTileEffect.h"
 #include "Grid/GridTile.h"
 #include "InputCoreTypes.h"
 #include "Units/BattleUnit.h"
 #include "Units/PlayerBattleUnit.h"
+#include "Widgets/CombatHoverInfoWidget.h"
 #include "Widgets/CombatHUDWidget.h"
 
 AJargonCombatPlayerController::AJargonCombatPlayerController()
@@ -21,6 +24,7 @@ AJargonCombatPlayerController::AJargonCombatPlayerController()
 	bEnableMouseOverEvents = false;
 	DefaultMouseCursor = EMouseCursor::Default;
 	bStartingDeckInitialized = false;
+	PrimaryActorTick.bCanEverTick = true;
 }
 
 void AJargonCombatPlayerController::BeginPlay()
@@ -29,6 +33,14 @@ void AJargonCombatPlayerController::BeginPlay()
 
 	InitializeCombatUI();
 	InitializeStartingDeck();
+	InitializeCombatHoverInfoWidget();
+}
+
+void AJargonCombatPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	UpdateCombatHoverInfo();
 }
 
 void AJargonCombatPlayerController::SetupInputComponent()
@@ -100,6 +112,39 @@ void AJargonCombatPlayerController::InitializeCombatUI()
 
 	RefreshHUD();
 	BroadcastCardCounts();
+}
+
+void AJargonCombatPlayerController::InitializeCombatHoverInfoWidget()
+{
+	if (CombatHoverInfoWidget || !CombatHoverInfoWidgetClass)
+	{
+		return;
+	}
+
+	CombatHoverInfoWidget = CreateWidget<UCombatHoverInfoWidget>(this, CombatHoverInfoWidgetClass);
+	if (!CombatHoverInfoWidget)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CombatPlayerController failed to create CombatHoverInfoWidget."));
+		return;
+	}
+
+	CombatHoverInfoWidget->AddToViewport(CombatHoverInfoWidgetZOrder);
+
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+
+	if (GetMousePosition(MouseX, MouseY))
+	{
+		const FVector2D MouseScreenPosition(MouseX, MouseY);
+
+		// Top-left of the widget will be placed at the cursor.
+		CombatHoverInfoWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
+		
+		const FVector2D Offset(16.0f, 16.0f);
+		CombatHoverInfoWidget->SetPositionInViewport(MouseScreenPosition + Offset, true);
+	}
+
+	CombatHoverInfoWidget->SetHoverInfo(CurrentCombatHoverInfo);
 }
 
 void AJargonCombatPlayerController::InitializeStartingDeck()
@@ -520,6 +565,150 @@ void AJargonCombatPlayerController::HandleLeftClick()
 
 		RequestMoveToTile(HitTile);
 	}
+}
+
+void AJargonCombatPlayerController::UpdateCombatHoverInfo()
+{
+	if (!bEnableCombatHoverInfo)
+	{
+		SetCurrentCombatHoverInfo(FJargonCombatHoverInfo());
+		return;
+	}
+
+	FHitResult HitResult;
+	const bool bHit = GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+	SetCurrentCombatHoverInfo(bHit ? BuildCombatHoverInfoFromHit(HitResult) : FJargonCombatHoverInfo());
+}
+
+void AJargonCombatPlayerController::SetCurrentCombatHoverInfo(const FJargonCombatHoverInfo& NewHoverInfo)
+{
+	const bool bChanged =
+		CurrentCombatHoverInfo.bHasInfo != NewHoverInfo.bHasInfo ||
+		CurrentCombatHoverInfo.InfoType != NewHoverInfo.InfoType ||
+		CurrentCombatHoverInfo.SourceActor != NewHoverInfo.SourceActor ||
+		CurrentCombatHoverInfo.SourceObject != NewHoverInfo.SourceObject ||
+		CurrentCombatHoverInfo.DescriptionText.ToString() != NewHoverInfo.DescriptionText.ToString();
+
+	if (!bChanged)
+	{
+		return;
+	}
+
+	CurrentCombatHoverInfo = NewHoverInfo;
+	if (CombatHoverInfoWidget)
+	{
+		CombatHoverInfoWidget->SetHoverInfo(CurrentCombatHoverInfo);
+	}
+	OnCombatHoverInfoChanged.Broadcast(CurrentCombatHoverInfo);
+}
+
+FJargonCombatHoverInfo AJargonCombatPlayerController::BuildCombatHoverInfoFromHit(const FHitResult& HitResult) const
+{
+	AActor* HitActor = HitResult.GetActor();
+	if (!HitActor)
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	if (ABattleTileEffect* HitTileEffect = Cast<ABattleTileEffect>(HitActor))
+	{
+		return MakeCombatHoverInfoFromTileEffect(HitTileEffect);
+	}
+
+	if (ABattleUnit* HitUnit = Cast<ABattleUnit>(HitActor))
+	{
+		return MakeCombatHoverInfoFromUnit(HitUnit);
+	}
+
+	if (AGridTile* HitTile = Cast<AGridTile>(HitActor))
+	{
+		return MakeCombatHoverInfoFromTile(HitTile);
+	}
+
+	return FJargonCombatHoverInfo();
+}
+
+FJargonCombatHoverInfo AJargonCombatPlayerController::MakeCombatHoverInfoFromUnit(ABattleUnit* Unit) const
+{
+	if (!Unit)
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	const UJargonSummonedUnitDefinition* SummonedUnitDefinition = Unit->GetAppliedSummonedUnitDefinition();
+	if (!SummonedUnitDefinition || SummonedUnitDefinition->Description.IsEmpty())
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	FJargonCombatHoverInfo HoverInfo;
+	HoverInfo.bHasInfo = true;
+	HoverInfo.InfoType = EJargonCombatHoverInfoType::Unit;
+	HoverInfo.DescriptionText = SummonedUnitDefinition->Description;
+	HoverInfo.SourceActor = Unit;
+	HoverInfo.SourceObject = Unit;
+	return HoverInfo;
+}
+
+FJargonCombatHoverInfo AJargonCombatPlayerController::MakeCombatHoverInfoFromTileEffect(ABattleTileEffect* TileEffect) const
+{
+	if (!TileEffect)
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	const UJargonTileEffectDefinition* TileEffectDefinition = TileEffect->GetTileEffectDefinition();
+	if (!TileEffectDefinition)
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	FText Description = TileEffectDefinition->Description;
+	if (Description.IsEmpty())
+	{
+		Description = TileEffectDefinition->DisplayName;
+	}
+
+	if (Description.IsEmpty())
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	FJargonCombatHoverInfo HoverInfo;
+	HoverInfo.bHasInfo = true;
+	HoverInfo.InfoType = EJargonCombatHoverInfoType::TileEffect;
+	HoverInfo.DescriptionText = Description;
+	HoverInfo.SourceActor = TileEffect;
+	HoverInfo.SourceObject = TileEffect;
+	return HoverInfo;
+}
+
+FJargonCombatHoverInfo AJargonCombatPlayerController::MakeCombatHoverInfoFromTile(AGridTile* Tile) const
+{
+	if (!Tile)
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	if (ABattleUnit* OccupyingUnit = Tile->GetOccupyingUnit())
+	{
+		const FJargonCombatHoverInfo UnitHoverInfo = MakeCombatHoverInfoFromUnit(OccupyingUnit);
+		if (UnitHoverInfo.bHasInfo)
+		{
+			return UnitHoverInfo;
+		}
+	}
+
+	for (const TObjectPtr<ABattleTileEffect>& TileEffect : Tile->GetTileEffects())
+	{
+		const FJargonCombatHoverInfo TileEffectHoverInfo = MakeCombatHoverInfoFromTileEffect(TileEffect);
+		if (TileEffectHoverInfo.bHasInfo)
+		{
+			return TileEffectHoverInfo;
+		}
+	}
+
+	return FJargonCombatHoverInfo();
 }
 
 void AJargonCombatPlayerController::HandleRightClick()

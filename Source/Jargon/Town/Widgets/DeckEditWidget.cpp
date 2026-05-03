@@ -2,7 +2,11 @@
 
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
+#include "Data/CardScriptDefinition.h"
+#include "Data/JargonSummonedUnitDefinition.h"
+#include "Data/JargonTileEffectDefinition.h"
 #include "Engine/World.h"
+#include "Town/JargonTownPlayerController.h"
 
 namespace
 {
@@ -49,6 +53,110 @@ FText GetCardElementTextForDeckEntry(const UCardDefinition* Card)
 	return Card ? Card->GetCardElementDisplayText() : FText::GetEmpty();
 }
 
+FText GetElementFilterText(EJargonElementType Element)
+{
+	if (Element == EJargonElementType::None)
+	{
+		return NSLOCTEXT("DeckEdit", "LibraryFilterNeutralElement", "Neutral");
+	}
+
+	const UEnum* ElementEnum = StaticEnum<EJargonElementType>();
+	return ElementEnum
+		? ElementEnum->GetDisplayNameTextByValue(static_cast<int64>(Element))
+		: FText::AsNumber(static_cast<int32>(Element));
+}
+
+FText GetCategoryFilterText(ECardCategory Category)
+{
+	const UEnum* CategoryEnum = StaticEnum<ECardCategory>();
+	return CategoryEnum
+		? CategoryEnum->GetDisplayNameTextByValue(static_cast<int64>(Category))
+		: FText::AsNumber(static_cast<int32>(Category));
+}
+
+void NormalizeElementFilters(FDeckEditLibraryFilter& Filter)
+{
+	if (Filter.Elements.Num() > 0)
+	{
+		Filter.bFilterByElement = true;
+	}
+
+	if (Filter.bFilterByElement && Filter.Elements.Num() <= 0)
+	{
+		Filter.Elements.Add(Filter.Element);
+	}
+
+	if (!Filter.bFilterByElement)
+	{
+		Filter.Elements.Empty();
+		return;
+	}
+
+	TArray<EJargonElementType> UniqueElements;
+	for (const EJargonElementType Element : Filter.Elements)
+	{
+		UniqueElements.AddUnique(Element);
+	}
+
+	Filter.Elements = MoveTemp(UniqueElements);
+	if (Filter.Elements.Num() > 0)
+	{
+		Filter.Element = Filter.Elements[0];
+	}
+}
+
+void NormalizeCategoryFilters(FDeckEditLibraryFilter& Filter)
+{
+	if (Filter.Categories.Num() > 0)
+	{
+		Filter.bFilterByCategory = true;
+	}
+
+	if (Filter.bFilterByCategory && Filter.Categories.Num() <= 0)
+	{
+		Filter.Categories.Add(Filter.Category);
+	}
+
+	if (!Filter.bFilterByCategory)
+	{
+		Filter.Categories.Empty();
+		return;
+	}
+
+	TArray<ECardCategory> UniqueCategories;
+	for (const ECardCategory Category : Filter.Categories)
+	{
+		UniqueCategories.AddUnique(Category);
+	}
+
+	Filter.Categories = MoveTemp(UniqueCategories);
+	if (Filter.Categories.Num() > 0)
+	{
+		Filter.Category = Filter.Categories[0];
+	}
+}
+
+void NormalizeLibraryFilter(FDeckEditLibraryFilter& Filter)
+{
+	NormalizeElementFilters(Filter);
+	NormalizeCategoryFilters(Filter);
+}
+
+FText JoinFilterTextList(const TArray<FText>& Values)
+{
+	FString JoinedText;
+	for (int32 Index = 0; Index < Values.Num(); ++Index)
+	{
+		if (Index > 0)
+		{
+			JoinedText += TEXT(", ");
+		}
+		JoinedText += Values[Index].ToString();
+	}
+
+	return FText::FromString(JoinedText);
+}
+
 FText BuildBlockedReason(const FDeckEditLibraryCardEntry& Entry)
 {
 	if (Entry.bCanAddToDeck)
@@ -77,6 +185,122 @@ FText BuildBlockedReason(const FDeckEditLibraryCardEntry& Entry)
 	}
 
 	return FText::GetEmpty();
+}
+
+FText GetTileEffectDefinitionHoverDescription(const UJargonTileEffectDefinition* TileEffectDefinition)
+{
+	if (!TileEffectDefinition)
+	{
+		return FText::GetEmpty();
+	}
+
+	if (!TileEffectDefinition->Description.IsEmpty())
+	{
+		return TileEffectDefinition->Description;
+	}
+
+	return TileEffectDefinition->DisplayName;
+}
+
+FText GetSummonDefinitionHoverDescription(const UJargonSummonedUnitDefinition* SummonedUnitDefinition)
+{
+	return SummonedUnitDefinition ? SummonedUnitDefinition->Description : FText::GetEmpty();
+}
+
+const UJargonCardPlaceTileEffectAction* FindFirstTileEffectActionWithDescription(const UJargonCardScript* CardScript)
+{
+	if (!CardScript)
+	{
+		return nullptr;
+	}
+
+	const auto TryAction = [](const UJargonCardAction* Action) -> const UJargonCardPlaceTileEffectAction*
+	{
+		const UJargonCardPlaceTileEffectAction* TileEffectAction = Cast<UJargonCardPlaceTileEffectAction>(Action);
+		if (!TileEffectAction || GetTileEffectDefinitionHoverDescription(TileEffectAction->TileEffectDefinition).IsEmpty())
+		{
+			return nullptr;
+		}
+
+		return TileEffectAction;
+	};
+
+	for (const TObjectPtr<UJargonCardAction>& Action : CardScript->Actions)
+	{
+		if (const UJargonCardPlaceTileEffectAction* TileEffectAction = TryAction(Action.Get()))
+		{
+			return TileEffectAction;
+		}
+	}
+
+	for (const FJargonCardElementalBonusScript& BonusScript : CardScript->ElementalBonuses)
+	{
+		for (const TObjectPtr<UJargonCardAction>& Action : BonusScript.Actions)
+		{
+			if (const UJargonCardPlaceTileEffectAction* TileEffectAction = TryAction(Action.Get()))
+			{
+				return TileEffectAction;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+const UJargonCardSummonAction* FindFirstSummonActionWithDescription(const UJargonCardScript* CardScript)
+{
+	if (!CardScript)
+	{
+		return nullptr;
+	}
+
+	const auto TryAction = [](const UJargonCardAction* Action) -> const UJargonCardSummonAction*
+	{
+		const UJargonCardSummonAction* SummonAction = Cast<UJargonCardSummonAction>(Action);
+		if (!SummonAction || GetSummonDefinitionHoverDescription(SummonAction->SummonedUnitDefinition).IsEmpty())
+		{
+			return nullptr;
+		}
+
+		return SummonAction;
+	};
+
+	for (const TObjectPtr<UJargonCardAction>& Action : CardScript->Actions)
+	{
+		if (const UJargonCardSummonAction* SummonAction = TryAction(Action.Get()))
+		{
+			return SummonAction;
+		}
+	}
+
+	for (const FJargonCardElementalBonusScript& BonusScript : CardScript->ElementalBonuses)
+	{
+		for (const TObjectPtr<UJargonCardAction>& Action : BonusScript.Actions)
+		{
+			if (const UJargonCardSummonAction* SummonAction = TryAction(Action.Get()))
+			{
+				return SummonAction;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+AJargonTownPlayerController* ResolveTownPlayerController(const UUserWidget* Widget)
+{
+	if (!Widget)
+	{
+		return nullptr;
+	}
+
+	if (AJargonTownPlayerController* TownController = Widget->GetOwningPlayer<AJargonTownPlayerController>())
+	{
+		return TownController;
+	}
+
+	const UWorld* World = Widget->GetWorld();
+	return World ? Cast<AJargonTownPlayerController>(World->GetFirstPlayerController()) : nullptr;
 }
 }
 
@@ -191,12 +415,250 @@ bool UDeckEditWidget::RecycleAllExtraReserveCards()
 	return bRecycledSuccessfully;
 }
 
+void UDeckEditWidget::ShowLibraryCardHoverInfo(UCardDefinition* Card, UObject* SourceObject)
+{
+	AJargonTownPlayerController* TownController = ResolveTownPlayerController(this);
+	if (!TownController)
+	{
+		return;
+	}
+
+	TownController->ShowTownHoverInfo(BuildLibraryCardHoverInfo(Card, SourceObject ? SourceObject : Card));
+}
+
+void UDeckEditWidget::ClearLibraryCardHoverInfo(UObject* SourceObject)
+{
+	if (AJargonTownPlayerController* TownController = ResolveTownPlayerController(this))
+	{
+		TownController->ClearTownHoverInfo(SourceObject);
+	}
+}
+
+FJargonCombatHoverInfo UDeckEditWidget::BuildLibraryCardHoverInfo(UCardDefinition* Card, UObject* SourceObject) const
+{
+	if (!Card || !Card->CardScript)
+	{
+		return FJargonCombatHoverInfo();
+	}
+
+	if (const UJargonCardPlaceTileEffectAction* TileEffectAction = FindFirstTileEffectActionWithDescription(Card->CardScript))
+	{
+		FJargonCombatHoverInfo HoverInfo;
+		HoverInfo.bHasInfo = true;
+		HoverInfo.InfoType = EJargonCombatHoverInfoType::TileEffect;
+		HoverInfo.DescriptionText = GetTileEffectDefinitionHoverDescription(TileEffectAction->TileEffectDefinition);
+		HoverInfo.SourceObject = SourceObject ? SourceObject : Card;
+		return HoverInfo;
+	}
+
+	if (const UJargonCardSummonAction* SummonAction = FindFirstSummonActionWithDescription(Card->CardScript))
+	{
+		FJargonCombatHoverInfo HoverInfo;
+		HoverInfo.bHasInfo = true;
+		HoverInfo.InfoType = EJargonCombatHoverInfoType::Unit;
+		HoverInfo.DescriptionText = GetSummonDefinitionHoverDescription(SummonAction->SummonedUnitDefinition);
+		HoverInfo.SourceObject = SourceObject ? SourceObject : Card;
+		return HoverInfo;
+	}
+
+	return FJargonCombatHoverInfo();
+}
+
 void UDeckEditWidget::SetLibraryCardsPerPage(int32 InCardsPerPage)
 {
 	LibraryCardsPerPage = FMath::Max(1, InCardsPerPage);
 	ClampLibraryPageIndex();
 	RebuildCurrentLibraryPageEntries();
 	BP_OnLibraryPageChanged();
+}
+
+void UDeckEditWidget::SetLibraryFilter(FDeckEditLibraryFilter InFilter)
+{
+	NormalizeLibraryFilter(InFilter);
+	LibraryFilter = InFilter;
+	CurrentLibraryPageIndex = 0;
+	RebuildFilteredLibraryEntries();
+	ClampLibraryPageIndex();
+	RebuildCurrentLibraryPageEntries();
+	BP_OnLibraryFilterChanged();
+	BP_OnLibraryPageChanged();
+}
+
+void UDeckEditWidget::ClearLibraryFilter()
+{
+	SetLibraryFilter(FDeckEditLibraryFilter());
+}
+
+void UDeckEditWidget::SetLibraryElementFilter(bool bEnabled, EJargonElementType Element)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NewFilter.bFilterByElement = bEnabled;
+	NewFilter.Element = Element;
+	NewFilter.Elements.Empty();
+	if (bEnabled)
+	{
+		NewFilter.Elements.Add(Element);
+	}
+	SetLibraryFilter(NewFilter);
+}
+
+void UDeckEditWidget::SetLibraryElementFilterEnabled(EJargonElementType Element, bool bEnabled)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NormalizeLibraryFilter(NewFilter);
+
+	if (bEnabled)
+	{
+		NewFilter.Elements.AddUnique(Element);
+	}
+	else
+	{
+		NewFilter.Elements.Remove(Element);
+	}
+
+	NewFilter.bFilterByElement = NewFilter.Elements.Num() > 0;
+	if (NewFilter.Elements.Num() > 0)
+	{
+		NewFilter.Element = NewFilter.Elements[0];
+	}
+
+	SetLibraryFilter(NewFilter);
+}
+
+void UDeckEditWidget::SetLibraryElementFilters(const TArray<EJargonElementType>& Elements)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NewFilter.Elements = Elements;
+	NewFilter.bFilterByElement = Elements.Num() > 0;
+	if (Elements.Num() > 0)
+	{
+		NewFilter.Element = Elements[0];
+	}
+	SetLibraryFilter(NewFilter);
+}
+
+void UDeckEditWidget::SetLibraryCategoryFilter(bool bEnabled, ECardCategory Category)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NewFilter.bFilterByCategory = bEnabled;
+	NewFilter.Category = Category;
+	NewFilter.Categories.Empty();
+	if (bEnabled)
+	{
+		NewFilter.Categories.Add(Category);
+	}
+	SetLibraryFilter(NewFilter);
+}
+
+void UDeckEditWidget::SetLibraryCategoryFilterEnabled(ECardCategory Category, bool bEnabled)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NormalizeLibraryFilter(NewFilter);
+
+	if (bEnabled)
+	{
+		NewFilter.Categories.AddUnique(Category);
+	}
+	else
+	{
+		NewFilter.Categories.Remove(Category);
+	}
+
+	NewFilter.bFilterByCategory = NewFilter.Categories.Num() > 0;
+	if (NewFilter.Categories.Num() > 0)
+	{
+		NewFilter.Category = NewFilter.Categories[0];
+	}
+
+	SetLibraryFilter(NewFilter);
+}
+
+void UDeckEditWidget::SetLibraryCategoryFilters(const TArray<ECardCategory>& Categories)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NewFilter.Categories = Categories;
+	NewFilter.bFilterByCategory = Categories.Num() > 0;
+	if (Categories.Num() > 0)
+	{
+		NewFilter.Category = Categories[0];
+	}
+	SetLibraryFilter(NewFilter);
+}
+
+void UDeckEditWidget::SetShowOnlyOwned(bool bEnabled)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NewFilter.bShowOnlyOwned = bEnabled;
+	SetLibraryFilter(NewFilter);
+}
+
+void UDeckEditWidget::SetShowOnlyAddable(bool bEnabled)
+{
+	FDeckEditLibraryFilter NewFilter = LibraryFilter;
+	NewFilter.bShowOnlyAddable = bEnabled;
+	SetLibraryFilter(NewFilter);
+}
+
+FText UDeckEditWidget::GetLibraryFilterSummaryText() const
+{
+	TArray<FText> ActiveFilterParts;
+
+	if (LibraryFilter.bFilterByElement)
+	{
+		TArray<FText> ElementTexts;
+		for (const EJargonElementType Element : LibraryFilter.Elements)
+		{
+			ElementTexts.Add(GetElementFilterText(Element));
+		}
+
+		ActiveFilterParts.Add(FText::Format(
+			LibraryFilter.Elements.Num() == 1
+				? NSLOCTEXT("DeckEdit", "LibraryFilterElementSummary", "Element: {0}")
+				: NSLOCTEXT("DeckEdit", "LibraryFilterElementsSummary", "Elements: {0}"),
+			JoinFilterTextList(ElementTexts)));
+	}
+
+	if (LibraryFilter.bFilterByCategory)
+	{
+		TArray<FText> CategoryTexts;
+		for (const ECardCategory Category : LibraryFilter.Categories)
+		{
+			CategoryTexts.Add(GetCategoryFilterText(Category));
+		}
+
+		ActiveFilterParts.Add(FText::Format(
+			LibraryFilter.Categories.Num() == 1
+				? NSLOCTEXT("DeckEdit", "LibraryFilterCategorySummary", "Type: {0}")
+				: NSLOCTEXT("DeckEdit", "LibraryFilterCategoriesSummary", "Types: {0}"),
+			JoinFilterTextList(CategoryTexts)));
+	}
+
+	if (LibraryFilter.bShowOnlyOwned)
+	{
+		ActiveFilterParts.Add(NSLOCTEXT("DeckEdit", "LibraryFilterOwnedSummary", "Owned"));
+	}
+
+	if (LibraryFilter.bShowOnlyAddable)
+	{
+		ActiveFilterParts.Add(NSLOCTEXT("DeckEdit", "LibraryFilterAddableSummary", "Addable"));
+	}
+
+	if (ActiveFilterParts.Num() <= 0)
+	{
+		return NSLOCTEXT("DeckEdit", "LibraryFilterAllCardsSummary", "All cards");
+	}
+
+	FString Summary;
+	for (int32 Index = 0; Index < ActiveFilterParts.Num(); ++Index)
+	{
+		if (Index > 0)
+		{
+			Summary += TEXT(" | ");
+		}
+		Summary += ActiveFilterParts[Index].ToString();
+	}
+
+	return FText::FromString(Summary);
 }
 
 bool UDeckEditWidget::SetLibraryPageIndex(int32 InPageIndex)
@@ -228,13 +690,13 @@ bool UDeckEditWidget::GoToPreviousLibraryPage()
 
 int32 UDeckEditWidget::GetLibraryPageCount() const
 {
-	if (LibraryEntries.Num() == 0)
+	if (FilteredLibraryEntries.Num() == 0)
 	{
 		return 0;
 	}
 
 	const int32 SafeCardsPerPage = FMath::Max(1, LibraryCardsPerPage);
-	return FMath::DivideAndRoundUp(LibraryEntries.Num(), SafeCardsPerPage);
+	return FMath::DivideAndRoundUp(FilteredLibraryEntries.Num(), SafeCardsPerPage);
 }
 
 FText UDeckEditWidget::GetLibraryPageText() const
@@ -267,6 +729,7 @@ void UDeckEditWidget::RebuildViewData()
 {
 	StackedDeckEntries.Empty();
 	LibraryEntries.Empty();
+	FilteredLibraryEntries.Empty();
 	DeckElementSummary = CachedRunState ? CachedRunState->GetRunDeckElementSummary() : FJargonDeckElementSummary();
 	bCanRecycleAllExtraReserveCards = false;
 	RecycleAllExtraReserveCardCount = 0;
@@ -359,8 +822,22 @@ void UDeckEditWidget::RebuildViewData()
 		LibraryEntries.Add(LibraryEntry);
 	}
 
+	RebuildFilteredLibraryEntries();
 	ClampLibraryPageIndex();
 	RebuildCurrentLibraryPageEntries();
+}
+
+void UDeckEditWidget::RebuildFilteredLibraryEntries()
+{
+	FilteredLibraryEntries.Empty();
+
+	for (const FDeckEditLibraryCardEntry& Entry : LibraryEntries)
+	{
+		if (DoesLibraryEntryPassFilter(Entry))
+		{
+			FilteredLibraryEntries.Add(Entry);
+		}
+	}
 }
 
 void UDeckEditWidget::RebuildCurrentLibraryPageEntries()
@@ -376,11 +853,11 @@ void UDeckEditWidget::RebuildCurrentLibraryPageEntries()
 
 	const int32 SafeCardsPerPage = FMath::Max(1, LibraryCardsPerPage);
 	const int32 StartIndex = CurrentLibraryPageIndex * SafeCardsPerPage;
-	const int32 EndIndexExclusive = FMath::Min(StartIndex + SafeCardsPerPage, LibraryEntries.Num());
+	const int32 EndIndexExclusive = FMath::Min(StartIndex + SafeCardsPerPage, FilteredLibraryEntries.Num());
 
 	for (int32 Index = StartIndex; Index < EndIndexExclusive; ++Index)
 	{
-		CurrentLibraryPageEntries.Add(LibraryEntries[Index]);
+		CurrentLibraryPageEntries.Add(FilteredLibraryEntries[Index]);
 	}
 }
 
@@ -394,6 +871,37 @@ void UDeckEditWidget::ClampLibraryPageIndex()
 	}
 
 	CurrentLibraryPageIndex = FMath::Clamp(CurrentLibraryPageIndex, 0, PageCount - 1);
+}
+
+bool UDeckEditWidget::DoesLibraryEntryPassFilter(const FDeckEditLibraryCardEntry& Entry) const
+{
+	const UCardDefinition* Card = Entry.Card.Get();
+	if (!Card)
+	{
+		return false;
+	}
+
+	if (LibraryFilter.bFilterByElement && !LibraryFilter.Elements.Contains(Entry.CardElement))
+	{
+		return false;
+	}
+
+	if (LibraryFilter.bFilterByCategory && !LibraryFilter.Categories.Contains(Card->Category))
+	{
+		return false;
+	}
+
+	if (LibraryFilter.bShowOnlyOwned && Entry.OwnedCount <= 0)
+	{
+		return false;
+	}
+
+	if (LibraryFilter.bShowOnlyAddable && !Entry.bCanAddToDeck)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 bool UDeckEditWidget::SortCardsByCostThenName(const UCardDefinition& LeftCard, const UCardDefinition& RightCard)

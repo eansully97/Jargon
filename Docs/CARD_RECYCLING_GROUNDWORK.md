@@ -8,10 +8,10 @@ Manual card recycling is a run-economy hook for converting extra owned reserve c
 
 - `UJargonGameInstance::RecycleOwnedRunCard` is the backend authority.
 - `UJargonGameInstance::RecycleAllExtraReserveCards` is the intended Deck Edit button action.
-- Only owned reserve copies can be recycled.
-- Copies currently in `ActiveRunDeck` are protected because availability is calculated as `OwnedCopies - DeckCopies`.
+- Only owned copies above the useful copy limit can be recycled.
+- The useful copy floor is `max(MaxCopiesPerDeckCard, DeckCopies)`, so normal decks keep 3 owned copies and legacy/invalid decks with more than 3 active copies are still preserved.
 - Recycling removes one copy from `RunOwnedCards`, awards `CardRecycleValue`, and refreshes the reserve catalog.
-- Bulk recycling removes every extra owned reserve copy while preserving the active deck.
+- Bulk recycling removes every owned copy above the useful copy floor while preserving active deck ownership.
 - `RunReserveCards` remains the visible catalog, not the ownership source of truth.
 - `UDeckEditWidget` exposes one bulk action plus `bCanRecycleAllExtraReserveCards`, `RecycleAllExtraReserveCardCount`, `RecycleAllExtraReserveCurrencyValue`, and `RecycleAllExtraReserveBlockedReason` for Blueprint UI.
 

@@ -3072,6 +3072,27 @@ TArray<FCardElementCoverageAuditRow> BuildCardElementCoverageRows(const TArray<U
 			{
 				MissingRoles.Add(TEXT("Tactical"));
 			}
+
+			if (Row.Element == TEXT("Fire") && Row.ControlCards < 2)
+			{
+				MissingRoles.Add(TEXT("Fire burn/hazard pressure under target"));
+			}
+			else if (Row.Element == TEXT("Frost") && Row.DefenseCards < 2)
+			{
+				MissingRoles.Add(TEXT("Frost shielded setup under target"));
+			}
+			else if (Row.Element == TEXT("Storm") && (Row.MobilityCards + Row.DrawCards) < 4)
+			{
+				MissingRoles.Add(TEXT("Storm tempo tools under target"));
+			}
+			else if (Row.Element == TEXT("Nature") && Row.DefenseCards < 2)
+			{
+				MissingRoles.Add(TEXT("Nature growth shield under target"));
+			}
+			else if (Row.Element == TEXT("Radiance") && Row.HealingCards < 2)
+			{
+				MissingRoles.Add(TEXT("Radiance healing/protection under target"));
+			}
 		}
 
 		Row.MissingCardTypes = MissingCardTypes.Num() > 0 ? JoinStrings(MissingCardTypes, TEXT("; ")) : TEXT("None");
@@ -3394,6 +3415,67 @@ TArray<FCardContentRecommendationRow> BuildCardContentRecommendationRows(
 				TEXT("Spell"),
 				TEXT("Tactical"),
 				TEXT("Element is below the long-term eight-card lane depth target."),
+				TEXT("CardElementCoverageAudit"));
+		}
+
+		if (CoverageRow.Element == TEXT("Fire") && CoverageRow.ControlCards < 2)
+		{
+			AddCardContentRecommendation(
+				Rows,
+				RecommendationKeys,
+				TEXT("Medium"),
+				CoverageRow.Element,
+				TEXT("Trap"),
+				TEXT("Tactical"),
+				TEXT("Fire has only one burn/control pressure card; add another hazard or pressure tool."),
+				TEXT("CardElementCoverageAudit"));
+		}
+		else if (CoverageRow.Element == TEXT("Frost") && CoverageRow.DefenseCards < 2)
+		{
+			AddCardContentRecommendation(
+				Rows,
+				RecommendationKeys,
+				TEXT("Medium"),
+				CoverageRow.Element,
+				TEXT("Spell"),
+				TEXT("Defense/Utility"),
+				TEXT("Frost shielded setup is thin; add another defensive control setup card."),
+				TEXT("CardElementCoverageAudit"));
+		}
+		else if (CoverageRow.Element == TEXT("Storm") && CoverageRow.MobilityCards < 2)
+		{
+			AddCardContentRecommendation(
+				Rows,
+				RecommendationKeys,
+				TEXT("Medium"),
+				CoverageRow.Element,
+				TEXT("Spell"),
+				TEXT("Tactical"),
+				TEXT("Storm mobility/pull-push tempo is thin; add another movement interaction card."),
+				TEXT("CardElementCoverageAudit"));
+		}
+		else if (CoverageRow.Element == TEXT("Nature") && CoverageRow.DefenseCards < 2)
+		{
+			AddCardContentRecommendation(
+				Rows,
+				RecommendationKeys,
+				TEXT("Low"),
+				CoverageRow.Element,
+				TEXT("Spell"),
+				TEXT("Defense/Utility"),
+				TEXT("Nature has healing and root coverage, but only one shield/growth setup card."),
+				TEXT("CardElementCoverageAudit"));
+		}
+		else if (CoverageRow.Element == TEXT("Radiance") && CoverageRow.HealingCards < 2)
+		{
+			AddCardContentRecommendation(
+				Rows,
+				RecommendationKeys,
+				TEXT("Medium"),
+				CoverageRow.Element,
+				TEXT("Spell"),
+				TEXT("Defense/Utility"),
+				TEXT("Radiance protection is strong, but direct healing has only one production card."),
 				TEXT("CardElementCoverageAudit"));
 		}
 	}

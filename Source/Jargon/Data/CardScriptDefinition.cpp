@@ -84,7 +84,7 @@ namespace
 		return Effect;
 	}
 
-	FString GetStatusKindName(EJargonStatusEffectKind StatusKind)
+	FString GetCardScriptStatusKindName(EJargonStatusEffectKind StatusKind)
 	{
 		const UEnum* Enum = StaticEnum<EJargonStatusEffectKind>();
 		return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(StatusKind)).ToString() : TEXT("Status");
@@ -98,7 +98,7 @@ namespace
 		}
 
 		return StatusEffectDefinition
-			? GetStatusKindName(StatusEffectDefinition->StatusKind)
+			? GetCardScriptStatusKindName(StatusEffectDefinition->StatusKind)
 			: TEXT("Status");
 	}
 

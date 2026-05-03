@@ -58,7 +58,7 @@ namespace
 		return Seeds;
 	}
 
-	FString CsvEscape(const FString& Value)
+	FString RuntimeShellCsvEscape(const FString& Value)
 	{
 		FString Escaped = Value;
 		Escaped.ReplaceInline(TEXT("\""), TEXT("\"\""), ESearchCase::CaseSensitive);
@@ -73,11 +73,11 @@ namespace
 		const FString& Details)
 	{
 		ReportCsv += FString::Printf(
-			TEXT("%s,%s,%s,%s") LINE_TERMINATOR,
-			*CsvEscape(RecordType),
-			*CsvEscape(Subject),
-			*CsvEscape(Status),
-			*CsvEscape(Details));
+			TEXT("%s,%s,%s,%s\r\n"),
+			*RuntimeShellCsvEscape(RecordType),
+			*RuntimeShellCsvEscape(Subject),
+			*RuntimeShellCsvEscape(Status),
+			*RuntimeShellCsvEscape(Details));
 	}
 
 	template <typename TClass>

@@ -4,6 +4,8 @@
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "Cards/CardDisplayWidget.h"
+#include "Town/JargonTownPlayerController.h"
+#include "Town/Widgets/DeckEditWidget.h"
 
 void UDeckLibraryCardEntryWidget::NativeOnInitialized()
 {
@@ -21,6 +23,20 @@ void UDeckLibraryCardEntryWidget::NativePreConstruct()
 	Super::NativePreConstruct();
 
 	RefreshVisuals();
+}
+
+void UDeckLibraryCardEntryWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+
+	HandleCardHovered();
+}
+
+void UDeckLibraryCardEntryWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseLeave(InMouseEvent);
+
+	HandleCardUnhovered();
 }
 
 void UDeckLibraryCardEntryWidget::InitializeFromCardLibraryEntry(
@@ -41,14 +57,35 @@ void UDeckLibraryCardEntryWidget::InitializeFromCardLibraryEntry(
 	RefreshVisuals();
 }
 
+UDeckEditWidget* UDeckLibraryCardEntryWidget::ResolveOwningDeckEditWidget() const
+{
+	if (UDeckEditWidget* DeckEditWidget = GetTypedOuter<UDeckEditWidget>())
+	{
+		return DeckEditWidget;
+	}
+
+	if (AJargonTownPlayerController* TownController = GetOwningPlayer<AJargonTownPlayerController>())
+	{
+		return TownController->GetDeckEditWidget();
+	}
+
+	return nullptr;
+}
+
 bool UDeckLibraryCardEntryWidget::CanAddDisplayedCardToDeck() const
 {
 	return CardDefinition != nullptr && bCanAddToDeck;
 }
 
+bool UDeckLibraryCardEntryWidget::CanExecuteLibraryCardClick() const
+{
+	return !bIsClickBlocked && CanAddDisplayedCardToDeck();
+}
+
 void UDeckLibraryCardEntryWidget::RefreshVisuals()
 {
 	const bool bCanAddDisplayedCard = CanAddDisplayedCardToDeck();
+	bIsClickBlocked = !bCanAddDisplayedCard;
 
 	if (CardDisplay)
 	{
@@ -75,21 +112,37 @@ void UDeckLibraryCardEntryWidget::RefreshVisuals()
 		UnavailableOverlay->SetVisibility(bCanAddDisplayedCard ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 
-	if (CardButton)
-	{
-		CardButton->SetIsEnabled(bCanAddDisplayedCard);
-	}
-
 	BP_OnLibraryCardEntryRefreshed();
 }
 
 void UDeckLibraryCardEntryWidget::HandleCardButtonClicked()
 {
-	if (!CanAddDisplayedCardToDeck())
+	if (!CanExecuteLibraryCardClick())
 	{
+		BP_OnLibraryCardClickBlocked();
 		return;
 	}
 
 	OnLibraryCardClicked.Broadcast(CardDefinition);
 	BP_OnLibraryCardClicked();
+}
+
+void UDeckLibraryCardEntryWidget::HandleCardHovered()
+{
+	if (UDeckEditWidget* DeckEditWidget = ResolveOwningDeckEditWidget())
+	{
+		DeckEditWidget->ShowLibraryCardHoverInfo(CardDefinition, this);
+	}
+
+	BP_OnLibraryCardHovered();
+}
+
+void UDeckLibraryCardEntryWidget::HandleCardUnhovered()
+{
+	if (UDeckEditWidget* DeckEditWidget = ResolveOwningDeckEditWidget())
+	{
+		DeckEditWidget->ClearLibraryCardHoverInfo(this);
+	}
+
+	BP_OnLibraryCardUnhovered();
 }

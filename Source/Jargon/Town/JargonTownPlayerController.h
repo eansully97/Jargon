@@ -1,12 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/Widgets/JargonHoverInfoTypes.h"
 #include "Core/JargonRunStateTypes.h"
 #include "Exploration/JargonExplorationPlayerController.h"
 #include "JargonTownPlayerController.generated.h"
 
 class UTownHUDWidget;
 class UCardShopWidget;
+class UCombatHoverInfoWidget;
 class UDeckEditWidget;
 class UPostMatchReportWidget;
 class UUserWidget;
@@ -35,6 +37,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Town UI")
 	TSubclassOf<UPostMatchReportWidget> PostMatchReportWidgetClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Town UI|Hover", meta = (AllowPrivateAccess = "true", ToolTip = "Optional Blueprint child of CombatHoverInfoWidget reused for description-only town/deck hover info."))
+	TSubclassOf<UCombatHoverInfoWidget> TownHoverInfoWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Town UI|Hover", meta = (AllowPrivateAccess = "true"))
+	int32 TownHoverInfoWidgetZOrder = 40;
+
 	UPROPERTY()
 	TObjectPtr<UTownHUDWidget> TownHUDWidget = nullptr;
 
@@ -47,10 +55,17 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UPostMatchReportWidget> PostMatchReportWidget = nullptr;
 
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Town UI|Hover", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatHoverInfoWidget> TownHoverInfoWidget = nullptr;
+
 	UPROPERTY()
 	TObjectPtr<UUserWidget> ActiveModalWidget = nullptr;
 
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Town UI|Hover", meta = (AllowPrivateAccess = "true"))
+	FJargonCombatHoverInfo CurrentTownHoverInfo;
+
 	void CreateTownHUD();
+	void InitializeTownHoverInfoWidget();
 	void RefreshTownHUD();
 	void RestoreTownWorldInputNextTick();
 
@@ -64,11 +79,13 @@ protected:
 	void HideCardShopWithoutInputUpdate();
 	void HideDeckEditWithoutInputUpdate();
 	void HidePostMatchReportWithoutInputUpdate();
+	void PositionTownHoverInfoWidgetAtMouse();
 
 	void HandleOpenShopPressed();
 	void HandleOpenDeckEditPressed();
 	void HandleCloseTownPanelPressed();
 	void TryOpenPendingPostCombatReport();
+	void SetCurrentTownHoverInfo(const FJargonCombatHoverInfo& NewHoverInfo);
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Town UI")
@@ -94,6 +111,30 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Town UI")
 	void RefreshAllTownUI();
+
+	UFUNCTION(BlueprintCallable, Category = "Town UI|Hover")
+	void ShowTownHoverInfo(const FJargonCombatHoverInfo& HoverInfo);
+
+	UFUNCTION(BlueprintCallable, Category = "Town UI|Hover")
+	void ClearTownHoverInfo(UObject* SourceObject);
+
+	UFUNCTION(BlueprintPure, Category = "Town UI|Hover")
+	FJargonCombatHoverInfo GetCurrentTownHoverInfo() const
+	{
+		return CurrentTownHoverInfo;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Town UI|Hover")
+	UCombatHoverInfoWidget* GetTownHoverInfoWidget() const
+	{
+		return TownHoverInfoWidget;
+	}
+
+	UPROPERTY(BlueprintAssignable, Category = "Town UI|Hover")
+	FOnCombatHoverInfoChangedSignature OnTownHoverInfoChanged;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Town UI|Hover")
+	bool bEnableTownHoverInfo = true;
 
 	UFUNCTION(BlueprintPure, Category = "Town UI")
 	UTownHUDWidget* GetTownHUDWidget() const

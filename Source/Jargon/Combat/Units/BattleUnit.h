@@ -160,6 +160,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Summon")
 	void ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Definition);
 
+	UFUNCTION(BlueprintPure, Category = "Battle Unit|Summon")
+	UJargonSummonedUnitDefinition* GetAppliedSummonedUnitDefinition() const
+	{
+		return AppliedSummonedUnitDefinition;
+	}
+
 	UFUNCTION(BlueprintPure, Category = "Battle Unit")
 	bool CanAttackTarget(const ABattleUnit* Target) const;
 
@@ -410,6 +416,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true", ToolTip = "Shared effects resolved once when this unit dies. The death tile is captured before occupancy is cleared."))
 	TArray<FJargonEffectSpec> OnDeathEffects;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Battle Unit|Summon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UJargonSummonedUnitDefinition> AppliedSummonedUnitDefinition = nullptr;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit")
 	TObjectPtr<AGridTile> CurrentTile = nullptr;

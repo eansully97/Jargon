@@ -307,7 +307,9 @@ protected:
 	);
 
 	int32 CountCardCopiesInCollection(const TArray<TObjectPtr<UCardDefinition>>& Collection, const UCardDefinition* Card) const;
-	void GatherOwnedRunReserveCardCopies(TArray<UCardDefinition*>& OutCards) const;
+	int32 GetUsefulOwnedRunCardCopyFloor(const UCardDefinition* Card) const;
+	int32 GetRecyclableOwnedRunCardCopyCount(const UCardDefinition* Card) const;
+	void GatherRecyclableExtraOwnedRunCardCopies(TArray<UCardDefinition*>& OutCards) const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
@@ -347,7 +349,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "0", ToolTip = "Maximum number of unique non-neutral card elements allowed in the active run deck. Neutral cards do not count."))
 	int32 MaxRunDeckElements = 2;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Economy", meta = (ToolTip = "Currency awarded when recycling one owned reserve card copy. Cards currently in the active run deck cannot be recycled until removed."))
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Economy", meta = (ToolTip = "Currency awarded when recycling one owned card copy above the useful owned copy limit. Normal decks keep at least MaxCopiesPerDeckCard copies."))
 	FJargonCurrencyAmount CardRecycleValue;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")

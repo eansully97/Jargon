@@ -1,6 +1,7 @@
 ﻿#include "Town/JargonTownPlayerController.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Combat/Widgets/CombatHoverInfoWidget.h"
 #include "Core/JargonGameInstance.h"
 #include "Jargon.h"
 #include "Town/Widgets/CardShopWidget.h"
@@ -20,6 +21,7 @@ void AJargonTownPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	CreateTownHUD();
+	InitializeTownHoverInfoWidget();
 	RefreshAllTownUI();
 
 	TryOpenPendingPostCombatReport();
@@ -56,6 +58,26 @@ void AJargonTownPlayerController::CreateTownHUD()
 	{
 		TownHUDWidget->AddToViewport(0);
 	}
+}
+
+void AJargonTownPlayerController::InitializeTownHoverInfoWidget()
+{
+	if (TownHoverInfoWidget || !TownHoverInfoWidgetClass)
+	{
+		return;
+	}
+
+	TownHoverInfoWidget = CreateWidget<UCombatHoverInfoWidget>(this, TownHoverInfoWidgetClass);
+	if (!TownHoverInfoWidget)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("TownPlayerController failed to create TownHoverInfoWidget."));
+		return;
+	}
+
+	TownHoverInfoWidget->AddToViewport(TownHoverInfoWidgetZOrder);
+	
+	PositionTownHoverInfoWidgetAtMouse();
+	TownHoverInfoWidget->SetHoverInfo(CurrentTownHoverInfo);
 }
 
 void AJargonTownPlayerController::RefreshTownHUD()
@@ -172,6 +194,7 @@ void AJargonTownPlayerController::HideDeckEditWithoutInputUpdate()
 	if (DeckEditWidget && DeckEditWidget->IsInViewport())
 	{
 		DeckEditWidget->RemoveFromParent();
+		SetCurrentTownHoverInfo(FJargonCombatHoverInfo());
 	}
 }
 
@@ -181,6 +204,26 @@ void AJargonTownPlayerController::HidePostMatchReportWithoutInputUpdate()
 	{
 		PostMatchReportWidget->RemoveFromParent();
 	}
+}
+
+void AJargonTownPlayerController::PositionTownHoverInfoWidgetAtMouse()
+{
+	if (!TownHoverInfoWidget)
+	{
+		return;
+	}
+
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	if (!GetMousePosition(MouseX, MouseY))
+	{
+		return;
+	}
+
+	const FVector2D MouseScreenPosition(MouseX, MouseY);
+	const FVector2D Offset(16.0f, 16.0f);
+	TownHoverInfoWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
+	TownHoverInfoWidget->SetPositionInViewport(MouseScreenPosition + Offset, true);
 }
 
 bool AJargonTownPlayerController::HasBlockingModalOpen() const
@@ -291,6 +334,55 @@ void AJargonTownPlayerController::OpenDeckEdit()
 	DeckEditWidget->RefreshFromRunState(JargonGI);
 
 	ApplyTownModalInputState(DeckEditWidget);
+}
+
+void AJargonTownPlayerController::SetCurrentTownHoverInfo(const FJargonCombatHoverInfo& NewHoverInfo)
+{
+	const bool bChanged =
+		CurrentTownHoverInfo.bHasInfo != NewHoverInfo.bHasInfo ||
+		CurrentTownHoverInfo.InfoType != NewHoverInfo.InfoType ||
+		CurrentTownHoverInfo.SourceActor != NewHoverInfo.SourceActor ||
+		CurrentTownHoverInfo.SourceObject != NewHoverInfo.SourceObject ||
+		CurrentTownHoverInfo.DescriptionText.ToString() != NewHoverInfo.DescriptionText.ToString();
+
+	if (!bChanged)
+	{
+		return;
+	}
+
+	CurrentTownHoverInfo = NewHoverInfo;
+	InitializeTownHoverInfoWidget();
+
+	if (TownHoverInfoWidget)
+	{
+		if (CurrentTownHoverInfo.bHasInfo)
+		{
+			PositionTownHoverInfoWidgetAtMouse();
+		}
+
+		TownHoverInfoWidget->SetHoverInfo(CurrentTownHoverInfo);
+	}
+
+	OnTownHoverInfoChanged.Broadcast(CurrentTownHoverInfo);
+}
+
+void AJargonTownPlayerController::ShowTownHoverInfo(const FJargonCombatHoverInfo& HoverInfo)
+{
+	if (!bEnableTownHoverInfo)
+	{
+		SetCurrentTownHoverInfo(FJargonCombatHoverInfo());
+		return;
+	}
+
+	SetCurrentTownHoverInfo(HoverInfo);
+}
+
+void AJargonTownPlayerController::ClearTownHoverInfo(UObject* SourceObject)
+{
+	if (!SourceObject || CurrentTownHoverInfo.SourceObject == SourceObject)
+	{
+		SetCurrentTownHoverInfo(FJargonCombatHoverInfo());
+	}
 }
 
 void AJargonTownPlayerController::CloseDeckEdit()

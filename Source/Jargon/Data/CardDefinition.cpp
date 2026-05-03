@@ -745,6 +745,10 @@ FString BuildCardArtPromptText(const UCardDefinition* Card)
 		? TEXT("No written description authored yet; use the card name, type, and effect summary to infer the visual identity.")
 		: Description;
 	const FString EffectSummary = BuildCardEffectPromptSummary(Card);
+	const bool bHasEffectSummary = !EffectSummary.IsEmpty() && !EffectSummary.Equals(TEXT("None"), ESearchCase::IgnoreCase);
+	const FString PromptEffectDescription = bHasEffectSummary
+		? (Description.IsEmpty() ? EffectSummary : FString::Printf(TEXT("%s (%s)"), *Description, *EffectSummary))
+		: PromptDescription;
 	const FString MainSubject = DeriveCardMainSubject(Card);
 	const FString Mood = DeriveCardMood(Card);
 
@@ -759,37 +763,68 @@ FString BuildCardArtPromptText(const UCardDefinition* Card)
 		TEXT("Card type: %s\n")
 		TEXT("Target type: %s\n")
 		TEXT("Card description / effect: %s\n")
-		TEXT("Effects: %s\n")
-		TEXT("Main subject: %s\n")
-		TEXT("Mood: %s\n\n")
+		TEXT("\n")
+		TEXT("Main subject:\n")
+		TEXT("A single, clear visual moment representing the effect:\n")
+		TEXT("%s\n\n")
+		TEXT("Mood:\n")
+		TEXT("%s\n\n")
+		TEXT("---\n\n")
 		TEXT("Art direction:\n")
-		TEXT("Stylized realistic fantasy card art, inspired by premium digital card games.\n")
-		TEXT("Strong central focal point.\n")
-		TEXT("Clean silhouette.\n")
-		TEXT("Readable composition at small card size.\n")
-		TEXT("Dramatic lighting.\n")
-		TEXT("Sharp details on the main subject.\n")
-		TEXT("Background supports the subject but does not distract.\n")
-		TEXT("Use strong value contrast so the subject stands out clearly.\n")
-		TEXT("Avoid clutter.\n")
-		TEXT("Avoid tiny details that would be unreadable when scaled down.\n")
-		TEXT("Make the action, theme, and card identity immediately understandable.\n\n")
+		TEXT("Stylized realistic fantasy card art, inspired by premium digital card games.\n\n")
 		TEXT("Composition:\n")
 		TEXT("Vertical portrait composition.\n")
-		TEXT("Main subject centered or slightly offset.\n")
+		TEXT("Strong central focal point.\n")
 		TEXT("Clear foreground, midground, and background separation.\n")
-		TEXT("Leave no text, no card frame, no UI, no logos, no borders.\n")
-		TEXT("The image should be usable as raw card art.\n\n")
+		TEXT("Use 2-3 large, simple forms to define the effect.\n")
+		TEXT("No clutter, no repeated overlapping elements.\n\n")
+		TEXT("---\n\n")
+		TEXT("Style constraints:\n")
+		TEXT("Clean, bold shapes with strong readability.\n")
+		TEXT("Smooth, painted surfaces - not hyper-detailed or noisy.\n")
+		TEXT("Controlled detail density - high detail only on focal subject.\n\n")
+		TEXT("Prefer thick, simple forms over many thin elements.\n")
+		TEXT("Limit to a few dominant shapes (no complexity stacking).\n\n")
+		TEXT("No thin filament details.\n")
+		TEXT("No mesh-like patterns.\n")
+		TEXT("No web-like distortions.\n")
+		TEXT("No stringy noise or interconnected micro-lines.\n\n")
+		TEXT("Shapes must remain clearly separated and readable.\n\n")
+		TEXT("---\n\n")
+		TEXT("Lighting:\n")
+		TEXT("Cinematic but controlled.\n")
+		TEXT("One primary light source.\n")
+		TEXT("Soft secondary lighting.\n")
+		TEXT("Glow is minimal and concentrated (not everywhere).\n\n")
+		TEXT("---\n\n")
+		TEXT("Background:\n")
+		TEXT("Soft, blurred, low detail, slightly desaturated.\n")
+		TEXT("Supports the subject without distraction.\n\n")
+		TEXT("---\n\n")
 		TEXT("Quality:\n")
-		TEXT("High resolution, polished digital painting, professional fantasy illustration, clean edges, readable shapes, detailed but not noisy, cinematic lighting, visually striking.\n\n")
+		TEXT("Polished digital painting.\n")
+		TEXT("Clean edges.\n")
+		TEXT("Readable at small card size.\n")
+		TEXT("Strong silhouette.\n")
+		TEXT("Visually striking but not noisy.\n\n")
+		TEXT("---\n\n")
+		TEXT("Hard constraints (IMPORTANT):\n")
+		TEXT("Limit visual elements to 2-3 primary shapes.\n")
+		TEXT("Avoid repeated patterns.\n")
+		TEXT("Avoid micro-detail noise.\n")
+		TEXT("Avoid excessive texture.\n")
+		TEXT("Avoid complex overlapping structures.\n\n")
+		TEXT("---\n\n")
 		TEXT("Negative prompt:\n")
-		TEXT("low quality, blurry, muddy, cluttered, over-detailed, unreadable, bad anatomy, distorted face, extra limbs, messy composition, text, letters, numbers, watermark, logo, card border, UI, frame, cropped subject, random objects, dull lighting\n"),
+		TEXT("low quality, blurry, muddy, cluttered, over-detailed, noisy, unreadable,\n")
+		TEXT("thin lines, webbing, mesh patterns, stringy artifacts,\n")
+		TEXT("bad anatomy, distortion, extra limbs,\n")
+		TEXT("text, letters, numbers, watermark, logo, UI, border, frame\n"),
 		*CardName,
 		*ElementIdentity,
 		*CardType,
 		*TargetType,
-		*PromptDescription,
-		*EffectSummary,
+		*PromptEffectDescription,
 		*MainSubject,
 		*Mood);
 }
