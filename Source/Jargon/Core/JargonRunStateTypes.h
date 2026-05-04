@@ -12,13 +12,13 @@ struct JARGON_API FJargonCurrencyAmount
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Currency", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, SaveGame, Category = "Currency", meta = (ClampMin = "0"))
 	int32 Gold = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Currency", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, SaveGame, Category = "Currency", meta = (ClampMin = "0"))
 	int32 Silver = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Currency", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, SaveGame, Category = "Currency", meta = (ClampMin = "0"))
 	int32 Copper = 0;
 
 	int32 GetTotalCopperValue() const
@@ -69,22 +69,22 @@ struct JARGON_API FJargonPostCombatReportData
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Post Combat")
 	EJargonPostCombatResult Result = EJargonPostCombatResult::None;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Post Combat")
 	FName EncounterId = NAME_None;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat", meta = (ClampMin = "0"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Post Combat", meta = (ClampMin = "0"))
 	int32 EnemiesDefeated = 0;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat|Rewards")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Post Combat|Rewards")
 	FJargonCurrencyAmount EnemyKillCurrency;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat|Rewards")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Post Combat|Rewards")
 	FJargonCurrencyAmount VictoryBonusCurrency;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Post Combat|Rewards")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Post Combat|Rewards")
 	FJargonCurrencyAmount TotalCurrencyEarned;
 
 	void Reset()

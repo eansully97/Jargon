@@ -1,5 +1,6 @@
 #include "Data/JargonRelicDefinition.h"
 
+#include "Data/JargonAbilityDefinition.h"
 #include "Data/JargonHeroDefinition.h"
 
 #if WITH_EDITOR
@@ -10,13 +11,20 @@
 bool UJargonRelicDefinition::HasAnyEffects() const
 {
 	return OnCombatStartEffects.Num() > 0
+		|| OnCombatStartAbility != nullptr
 		|| OnPlayerTurnStartEffects.Num() > 0
-		|| OnEnemyDeathEffects.Num() > 0;
+		|| OnPlayerTurnStartAbility != nullptr
+		|| OnEnemyDeathEffects.Num() > 0
+		|| OnEnemyDeathAbility != nullptr;
 }
 
 bool UJargonRelicDefinition::IsValidDefinition() const
 {
-	return !DisplayName.IsEmpty() && HasAnyEffects();
+	return !DisplayName.IsEmpty()
+		&& HasAnyEffects()
+		&& (!OnCombatStartAbility || OnCombatStartAbility->IsValidDefinition())
+		&& (!OnPlayerTurnStartAbility || OnPlayerTurnStartAbility->IsValidDefinition())
+		&& (!OnEnemyDeathAbility || OnEnemyDeathAbility->IsValidDefinition());
 }
 
 bool UJargonRelicDefinition::IsEligibleForHeroDefinition(const UJargonHeroDefinition* HeroDefinition) const
@@ -89,6 +97,19 @@ EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext
 			Context);
 	}
 
+	if (OnCombatStartAbility)
+	{
+		if (!OnCombatStartAbility->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("OnCombatStartAbility is assigned but is not a valid ability definition."));
+		}
+
+		if (OnCombatStartEffects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnCombatStartAbility and raw OnCombatStartEffects are both authored. Runtime will prefer the ability definition."));
+		}
+	}
+
 	for (int32 EffectIndex = 0; EffectIndex < OnPlayerTurnStartEffects.Num(); ++EffectIndex)
 	{
 		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
@@ -99,6 +120,19 @@ EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext
 			Context);
 	}
 
+	if (OnPlayerTurnStartAbility)
+	{
+		if (!OnPlayerTurnStartAbility->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("OnPlayerTurnStartAbility is assigned but is not a valid ability definition."));
+		}
+
+		if (OnPlayerTurnStartEffects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnPlayerTurnStartAbility and raw OnPlayerTurnStartEffects are both authored. Runtime will prefer the ability definition."));
+		}
+	}
+
 	for (int32 EffectIndex = 0; EffectIndex < OnEnemyDeathEffects.Num(); ++EffectIndex)
 	{
 		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
@@ -107,6 +141,19 @@ EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext
 			FString::Printf(TEXT("OnEnemyDeathEffects effect %d"), EffectIndex),
 			EJargonEffectTrigger::OnEnemyDeath,
 			Context);
+	}
+
+	if (OnEnemyDeathAbility)
+	{
+		if (!OnEnemyDeathAbility->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("OnEnemyDeathAbility is assigned but is not a valid ability definition."));
+		}
+
+		if (OnEnemyDeathEffects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnEnemyDeathAbility and raw OnEnemyDeathEffects are both authored. Runtime will prefer the ability definition."));
+		}
 	}
 
 	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;

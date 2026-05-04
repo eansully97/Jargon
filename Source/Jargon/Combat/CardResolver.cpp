@@ -3,7 +3,7 @@
 #include "Combat/CardResolver.h"
 
 #include "Combat/Effects/JargonEffectContextBuilder.h"
-#include "Combat/Effects/JargonEffectResolver.h"
+#include "Combat/Effects/JargonEffectExecutor.h"
 #include "Combat/Grid/Effects/BattleTileEffect.h"
 #include "Combat/JargonCombatGameMode.h"
 #include "Data/CardDefinition.h"
@@ -186,12 +186,19 @@ bool FCardResolver::ResolveEffectSpecCard(
 		Context.UnitTarget.Get(),
 		Context.TileTarget.Get());
 
-	FJargonEffectResult JargonResult;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(JargonEffectSpecs, JargonContext, JargonResult, OutTrace);
+	FJargonEffectExecutionRequest BaseExecutionRequest;
+	BaseExecutionRequest.Effects = &JargonEffectSpecs;
+	BaseExecutionRequest.Context = JargonContext;
+	BaseExecutionRequest.SourceLabel = Card->DisplayName.ToString();
+	BaseExecutionRequest.HookName = TEXT("Card Base Effects");
+	BaseExecutionRequest.OutTrace = OutTrace;
+	BaseExecutionRequest.AsyncWarningPolicy = EJargonEffectAsyncWarningPolicy::Silent;
+	const FJargonEffectExecutionReport BaseExecutionReport = FJargonEffectExecutor::Execute(BaseExecutionRequest);
+	const FJargonEffectResult& JargonResult = BaseExecutionReport.Result;
 
 	MergeJargonResultIntoCardResult(JargonResult, OutResult);
 
-	if (!bResolved)
+	if (!BaseExecutionReport.bResolverSucceeded)
 	{
 		return false;
 	}
@@ -291,9 +298,15 @@ bool FCardResolver::ResolveEffectSpecCard(
 
 		TArray<FJargonEffectSpec> BonusJargonEffects;
 		Card->BuildElementalBonusEffectSpecs(BonusIndex, BonusJargonEffects);
-		FJargonEffectResult BonusJargonResult;
-		const bool bBonusResolved = FJargonEffectResolver::ResolveEffects(BonusJargonEffects, JargonContext, BonusJargonResult);
-		if (!bBonusResolved)
+		FJargonEffectExecutionRequest BonusExecutionRequest;
+		BonusExecutionRequest.Effects = &BonusJargonEffects;
+		BonusExecutionRequest.Context = JargonContext;
+		BonusExecutionRequest.SourceLabel = Card->DisplayName.ToString();
+		BonusExecutionRequest.HookName = FString::Printf(TEXT("Elemental Bonus %d"), BonusIndex);
+		BonusExecutionRequest.AsyncWarningPolicy = EJargonEffectAsyncWarningPolicy::Silent;
+		const FJargonEffectExecutionReport BonusExecutionReport = FJargonEffectExecutor::Execute(BonusExecutionRequest);
+		const FJargonEffectResult& BonusJargonResult = BonusExecutionReport.Result;
+		if (!BonusExecutionReport.bResolverSucceeded)
 		{
 			if (bSpentCharges)
 			{

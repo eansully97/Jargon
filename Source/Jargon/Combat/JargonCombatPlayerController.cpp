@@ -13,11 +13,13 @@
 #include "Grid/Effects/BattleTileEffect.h"
 #include "Grid/GridTile.h"
 #include "InputCoreTypes.h"
+#include "Jargon.h"
 #include "Units/BattleUnit.h"
 #include "Units/PlayerBattleUnit.h"
 #include "Widgets/CombatHoverInfoWidget.h"
 #include "Widgets/CombatHUDWidget.h"
 #include "Widgets/ElementalBonusChoiceWidget.h"
+#include "Town/Widgets/PostMatchReportWidget.h"
 
 namespace
 {
@@ -107,6 +109,7 @@ void AJargonCombatPlayerController::SetupInputComponent()
 		InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AJargonCombatPlayerController::HandleLeftClick);
 		InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AJargonCombatPlayerController::HandleRightClick);
 		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AJargonCombatPlayerController::HandleCancelSelection);
+		InputComponent->BindAction(TEXT("EndTurn"), IE_Pressed, this, &AJargonCombatPlayerController::HandleEndTurnInput);
 	}
 }
 
@@ -205,6 +208,87 @@ void AJargonCombatPlayerController::InitializeElementalBonusChoiceWidget()
 	ElementalBonusChoiceWidget->ClearChoiceRequest();
 }
 
+void AJargonCombatPlayerController::ShowPostMatchReport(const FJargonPostCombatReportData& ReportData)
+{
+	if (ReportData.Result == EJargonPostCombatResult::None)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ShowPostMatchReport skipped because report data has no result."));
+		return;
+	}
+
+	ClearPendingElementalBonusChoiceRequest();
+	if (SelectedCard || bCardTargetingMode)
+	{
+		ClearSelectedCard();
+	}
+	else
+	{
+		RefreshHUD();
+	}
+
+	bPostMatchContinueRequested = false;
+
+	if (!PostMatchReportWidget && PostMatchReportWidgetClass)
+	{
+		PostMatchReportWidget = CreateWidget<UPostMatchReportWidget>(this, PostMatchReportWidgetClass);
+	}
+
+	if (!PostMatchReportWidget)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Combat post-match report is ready, but PostMatchReportWidgetClass is not assigned on the combat controller."));
+		return;
+	}
+
+	PostMatchReportWidget->OnPostMatchContinueRequested.RemoveDynamic(this, &AJargonCombatPlayerController::HandlePostMatchContinueRequested);
+	PostMatchReportWidget->OnPostMatchContinueRequested.AddDynamic(this, &AJargonCombatPlayerController::HandlePostMatchContinueRequested);
+	PostMatchReportWidget->RefreshFromReportData(ReportData);
+
+	if (!PostMatchReportWidget->IsInViewport())
+	{
+		PostMatchReportWidget->AddToViewport(PostMatchReportWidgetZOrder);
+	}
+
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(PostMatchReportWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+	FlushPressedKeys();
+}
+
+void AJargonCombatPlayerController::ContinueFromPostMatchReport()
+{
+	if (bPostMatchContinueRequested)
+	{
+		return;
+	}
+
+	bPostMatchContinueRequested = true;
+	HidePostMatchReport();
+
+	if (UJargonGameInstance* JargonGameInstance = GetGameInstance<UJargonGameInstance>())
+	{
+		JargonGameInstance->ClearPendingPostCombatReport();
+	}
+
+	AJargonCombatGameMode* CombatGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AJargonCombatGameMode>() : nullptr;
+	if (!CombatGameMode)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ContinueFromPostMatchReport failed because CombatGameMode was null."));
+		return;
+	}
+
+	CombatGameMode->ReturnToExploration();
+}
+
+void AJargonCombatPlayerController::HidePostMatchReport()
+{
+	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
+	{
+		PostMatchReportWidget->RemoveFromParent();
+	}
+}
+
 void AJargonCombatPlayerController::InitializeStartingDeck()
 {
 	if (bStartingDeckInitialized)
@@ -241,7 +325,7 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 		{
 			const TArray<UCardDefinition*> RunDeckCards = GameInstance->GetRunDeckCards();
 
-			UE_LOG(LogTemp, Warning, TEXT("Combat loading persistent run deck. Count: %d"), RunDeckCards.Num());
+			UE_LOG(LogJargon, Log, TEXT("Combat loading persistent run deck. Count: %d"), RunDeckCards.Num());
 
 			if (RunDeckCards.Num() > 0)
 			{
@@ -249,7 +333,7 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 				{
 					if (Card)
 					{
-						UE_LOG(LogTemp, Warning, TEXT("Run deck card loaded: %s"), *GetNameSafe(Card));
+						UE_LOG(LogJargon, VeryVerbose, TEXT("Run deck card loaded: %s"), *GetNameSafe(Card));
 						DrawPile.Add(Card);
 					}
 				}
@@ -258,14 +342,14 @@ void AJargonCombatPlayerController::InitializeStartingDeck()
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("Active run deck was empty at combat start. Falling back to CombatGameMode starter deck."));
+				UE_LOG(LogJargon, Warning, TEXT("Active run deck was empty at combat start. Falling back to CombatGameMode starter deck."));
 			}
 		}
 	}
 
 	if (!bLoadedPersistentRunDeck)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Combat loading fallback starting deck."));
+		UE_LOG(LogJargon, Log, TEXT("Combat loading fallback starting deck."));
 
 		for (UCardDefinition* Card : EmergencyStartingDeckCards)
 		{
@@ -406,9 +490,28 @@ void AJargonCombatPlayerController::RemoveCardFromHand(UCardDefinition* Card)
 	BroadcastCardCounts();
 }
 
-void AJargonCombatPlayerController::HandleCombatPhaseChanged(ECombatPhase)
+void AJargonCombatPlayerController::HandleCombatPhaseChanged(ECombatPhase NewPhase)
 {
 	RefreshCombatStateHUD();
+
+	if (NewPhase != ECombatPhase::Victory && NewPhase != ECombatPhase::Defeat)
+	{
+		return;
+	}
+
+	UJargonGameInstance* JargonGameInstance = GetGameInstance<UJargonGameInstance>();
+	if (!JargonGameInstance || !JargonGameInstance->HasPendingPostCombatReport())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Combat ended but no pending post-combat report was available."));
+		return;
+	}
+
+	ShowPostMatchReport(JargonGameInstance->GetPendingPostCombatReport());
+}
+
+void AJargonCombatPlayerController::HandlePostMatchContinueRequested()
+{
+	ContinueFromPostMatchReport();
 }
 
 void AJargonCombatPlayerController::HandleCombatEnergyChanged(int32)
@@ -547,6 +650,19 @@ void AJargonCombatPlayerController::JargonLogNextCardEffectTrace()
 
 	CombatGameMode->RequestLogNextCardEffectTrace();
 	UE_LOG(LogTemp, Display, TEXT("JargonLogNextCardEffectTrace armed. The next played card that reaches FCardResolver will log its base effect trace."));
+}
+
+void AJargonCombatPlayerController::JargonResetRunSave()
+{
+	UJargonGameInstance* JargonGameInstance = GetGameInstance<UJargonGameInstance>();
+	if (!JargonGameInstance)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("JargonResetRunSave failed because JargonGameInstance was unavailable."));
+		return;
+	}
+
+	JargonGameInstance->ResetRunState();
+	UE_LOG(LogJargon, Display, TEXT("JargonResetRunSave cleared the active run and deleted the run save slot."));
 }
 
 void AJargonCombatPlayerController::HandleLeftClick()

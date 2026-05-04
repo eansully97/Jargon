@@ -1,5 +1,7 @@
 #include "Data/JargonHeroDefinition.h"
 
+#include "Data/JargonAbilityDefinition.h"
+
 #if WITH_EDITOR
 #include "Data/JargonDataAssetValidationHelpers.h"
 #include "Misc/DataValidation.h"
@@ -190,6 +192,19 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 			Context);
 	}
 
+	if (CombatStartPassive.Ability)
+	{
+		if (!CombatStartPassive.Ability->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("CombatStartPassive Ability is assigned but is not a valid ability definition."));
+		}
+
+		if (CombatStartPassive.Effects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("CombatStartPassive has both Ability and raw Effects authored. Runtime will prefer Ability; migrate or clear raw Effects after verification."));
+		}
+	}
+
 	for (int32 EffectIndex = 0; EffectIndex < PlayerTurnStartPassive.Effects.Num(); ++EffectIndex)
 	{
 		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
@@ -198,6 +213,19 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 			FString::Printf(TEXT("PlayerTurnStartPassive effect %d"), EffectIndex),
 			EJargonEffectTrigger::OnTurnStart,
 			Context);
+	}
+
+	if (PlayerTurnStartPassive.Ability)
+	{
+		if (!PlayerTurnStartPassive.Ability->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("PlayerTurnStartPassive Ability is assigned but is not a valid ability definition."));
+		}
+
+		if (PlayerTurnStartPassive.Effects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("PlayerTurnStartPassive has both Ability and raw Effects authored. Runtime will prefer Ability; migrate or clear raw Effects after verification."));
+		}
 	}
 
 	TSet<EJargonHeroAspect> SeenAspects;
@@ -234,6 +262,45 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 		if (!AspectDefinition.HasAnyTransformationOrPassiveEffects())
 		{
 			JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has no transformation or passive effects."), AspectIndex));
+		}
+
+		if (AspectDefinition.TransformationAbility)
+		{
+			if (!AspectDefinition.TransformationAbility->IsValidDefinition())
+			{
+				JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("HeroAspects entry %d TransformationAbility is assigned but is not a valid ability definition."), AspectIndex));
+			}
+
+			if (AspectDefinition.TransformationEffects.Num() > 0)
+			{
+				JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has both TransformationAbility and raw TransformationEffects. Runtime will prefer the ability definition."), AspectIndex));
+			}
+		}
+
+		if (AspectDefinition.TurnStartAbility)
+		{
+			if (!AspectDefinition.TurnStartAbility->IsValidDefinition())
+			{
+				JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("HeroAspects entry %d TurnStartAbility is assigned but is not a valid ability definition."), AspectIndex));
+			}
+
+			if (AspectDefinition.TurnStartEffects.Num() > 0)
+			{
+				JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has both TurnStartAbility and raw TurnStartEffects. Runtime will prefer the ability definition."), AspectIndex));
+			}
+		}
+
+		if (AspectDefinition.EnemyDeathAbility)
+		{
+			if (!AspectDefinition.EnemyDeathAbility->IsValidDefinition())
+			{
+				JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("HeroAspects entry %d EnemyDeathAbility is assigned but is not a valid ability definition."), AspectIndex));
+			}
+
+			if (AspectDefinition.EnemyDeathEffects.Num() > 0)
+			{
+				JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has both EnemyDeathAbility and raw EnemyDeathEffects. Runtime will prefer the ability definition."), AspectIndex));
+			}
 		}
 
 		for (int32 EffectIndex = 0; EffectIndex < AspectDefinition.TransformationEffects.Num(); ++EffectIndex)

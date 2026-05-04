@@ -631,6 +631,10 @@ void ABattleUnit::ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Def
 	OnSummonedEffects.Append(Definition->OnSummonedEffects);
 	OnTurnStartEffects.Append(Definition->OnTurnStartEffects);
 	OnDeathEffects.Append(Definition->OnDeathEffects);
+
+	OnSummonedAbility = Definition->OnSummonedAbility;
+	OnTurnStartAbility = Definition->OnTurnStartAbility;
+	OnDeathAbility = Definition->OnDeathAbility;
 }
 
 bool ABattleUnit::CanAttackTarget(const ABattleUnit* Target) const

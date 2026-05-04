@@ -8,6 +8,7 @@
 
 class USkeletalMesh;
 class UTexture2D;
+class UJargonAbilityDefinition;
 
 USTRUCT(BlueprintType)
 struct JARGON_API FJargonHeroClassPassiveDefinition
@@ -17,12 +18,15 @@ struct JARGON_API FJargonHeroClassPassiveDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Passive", meta = (ToolTip = "Player-facing passive name used by combat cues and HUD text. Empty names fall back to the hero display name."))
 	FText PassiveName;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Passive", meta = (ToolTip = "Preferred reusable ability definition for this passive hook. When assigned at runtime, it replaces the raw Effects array for this hook."))
+	TObjectPtr<UJargonAbilityDefinition> Ability = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Passive", meta = (TitleProperty = "Operation", ToolTip = "Effects resolved when this passive hook fires. Empty arrays intentionally mean this passive does nothing."))
 	TArray<FJargonEffectSpec> Effects;
 
 	bool HasEffects() const
 	{
-		return Effects.Num() > 0;
+		return Ability != nullptr || Effects.Num() > 0;
 	}
 };
 
@@ -46,11 +50,17 @@ struct JARGON_API FJargonHeroAspectDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Transformation", meta = (ToolTip = "Player-facing name for the one-shot transformation moment. Empty names fall back to the aspect display name."))
 	FText TransformationName;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Transformation", meta = (ToolTip = "Preferred reusable ability definition resolved once when this aspect transforms. When assigned at runtime, it replaces TransformationEffects."))
+	TObjectPtr<UJargonAbilityDefinition> TransformationAbility = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Transformation", meta = (TitleProperty = "Operation", ToolTip = "Effects resolved once when this aspect transforms. Empty arrays intentionally mean the transformation only locks the aspect."))
 	TArray<FJargonEffectSpec> TransformationEffects;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Turn Start", meta = (ToolTip = "Name for the aspect passive that fires at player turn start while this aspect is active."))
 	FText TurnStartPassiveName;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Turn Start", meta = (ToolTip = "Preferred reusable ability definition for the turn-start aspect passive. When assigned at runtime, it replaces TurnStartEffects."))
+	TObjectPtr<UJargonAbilityDefinition> TurnStartAbility = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Turn Start", meta = (TitleProperty = "Operation", ToolTip = "Effects resolved at player turn start while this aspect is active. Empty arrays intentionally mean no turn-start aspect passive."))
 	TArray<FJargonEffectSpec> TurnStartEffects;
@@ -58,17 +68,20 @@ struct JARGON_API FJargonHeroAspectDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Enemy Death", meta = (ToolTip = "Name for the aspect passive that fires when an enemy dies while this aspect is active."))
 	FText EnemyDeathPassiveName;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Enemy Death", meta = (ToolTip = "Preferred reusable ability definition for the enemy-death aspect passive. When assigned at runtime, it replaces EnemyDeathEffects."))
+	TObjectPtr<UJargonAbilityDefinition> EnemyDeathAbility = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect|Enemy Death", meta = (TitleProperty = "Operation", ToolTip = "Effects resolved when an enemy dies while this aspect is active. Empty arrays intentionally mean no enemy-death aspect passive."))
 	TArray<FJargonEffectSpec> EnemyDeathEffects;
 
 	bool HasAnyPassiveEffects() const
 	{
-		return TurnStartEffects.Num() > 0 || EnemyDeathEffects.Num() > 0;
+		return TurnStartAbility != nullptr || EnemyDeathAbility != nullptr || TurnStartEffects.Num() > 0 || EnemyDeathEffects.Num() > 0;
 	}
 
 	bool HasAnyTransformationOrPassiveEffects() const
 	{
-		return TransformationEffects.Num() > 0 || HasAnyPassiveEffects();
+		return TransformationAbility != nullptr || TransformationEffects.Num() > 0 || HasAnyPassiveEffects();
 	}
 };
 

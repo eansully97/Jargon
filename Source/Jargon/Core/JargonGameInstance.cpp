@@ -2,9 +2,13 @@
 
 #include "Data/CardDefinition.h"
 #include "Jargon.h"
+#include "Core/JargonSaveGame.h"
 #include "Data/CardPackDefinition.h"
 #include "Data/JargonHeroDefinition.h"
 #include "Data/JargonRelicDefinition.h"
+#include "HAL/FileManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "Misc/Paths.h"
 #include "Town/JargonTownGameMode.h"
 
 namespace
@@ -52,6 +56,41 @@ FText GetCardFacingElementText(EJargonElementType CardElement)
 		? ElementEnum->GetDisplayNameTextByValue(static_cast<int64>(CardElement))
 		: FText::AsNumber(static_cast<int32>(CardElement));
 }
+
+template <typename AssetType>
+void StoreSoftAssetReferences(
+	const TArray<TObjectPtr<AssetType>>& SourceAssets,
+	TArray<TSoftObjectPtr<AssetType>>& TargetAssets)
+{
+	TargetAssets.Reset();
+	TargetAssets.Reserve(SourceAssets.Num());
+
+	for (AssetType* SourceAsset : SourceAssets)
+	{
+		if (SourceAsset)
+		{
+			TargetAssets.Add(TSoftObjectPtr<AssetType>(SourceAsset));
+		}
+	}
+}
+
+template <typename AssetType>
+void LoadSoftAssetReferences(
+	const TArray<TSoftObjectPtr<AssetType>>& SourceAssets,
+	TArray<TObjectPtr<AssetType>>& TargetAssets)
+{
+	TargetAssets.Reset();
+	TargetAssets.Reserve(SourceAssets.Num());
+
+	for (const TSoftObjectPtr<AssetType>& SourceAsset : SourceAssets)
+	{
+		AssetType* LoadedAsset = SourceAsset.LoadSynchronous();
+		if (LoadedAsset)
+		{
+			TargetAssets.Add(LoadedAsset);
+		}
+	}
+}
 }
 
 UJargonGameInstance::UJargonGameInstance()
@@ -59,7 +98,6 @@ UJargonGameInstance::UJargonGameInstance()
 	ReturnMapName = NAME_None;
 	ReturnTransform = FTransform::Identity;
 	PendingEncounterData.Reset();
-	bReturnToTownAfterCombat = false;
 	bReturningFromCombat = false;
 	bHasActiveRun = false;
 	TownMapName = NAME_None;
@@ -69,6 +107,12 @@ UJargonGameInstance::UJargonGameInstance()
 	bHasPendingPostCombatReport = false;
 	PendingPostCombatReport.Reset();
 	ActiveHeroDefinition = nullptr;
+}
+
+void UJargonGameInstance::Init()
+{
+	Super::Init();
+	LoadSavedRun();
 }
 
 void UJargonGameInstance::StartEncounter(
@@ -85,8 +129,8 @@ void UJargonGameInstance::StartEncounter(
 
 	ReturnMapName = InSourceMapName;
 	ReturnTransform = InSourceTransform;
-	bReturnToTownAfterCombat = false;
 	bReturningFromCombat = false;
+	SaveCurrentRunIfActive();
 }
 
 void UJargonGameInstance::StartEncounterWithRuntimeData(
@@ -110,8 +154,8 @@ void UJargonGameInstance::StartEncounterWithRuntimeData(
 
 	ReturnMapName = InSourceMapName;
 	ReturnTransform = InSourceTransform;
-	bReturnToTownAfterCombat = false;
 	bReturningFromCombat = false;
+	SaveCurrentRunIfActive();
 }
 
 void UJargonGameInstance::StartNewRun(const TArray<UCardDefinition*>& InitialDeck, const FJargonCurrencyAmount& StartingCurrency)
@@ -131,6 +175,8 @@ void UJargonGameInstance::StartNewRun(const TArray<UCardDefinition*>& InitialDec
 		RunOwnedCards.Num(),
 		RunReserveCards.Num()
 	);
+
+	SaveCurrentRun();
 }
 
 void UJargonGameInstance::EnsureRunInitializedFromSeedDeck(const TArray<UCardDefinition*>& SeedDeck)
@@ -158,24 +204,240 @@ void UJargonGameInstance::EnsureRunInitializedFromSeedDeck(const TArray<UCardDef
 	RunCurrencies = FJargonCurrencyAmount();
 	bHasActiveRun = ActiveRunDeck.Num() > 0;
 	RefreshRunReserveCardsFromAvailableShopPacks();
+	SaveCurrentRunIfActive();
 }
 
 void UJargonGameInstance::ResetRunState()
 {
-	bHasActiveRun = false;
-	ActiveRunDeck.Reset();
-	RunOwnedCards.Reset();
-	RunReserveCards.Reset();
-	RunRelics.Reset();
-	RunCurrencies = FJargonCurrencyAmount();
+	ClearRuntimeRunState(false);
+	DeleteSavedRun();
+}
+
+bool UJargonGameInstance::SaveCurrentRun()
+{
+	if (!bHasActiveRun)
+	{
+		return DeleteSavedRun();
+	}
+
+	UJargonSaveGame* SaveGame = Cast<UJargonSaveGame>(
+		UGameplayStatics::CreateSaveGameObject(UJargonSaveGame::StaticClass()));
+	if (!SaveGame)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("SaveCurrentRun failed because the save object could not be created."));
+		return false;
+	}
+
+	SaveGame->SaveSlotName = RunSaveSlotName;
+	SaveGame->HeroClassName = BuildActiveHeroClassName();
+	SaveGame->HeroClass = ActiveHeroDefinition ? ActiveHeroDefinition->HeroClass : EJargonHeroClass::None;
+	SaveGame->TimeOfSave = FDateTime::Now();
+	SaveGame->bHasActiveRun = bHasActiveRun;
+	SaveGame->TownMapName = TownMapName;
+	SaveGame->RunCurrencies = RunCurrencies;
+	SaveGame->RunCurrencies.Normalize();
+	StoreSoftAssetReferences(ActiveRunDeck, SaveGame->ActiveRunDeck);
+	StoreSoftAssetReferences(RunOwnedCards, SaveGame->RunOwnedCards);
+	StoreSoftAssetReferences(RunReserveCards, SaveGame->RunReserveCards);
+	StoreSoftAssetReferences(RunRelics, SaveGame->RunRelics);
+	SaveGame->ActiveHeroDefinition = ActiveHeroDefinition
+		? TSoftObjectPtr<UJargonHeroDefinition>(ActiveHeroDefinition.Get())
+		: TSoftObjectPtr<UJargonHeroDefinition>();
+	SaveGame->ClearedEncounterIds = ClearedEncounterIds;
+	SaveGame->CompletedExplorationInteractionIds = CompletedExplorationInteractionIds;
+	SaveGame->bHasPendingPostCombatReport = bHasPendingPostCombatReport;
+	SaveGame->PendingPostCombatReport = PendingPostCombatReport;
+
+	const bool bSaved = UGameplayStatics::SaveGameToSlot(SaveGame, RunSaveSlotName, RunSaveUserIndex);
+	UE_CLOG(!bSaved, LogJargon, Warning, TEXT("SaveCurrentRun failed for slot '%s' user index %d."),
+		*RunSaveSlotName,
+		RunSaveUserIndex);
+	if (bSaved)
+	{
+		RegisterSaveSlot(RunSaveSlotName);
+	}
+	return bSaved;
+}
+
+bool UJargonGameInstance::LoadSavedRun()
+{
+	if (!HasSavedRun())
+	{
+		return false;
+	}
+
+	UJargonSaveGame* SaveGame = Cast<UJargonSaveGame>(
+		UGameplayStatics::LoadGameFromSlot(RunSaveSlotName, RunSaveUserIndex));
+	if (!SaveGame || !SaveGame->bHasActiveRun)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("LoadSavedRun found no valid active run in slot '%s' user index %d."),
+			*RunSaveSlotName,
+			RunSaveUserIndex);
+		return false;
+	}
+
+	LoadSoftAssetReferences(SaveGame->ActiveRunDeck, ActiveRunDeck);
+	LoadSoftAssetReferences(SaveGame->RunOwnedCards, RunOwnedCards);
+	LoadSoftAssetReferences(SaveGame->RunReserveCards, RunReserveCards);
+	LoadSoftAssetReferences(SaveGame->RunRelics, RunRelics);
+
+	ActiveHeroDefinition = SaveGame->ActiveHeroDefinition.LoadSynchronous();
+	RunCurrencies = SaveGame->RunCurrencies;
+	NormalizeRunCurrencies();
+	TownMapName = SaveGame->TownMapName;
+	ClearedEncounterIds = SaveGame->ClearedEncounterIds;
+	CompletedExplorationInteractionIds = SaveGame->CompletedExplorationInteractionIds;
+	bHasPendingPostCombatReport = SaveGame->bHasPendingPostCombatReport;
+	PendingPostCombatReport = SaveGame->PendingPostCombatReport;
+	bHasActiveRun = ActiveRunDeck.Num() > 0;
+
 	PendingEncounterData.Reset();
-	bReturnToTownAfterCombat = false;
 	bReturningFromCombat = false;
 	ReturnMapName = NAME_None;
 	ReturnTransform = FTransform::Identity;
-	ClearedEncounterIds.Reset();
-	CompletedExplorationInteractionIds.Reset();
-	ClearPendingPostCombatReport();
+
+	if (!bHasActiveRun)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("LoadSavedRun resolved no active deck cards from slot '%s'. Starting fresh will be required."),
+			*RunSaveSlotName);
+		return false;
+	}
+
+	UE_LOG(LogJargon, Log, TEXT("Loaded saved run from slot '%s'. Deck=%d Owned=%d ReserveCatalog=%d Relics=%d Currency=%d"),
+		*RunSaveSlotName,
+		ActiveRunDeck.Num(),
+		RunOwnedCards.Num(),
+		RunReserveCards.Num(),
+		RunRelics.Num(),
+		RunCurrencies.GetTotalCopperValue());
+	return true;
+}
+
+bool UJargonGameInstance::LoadSavedRunFromSlot(const FString& SaveSlotName)
+{
+	if (SaveSlotName.IsEmpty())
+	{
+		UE_LOG(LogJargon, Warning, TEXT("LoadSavedRunFromSlot rejected an empty save slot name."));
+		return false;
+	}
+
+	RunSaveSlotName = SaveSlotName;
+	return LoadSavedRun();
+}
+
+bool UJargonGameInstance::CreateNewSaveSlot(FString& OutSaveSlotName)
+{
+	UJargonSaveIndex* SaveIndex = LoadOrCreateSaveIndex();
+	if (!SaveIndex)
+	{
+		OutSaveSlotName.Reset();
+		return false;
+	}
+
+	AdoptLegacySaveSlot(SaveIndex);
+	OutSaveSlotName = GenerateNewSaveSlotName(SaveIndex);
+	if (OutSaveSlotName.IsEmpty())
+	{
+		return false;
+	}
+
+	RunSaveSlotName = OutSaveSlotName;
+	ClearRuntimeRunState(true);
+
+	UE_LOG(LogJargon, Log, TEXT("Created new pending run save slot '%s'."), *RunSaveSlotName);
+	return true;
+}
+
+TArray<FJargonSaveSlotSummary> UJargonGameInstance::GetSaveSlotSummaries()
+{
+	TArray<FJargonSaveSlotSummary> Summaries;
+
+	UJargonSaveIndex* SaveIndex = LoadOrCreateSaveIndex();
+	if (!SaveIndex)
+	{
+		return Summaries;
+	}
+
+	bool bIndexChanged = AdoptLegacySaveSlot(SaveIndex);
+	TArray<FString> UniqueSlotNames;
+	UniqueSlotNames.Reserve(SaveIndex->SaveSlotNames.Num());
+
+	for (const FString& SaveSlotName : SaveIndex->SaveSlotNames)
+	{
+		if (SaveSlotName.IsEmpty() || UniqueSlotNames.Contains(SaveSlotName))
+		{
+			bIndexChanged = true;
+			continue;
+		}
+
+		if (!UGameplayStatics::DoesSaveGameExist(SaveSlotName, RunSaveUserIndex))
+		{
+			bIndexChanged = true;
+			continue;
+		}
+
+		FJargonSaveSlotSummary Summary = BuildSaveSlotSummary(SaveSlotName);
+		if (!Summary.bIsValid)
+		{
+			bIndexChanged = true;
+			continue;
+		}
+
+		UniqueSlotNames.Add(SaveSlotName);
+		Summaries.Add(Summary);
+	}
+
+	if (bIndexChanged || UniqueSlotNames.Num() != SaveIndex->SaveSlotNames.Num())
+	{
+		SaveIndex->SaveSlotNames = UniqueSlotNames;
+		SaveSaveIndex(SaveIndex);
+	}
+
+	Summaries.Sort([](const FJargonSaveSlotSummary& Left, const FJargonSaveSlotSummary& Right)
+	{
+		return Left.TimeOfSave > Right.TimeOfSave;
+	});
+
+	return Summaries;
+}
+
+bool UJargonGameInstance::HasSavedRun() const
+{
+	return UGameplayStatics::DoesSaveGameExist(RunSaveSlotName, RunSaveUserIndex);
+}
+
+bool UJargonGameInstance::DeleteSavedRun()
+{
+	return DeleteSavedRunFromSlot(RunSaveSlotName);
+}
+
+bool UJargonGameInstance::DeleteSavedRunFromSlot(const FString& SaveSlotName)
+{
+	if (SaveSlotName.IsEmpty())
+	{
+		return false;
+	}
+
+	if (!UGameplayStatics::DoesSaveGameExist(SaveSlotName, RunSaveUserIndex))
+	{
+		UnregisterSaveSlot(SaveSlotName);
+		return true;
+	}
+
+	const bool bDeleted = UGameplayStatics::DeleteGameInSlot(SaveSlotName, RunSaveUserIndex);
+	UE_CLOG(!bDeleted, LogJargon, Warning, TEXT("DeleteSavedRun failed for slot '%s' user index %d."),
+		*SaveSlotName,
+		RunSaveUserIndex);
+	if (bDeleted)
+	{
+		UnregisterSaveSlot(SaveSlotName);
+
+		if (SaveSlotName == RunSaveSlotName)
+		{
+			ClearRuntimeRunState(true);
+		}
+	}
+	return bDeleted;
 }
 
 void UJargonGameInstance::SetActiveHeroDefinition(UJargonHeroDefinition* HeroDefinition)
@@ -187,6 +449,7 @@ void UJargonGameInstance::SetActiveHeroDefinition(UJargonHeroDefinition* HeroDef
 
 	ActiveHeroDefinition = HeroDefinition;
 	OnActiveHeroDefinitionChanged.Broadcast(ActiveHeroDefinition);
+	SaveCurrentRunIfActive();
 }
 
 UJargonHeroDefinition* UJargonGameInstance::EnsureActiveHeroDefinition(UJargonHeroDefinition* DefaultHeroDefinition)
@@ -290,6 +553,7 @@ void UJargonGameInstance::AddCurrency(const FJargonCurrencyAmount& Amount)
 {
 	RunCurrencies = FJargonCurrencyAmount::FromTotalCopper(
 		RunCurrencies.GetTotalCopperValue() + Amount.GetTotalCopperValue());
+	SaveCurrentRunIfActive();
 }
 
 FJargonCurrencyAmount UJargonGameInstance::GetCardRecycleValue(const UCardDefinition* Card) const
@@ -346,6 +610,7 @@ bool UJargonGameInstance::AddRunRelic(UJargonRelicDefinition* RelicDefinition)
 		*GetNameSafe(RelicDefinition),
 		RunRelics.Num());
 
+	SaveCurrentRunIfActive();
 	return true;
 }
 
@@ -386,6 +651,7 @@ bool UJargonGameInstance::TrySpendCurrency(const FJargonCurrencyAmount& Cost)
 
 	RunCurrencies = FJargonCurrencyAmount::FromTotalCopper(
 		RunCurrencies.GetTotalCopperValue() - Cost.GetTotalCopperValue());
+	SaveCurrentRunIfActive();
 	return true;
 }
 
@@ -448,6 +714,7 @@ bool UJargonGameInstance::MoveCardFromReserveToDeck(UCardDefinition* Card)
 		RunOwnedCards.Num(),
 		RunReserveCards.Num());
 
+	SaveCurrentRunIfActive();
 	return true;
 }
 
@@ -476,6 +743,7 @@ bool UJargonGameInstance::MoveCardFromDeckToReserve(UCardDefinition* Card)
 		RunOwnedCards.Num(),
 		RunReserveCards.Num());
 
+	SaveCurrentRunIfActive();
 	return true;
 }
 
@@ -561,6 +829,7 @@ bool UJargonGameInstance::RecycleOwnedRunCard(
 		GetOwnedRunReserveCardCopyCount(Card),
 		RunCurrencies.GetTotalCopperValue());
 
+	SaveCurrentRunIfActive();
 	return true;
 }
 
@@ -655,12 +924,14 @@ bool UJargonGameInstance::RecycleAllExtraReserveCards(
 		ActiveRunDeck.Num(),
 		RunCurrencies.GetTotalCopperValue());
 
+	SaveCurrentRunIfActive();
 	return true;
 }
 
 void UJargonGameInstance::SetTownMapName(const FName& InTownMapName)
 {
 	TownMapName = InTownMapName;
+	SaveCurrentRunIfActive();
 }
 
 TArray<UCardPackDefinition*> UJargonGameInstance::GetAvailableCardPackOffers() const
@@ -774,6 +1045,7 @@ bool UJargonGameInstance::PurchaseCardPack(
 
 	UE_LOG(LogJargon, Log, TEXT("Purchased pack '%s'. Granted=%d Deck=%d Owned=%d ReserveCatalog=%d"), *GetNameSafe(PackDefinition), OutGrantedCards.Num(), ActiveRunDeck.Num(), RunOwnedCards.Num(), RunReserveCards.Num());
 
+	SaveCurrentRunIfActive();
 	return true;
 }
 
@@ -782,6 +1054,7 @@ void UJargonGameInstance::MarkEncounterCleared(const FName& EncounterId)
 	if (!EncounterId.IsNone())
 	{
 		ClearedEncounterIds.Add(EncounterId);
+		SaveCurrentRunIfActive();
 	}
 }
 
@@ -800,6 +1073,7 @@ void UJargonGameInstance::MarkExplorationInteractionCompleted(const FName& Compl
 	if (!CompletionId.IsNone())
 	{
 		CompletedExplorationInteractionIds.Add(CompletionId);
+		SaveCurrentRunIfActive();
 	}
 }
 
@@ -815,14 +1089,8 @@ bool UJargonGameInstance::IsExplorationInteractionCompleted(const FName& Complet
 
 void UJargonGameInstance::PrepareReturnToExploration()
 {
-	bReturnToTownAfterCombat = false;
 	bReturningFromCombat = true;
-}
-
-void UJargonGameInstance::PrepareReturnToTownAfterCombat()
-{
-	bReturnToTownAfterCombat = true;
-	bReturningFromCombat = true;
+	SaveCurrentRunIfActive();
 }
 
 void UJargonGameInstance::HandleCombatVictory()
@@ -842,7 +1110,7 @@ void UJargonGameInstance::HandleCombatVictory(const FJargonCurrencyAmount& Enemy
 
 	AddCurrency(TotalCurrencyEarned);
 	StorePostCombatReport(EJargonPostCombatResult::Victory, EnemyKillCurrency, VictoryBonusCurrency, EnemiesDefeated);
-	PrepareReturnToTownAfterCombat();
+	PrepareReturnToExploration();
 }
 
 void UJargonGameInstance::HandleCombatDefeat(const FJargonCurrencyAmount& EnemyKillCurrency, int32 EnemiesDefeated)
@@ -852,13 +1120,14 @@ void UJargonGameInstance::HandleCombatDefeat(const FJargonCurrencyAmount& EnemyK
 
 	AddCurrency(TotalCurrencyEarned);
 	StorePostCombatReport(EJargonPostCombatResult::Defeat, EnemyKillCurrency, VictoryBonusCurrency, EnemiesDefeated);
-	PrepareReturnToTownAfterCombat();
+	PrepareReturnToExploration();
 }
 
 void UJargonGameInstance::ClearPendingPostCombatReport()
 {
 	bHasPendingPostCombatReport = false;
 	PendingPostCombatReport.Reset();
+	SaveCurrentRunIfActive();
 }
 
 void UJargonGameInstance::CompleteReturnToExploration()
@@ -868,23 +1137,19 @@ void UJargonGameInstance::CompleteReturnToExploration()
 
 void UJargonGameInstance::CompletePostCombatReturn()
 {
-	bReturnToTownAfterCombat = false;
 	bReturningFromCombat = false;
 	ClearPendingEncounter();
+	SaveCurrentRunIfActive();
 }
 
 void UJargonGameInstance::ClearPendingEncounter()
 {
 	PendingEncounterData.Reset();
+	SaveCurrentRunIfActive();
 }
 
 FName UJargonGameInstance::GetPostCombatDestinationMapName() const
 {
-	if (bReturnToTownAfterCombat && !TownMapName.IsNone())
-	{
-		return TownMapName;
-	}
-
 	return ReturnMapName;
 }
 
@@ -1001,6 +1266,7 @@ void UJargonGameInstance::StorePostCombatReport(
 		PendingPostCombatReport.VictoryBonusCurrency
 	);
 	bHasPendingPostCombatReport = (Result != EJargonPostCombatResult::None);
+	SaveCurrentRunIfActive();
 }
 
 int32 UJargonGameInstance::CountCardCopiesInCollection(
@@ -1066,5 +1332,271 @@ void UJargonGameInstance::GatherRecyclableExtraOwnedRunCardCopies(TArray<UCardDe
 			OutCards.Add(OwnedCard);
 			--(*CopiesToRecyclePtr);
 		}
+	}
+}
+
+void UJargonGameInstance::ClearRuntimeRunState(bool bResetHeroDefinition)
+{
+	bHasActiveRun = false;
+	ActiveRunDeck.Reset();
+	RunOwnedCards.Reset();
+	RunReserveCards.Reset();
+	RunRelics.Reset();
+	RunCurrencies = FJargonCurrencyAmount();
+	PendingEncounterData.Reset();
+	bReturningFromCombat = false;
+	ReturnMapName = NAME_None;
+	ReturnTransform = FTransform::Identity;
+	ClearedEncounterIds.Reset();
+	CompletedExplorationInteractionIds.Reset();
+	bHasPendingPostCombatReport = false;
+	PendingPostCombatReport.Reset();
+
+	if (bResetHeroDefinition && ActiveHeroDefinition)
+	{
+		ActiveHeroDefinition = nullptr;
+		OnActiveHeroDefinitionChanged.Broadcast(nullptr);
+	}
+}
+
+UJargonSaveIndex* UJargonGameInstance::LoadOrCreateSaveIndex() const
+{
+	if (UGameplayStatics::DoesSaveGameExist(SaveIndexSlotName, RunSaveUserIndex))
+	{
+		if (UJargonSaveIndex* SaveIndex = Cast<UJargonSaveIndex>(
+			UGameplayStatics::LoadGameFromSlot(SaveIndexSlotName, RunSaveUserIndex)))
+		{
+			SaveIndex->NextSaveSlotNumber = FMath::Max(1, SaveIndex->NextSaveSlotNumber);
+			return SaveIndex;
+		}
+
+		UE_LOG(LogJargon, Warning, TEXT("Save index slot '%s' exists but could not be loaded as UJargonSaveIndex. A fresh index will be used."), *SaveIndexSlotName);
+	}
+
+	UJargonSaveIndex* SaveIndex = Cast<UJargonSaveIndex>(
+		UGameplayStatics::CreateSaveGameObject(UJargonSaveIndex::StaticClass()));
+	if (!SaveIndex)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("Failed to create save index object."));
+	}
+
+	return SaveIndex;
+}
+
+bool UJargonGameInstance::SaveSaveIndex(UJargonSaveIndex* SaveIndex) const
+{
+	if (!SaveIndex)
+	{
+		return false;
+	}
+
+	const bool bSaved = UGameplayStatics::SaveGameToSlot(SaveIndex, SaveIndexSlotName, RunSaveUserIndex);
+	UE_CLOG(!bSaved, LogJargon, Warning, TEXT("Failed to save run save index slot '%s'."), *SaveIndexSlotName);
+	return bSaved;
+}
+
+bool UJargonGameInstance::AdoptLegacySaveSlot(UJargonSaveIndex* SaveIndex) const
+{
+	if (!SaveIndex || LegacyRunSaveSlotName.IsEmpty())
+	{
+		return false;
+	}
+
+	if (!UGameplayStatics::DoesSaveGameExist(LegacyRunSaveSlotName, RunSaveUserIndex))
+	{
+		return false;
+	}
+
+	if (SaveIndex->SaveSlotNames.Contains(LegacyRunSaveSlotName))
+	{
+		return false;
+	}
+
+	SaveIndex->SaveSlotNames.Add(LegacyRunSaveSlotName);
+	return true;
+}
+
+bool UJargonGameInstance::RegisterSaveSlot(const FString& SaveSlotName)
+{
+	if (SaveSlotName.IsEmpty())
+	{
+		return false;
+	}
+
+	UJargonSaveIndex* SaveIndex = LoadOrCreateSaveIndex();
+	if (!SaveIndex)
+	{
+		return false;
+	}
+
+	bool bIndexChanged = AdoptLegacySaveSlot(SaveIndex);
+	if (!SaveIndex->SaveSlotNames.Contains(SaveSlotName))
+	{
+		SaveIndex->SaveSlotNames.Add(SaveSlotName);
+		bIndexChanged = true;
+	}
+
+	return !bIndexChanged || SaveSaveIndex(SaveIndex);
+}
+
+bool UJargonGameInstance::UnregisterSaveSlot(const FString& SaveSlotName)
+{
+	if (SaveSlotName.IsEmpty() || !UGameplayStatics::DoesSaveGameExist(SaveIndexSlotName, RunSaveUserIndex))
+	{
+		return true;
+	}
+
+	UJargonSaveIndex* SaveIndex = LoadOrCreateSaveIndex();
+	if (!SaveIndex)
+	{
+		return false;
+	}
+
+	const int32 RemovedCount = SaveIndex->SaveSlotNames.Remove(SaveSlotName);
+	return RemovedCount <= 0 || SaveSaveIndex(SaveIndex);
+}
+
+FString UJargonGameInstance::GenerateNewSaveSlotName(UJargonSaveIndex* SaveIndex) const
+{
+	if (!SaveIndex || RunSaveSlotPrefix.IsEmpty())
+	{
+		return FString();
+	}
+
+	int32 CandidateNumber = FMath::Max(1, SaveIndex->NextSaveSlotNumber);
+	for (int32 Attempt = 0; Attempt < 10000; ++Attempt)
+	{
+		const FString CandidateSlotName = FString::Printf(TEXT("%s%d"), *RunSaveSlotPrefix, CandidateNumber);
+		++CandidateNumber;
+
+		if (!SaveIndex->SaveSlotNames.Contains(CandidateSlotName) &&
+			!UGameplayStatics::DoesSaveGameExist(CandidateSlotName, RunSaveUserIndex))
+		{
+			SaveIndex->NextSaveSlotNumber = CandidateNumber;
+			SaveSaveIndex(SaveIndex);
+			return CandidateSlotName;
+		}
+	}
+
+	UE_LOG(LogJargon, Warning, TEXT("Failed to generate a unique run save slot name with prefix '%s'."), *RunSaveSlotPrefix);
+	return FString();
+}
+
+FJargonSaveSlotSummary UJargonGameInstance::BuildSaveSlotSummary(const FString& SaveSlotName) const
+{
+	FJargonSaveSlotSummary Summary;
+	Summary.SlotName = SaveSlotName;
+
+	UJargonSaveGame* SaveGame = Cast<UJargonSaveGame>(
+		UGameplayStatics::LoadGameFromSlot(SaveSlotName, RunSaveUserIndex));
+	if (!SaveGame || !SaveGame->bHasActiveRun)
+	{
+		return Summary;
+	}
+
+	FString ClassName = SaveGame->HeroClassName;
+	if (ClassName.IsEmpty() && SaveGame->HeroClass != EJargonHeroClass::None)
+	{
+		ClassName = GetHeroClassDisplayName(SaveGame->HeroClass).ToString();
+	}
+
+	if (ClassName.IsEmpty())
+	{
+		const UJargonHeroDefinition* HeroDefinition = SaveGame->ActiveHeroDefinition.LoadSynchronous();
+		ClassName = BuildHeroClassName(HeroDefinition);
+	}
+
+	const FDateTime SaveTime = SaveGame->TimeOfSave.GetTicks() > 0
+		? SaveGame->TimeOfSave
+		: GetSaveFileTimestamp(SaveSlotName);
+
+	Summary.ClassName = FText::FromString(ClassName.IsEmpty() ? FString(TEXT("Unknown")) : ClassName);
+	Summary.TimeOfSave = SaveTime;
+	Summary.TimeOfSaveText = SaveTime.GetTicks() > 0
+		? FText::FromString(SaveTime.ToString(TEXT("%Y-%m-%d %H:%M")))
+		: FText::FromString(TEXT("Unknown"));
+	Summary.CurrencyAmount = SaveGame->RunCurrencies;
+	Summary.CurrencyAmount.Normalize();
+	Summary.CurrencyText = FormatCurrencyAmount(Summary.CurrencyAmount);
+	Summary.bIsValid = true;
+	return Summary;
+}
+
+FString UJargonGameInstance::BuildActiveHeroClassName() const
+{
+	return BuildHeroClassName(ActiveHeroDefinition);
+}
+
+FString UJargonGameInstance::BuildHeroClassName(const UJargonHeroDefinition* HeroDefinition) const
+{
+	if (!HeroDefinition)
+	{
+		return TEXT("Unknown");
+	}
+
+	if (HeroDefinition->HeroClass != EJargonHeroClass::None)
+	{
+		return GetHeroClassDisplayName(HeroDefinition->HeroClass).ToString();
+	}
+
+	if (!HeroDefinition->DisplayName.IsEmpty())
+	{
+		return HeroDefinition->DisplayName.ToString();
+	}
+
+	return TEXT("Unknown");
+}
+
+FText UJargonGameInstance::GetHeroClassDisplayName(EJargonHeroClass HeroClass)
+{
+	const UEnum* HeroClassEnum = StaticEnum<EJargonHeroClass>();
+	return HeroClassEnum
+		? HeroClassEnum->GetDisplayNameTextByValue(static_cast<int64>(HeroClass))
+		: FText::AsNumber(static_cast<int32>(HeroClass));
+}
+
+FText UJargonGameInstance::FormatCurrencyAmount(FJargonCurrencyAmount CurrencyAmount)
+{
+	CurrencyAmount.Normalize();
+
+	TArray<FString> Parts;
+	if (CurrencyAmount.Gold > 0)
+	{
+		Parts.Add(FString::Printf(TEXT("%d Gold"), CurrencyAmount.Gold));
+	}
+
+	if (CurrencyAmount.Silver > 0)
+	{
+		Parts.Add(FString::Printf(TEXT("%d Silver"), CurrencyAmount.Silver));
+	}
+
+	if (CurrencyAmount.Copper > 0 || Parts.Num() == 0)
+	{
+		Parts.Add(FString::Printf(TEXT("%d Copper"), CurrencyAmount.Copper));
+	}
+
+	return FText::FromString(FString::Join(Parts, TEXT(" ")));
+}
+
+FDateTime UJargonGameInstance::GetSaveFileTimestamp(const FString& SaveSlotName) const
+{
+	if (SaveSlotName.IsEmpty())
+	{
+		return FDateTime();
+	}
+
+	return IFileManager::Get().GetTimeStamp(*GetSaveGameFilePath(SaveSlotName));
+}
+
+FString UJargonGameInstance::GetSaveGameFilePath(const FString& SaveSlotName) const
+{
+	return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"), SaveSlotName + TEXT(".sav"));
+}
+
+void UJargonGameInstance::SaveCurrentRunIfActive()
+{
+	if (bHasActiveRun)
+	{
+		SaveCurrentRun();
 	}
 }

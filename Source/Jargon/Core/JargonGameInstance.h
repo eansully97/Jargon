@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/JargonSaveGame.h"
 #include "Exploration/Encounters/EncounterTypes.h"
 #include "Engine/GameInstance.h"
 #include "JargonGameInstance.generated.h"
@@ -22,6 +23,8 @@ class JARGON_API UJargonGameInstance : public UGameInstance
 public:
 	UJargonGameInstance();
 
+	virtual void Init() override;
+
 	/** Legacy milestone-1 path. Keeps current encounter trigger flow working while we refactor forward. */
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
 	void StartEncounter(const FName& InEncounterId, const FName& InSourceMapName, const FTransform& InSourceTransform);
@@ -40,6 +43,36 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run")
 	void ResetRunState();
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
+	bool SaveCurrentRun();
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
+	bool LoadSavedRun();
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
+	bool LoadSavedRunFromSlot(const FString& SaveSlotName);
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
+	bool CreateNewSaveSlot(FString& OutSaveSlotName);
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
+	TArray<FJargonSaveSlotSummary> GetSaveSlotSummaries();
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Save")
+	bool HasSavedRun() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
+	bool DeleteSavedRun();
+
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
+	bool DeleteSavedRunFromSlot(const FString& SaveSlotName);
+
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Save")
+	FString GetActiveRunSaveSlotName() const
+	{
+		return RunSaveSlotName;
+	}
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Hero")
 	void SetActiveHeroDefinition(UJargonHeroDefinition* HeroDefinition);
@@ -214,9 +247,6 @@ public:
 	void PrepareReturnToExploration();
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
-	void PrepareReturnToTownAfterCombat();
-
-	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
 	void CompleteReturnToExploration();
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
@@ -252,12 +282,6 @@ public:
 	bool IsReturningFromCombat() const
 	{
 		return bReturningFromCombat;
-	}
-
-	UFUNCTION(BlueprintPure, Category = "Jargon|Encounter")
-	bool WillReturnToTownAfterCombat() const
-	{
-		return bReturnToTownAfterCombat && !TownMapName.IsNone();
 	}
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Encounter")
@@ -310,8 +334,38 @@ protected:
 	int32 GetUsefulOwnedRunCardCopyFloor(const UCardDefinition* Card) const;
 	int32 GetRecyclableOwnedRunCardCopyCount(const UCardDefinition* Card) const;
 	void GatherRecyclableExtraOwnedRunCardCopies(TArray<UCardDefinition*>& OutCards) const;
+	void ClearRuntimeRunState(bool bResetHeroDefinition);
+	void SaveCurrentRunIfActive();
+	UJargonSaveIndex* LoadOrCreateSaveIndex() const;
+	bool SaveSaveIndex(UJargonSaveIndex* SaveIndex) const;
+	bool AdoptLegacySaveSlot(UJargonSaveIndex* SaveIndex) const;
+	bool RegisterSaveSlot(const FString& SaveSlotName);
+	bool UnregisterSaveSlot(const FString& SaveSlotName);
+	FString GenerateNewSaveSlotName(UJargonSaveIndex* SaveIndex) const;
+	FJargonSaveSlotSummary BuildSaveSlotSummary(const FString& SaveSlotName) const;
+	FString BuildActiveHeroClassName() const;
+	FString BuildHeroClassName(const UJargonHeroDefinition* HeroDefinition) const;
+	static FText GetHeroClassDisplayName(EJargonHeroClass HeroClass);
+	static FText FormatCurrencyAmount(FJargonCurrencyAmount CurrencyAmount);
+	FDateTime GetSaveFileTimestamp(const FString& SaveSlotName) const;
+	FString GetSaveGameFilePath(const FString& SaveSlotName) const;
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Save")
+	FString RunSaveSlotName = TEXT("Jargon_Run");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Save")
+	FString LegacyRunSaveSlotName = TEXT("Jargon_Run");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Save")
+	FString SaveIndexSlotName = TEXT("Jargon_SaveIndex");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Save")
+	FString RunSaveSlotPrefix = TEXT("Jargon_Run_");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Save", meta = (ClampMin = "0"))
+	int32 RunSaveUserIndex = 0;
+
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	FName ReturnMapName = NAME_None;
 
@@ -321,9 +375,6 @@ protected:
 	/** Runtime encounter data passed from the exploration world into the combat world. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	FPendingEncounterRuntimeData PendingEncounterData;
-
-	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
-	bool bReturnToTownAfterCombat = false;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	bool bReturningFromCombat = false;

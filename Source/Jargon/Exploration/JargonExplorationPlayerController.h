@@ -34,6 +34,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Exploration|Input")
 	void ResetClickMoveState();
 
+	UFUNCTION(BlueprintCallable, Category = "Exploration|Input")
+	void RestoreExplorationInputState();
+
+	UFUNCTION(Exec)
+	void JargonResetRunSave();
+
 	UFUNCTION(BlueprintPure, Category = "Exploration|Input")
 	bool IsWorldClickMovementEnabled() const
 	{

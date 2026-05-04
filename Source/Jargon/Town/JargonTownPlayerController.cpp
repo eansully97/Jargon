@@ -6,7 +6,6 @@
 #include "Jargon.h"
 #include "Town/Widgets/CardShopWidget.h"
 #include "Town/Widgets/DeckEditWidget.h"
-#include "Town/Widgets/PostMatchReportWidget.h"
 #include "Town/Widgets/TownHUDWidget.h"
 
 AJargonTownPlayerController::AJargonTownPlayerController()
@@ -23,8 +22,6 @@ void AJargonTownPlayerController::BeginPlay()
 	CreateTownHUD();
 	InitializeTownHoverInfoWidget();
 	RefreshAllTownUI();
-
-	TryOpenPendingPostCombatReport();
 
 	if (!HasBlockingModalOpen())
 	{
@@ -143,11 +140,6 @@ void AJargonTownPlayerController::SetTownInputModeUI(UUserWidget* FocusWidget)
 
 UUserWidget* AJargonTownPlayerController::GetTopmostTownModalWidget() const
 {
-	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
-	{
-		return PostMatchReportWidget;
-	}
-
 	if (DeckEditWidget && DeckEditWidget->IsInViewport())
 	{
 		return DeckEditWidget;
@@ -196,21 +188,12 @@ void AJargonTownPlayerController::HideDeckEditWithoutInputUpdate()
 	}
 }
 
-void AJargonTownPlayerController::HidePostMatchReportWithoutInputUpdate()
-{
-	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
-	{
-		PostMatchReportWidget->RemoveFromParent();
-	}
-}
-
 bool AJargonTownPlayerController::HasBlockingModalOpen() const
 {
 	const bool bShopOpen = CardShopWidget && CardShopWidget->IsInViewport();
 	const bool bDeckEditOpen = DeckEditWidget && DeckEditWidget->IsInViewport();
-	const bool bPostMatchReportOpen = PostMatchReportWidget && PostMatchReportWidget->IsInViewport();
 
-	return bShopOpen || bDeckEditOpen || bPostMatchReportOpen;
+	return bShopOpen || bDeckEditOpen;
 }
 
 void AJargonTownPlayerController::HandleOpenShopPressed()
@@ -258,7 +241,6 @@ void AJargonTownPlayerController::OpenCardShop()
 	}
 
 	HideDeckEditWithoutInputUpdate();
-	HidePostMatchReportWithoutInputUpdate();
 
 	if (!CardShopWidget->IsInViewport())
 	{
@@ -301,7 +283,6 @@ void AJargonTownPlayerController::OpenDeckEdit()
 	}
 
 	HideCardShopWithoutInputUpdate();
-	HidePostMatchReportWithoutInputUpdate();
 
 	if (!DeckEditWidget->IsInViewport())
 	{
@@ -370,55 +351,9 @@ void AJargonTownPlayerController::CloseDeckEdit()
 	ApplyTownModalInputState();
 }
 
-void AJargonTownPlayerController::OpenPostMatchReport(const FJargonPostCombatReportData& ReportData)
-{
-	SetWorldClickMovementEnabled(false);
-	FlushPressedKeys();
-
-	if (!PostMatchReportWidget && PostMatchReportWidgetClass)
-	{
-		PostMatchReportWidget = CreateWidget<UPostMatchReportWidget>(this, PostMatchReportWidgetClass);
-	}
-
-	if (!PostMatchReportWidget)
-	{
-		UE_LOG(LogJargon, Warning, TEXT("OpenPostMatchReport failed because PostMatchReportWidgetClass is not assigned."));
-		ApplyTownModalInputState();
-		return;
-	}
-
-	HideCardShopWithoutInputUpdate();
-	HideDeckEditWithoutInputUpdate();
-
-	if (!PostMatchReportWidget->IsInViewport())
-	{
-		PostMatchReportWidget->AddToViewport(30);
-	}
-
-	PostMatchReportWidget->RefreshFromReportData(ReportData);
-
-	ApplyTownModalInputState(PostMatchReportWidget);
-}
-
-void AJargonTownPlayerController::ClosePostMatchReport()
-{
-	HidePostMatchReportWithoutInputUpdate();
-
-	if (ActiveModalWidget == PostMatchReportWidget)
-	{
-		ActiveModalWidget = nullptr;
-	}
-
-	ApplyTownModalInputState();
-}
-
 void AJargonTownPlayerController::CloseActiveTownPanel()
 {
-	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
-	{
-		HidePostMatchReportWithoutInputUpdate();
-	}
-	else if (DeckEditWidget && DeckEditWidget->IsInViewport())
+	if (DeckEditWidget && DeckEditWidget->IsInViewport())
 	{
 		HideDeckEditWithoutInputUpdate();
 	}
@@ -429,29 +364,6 @@ void AJargonTownPlayerController::CloseActiveTownPanel()
 
 	ActiveModalWidget = nullptr;
 	ApplyTownModalInputState();
-}
-
-void AJargonTownPlayerController::TryOpenPendingPostCombatReport()
-{
-	UJargonGameInstance* JargonGI = GetGameInstance<UJargonGameInstance>();
-	if (!JargonGI || !JargonGI->HasPendingPostCombatReport())
-	{
-		return;
-	}
-
-	if (!PostMatchReportWidgetClass)
-	{
-		UE_LOG(LogJargon, Warning, TEXT("Pending post-combat report was available, but PostMatchReportWidgetClass is not assigned."));
-		return;
-	}
-
-	const FJargonPostCombatReportData ReportData = JargonGI->GetPendingPostCombatReport();
-	OpenPostMatchReport(ReportData);
-
-	if (PostMatchReportWidget && PostMatchReportWidget->IsInViewport())
-	{
-		JargonGI->ClearPendingPostCombatReport();
-	}
 }
 
 void AJargonTownPlayerController::RefreshAllTownUI()

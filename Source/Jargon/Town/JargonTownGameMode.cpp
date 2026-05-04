@@ -56,6 +56,11 @@ void AJargonTownGameMode::BeginPlay()
 
 		JargonGI->StartNewRun(InitialDeck, StartingCurrency);
 	}
+	else
+	{
+		JargonGI->RefreshRunReserveCardsFromAvailableShopPacks();
+		JargonGI->SaveCurrentRun();
+	}
 
 	JargonGI->CompletePostCombatReturn();
 }

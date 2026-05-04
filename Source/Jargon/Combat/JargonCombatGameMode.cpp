@@ -4,12 +4,13 @@
 
 #include "Combat/CardResolver.h"
 #include "Combat/Effects/JargonEffectContextBuilder.h"
-#include "Combat/Effects/JargonEffectResolver.h"
+#include "Combat/Effects/JargonEffectExecutor.h"
 #include "Combat/JargonCombatPlayerController.h"
 #include "Combat/Presentation/JargonCombatPresentationManager.h"
 #include "Combat/TacticsCameraPawn.h"
 #include "Core/JargonGameInstance.h"
 #include "Data/CardDefinition.h"
+#include "Data/JargonAbilityDefinition.h"
 #include "Data/JargonDeckDefinition.h"
 #include "Data/JargonHeroDefinition.h"
 #include "Data/JargonRelicDefinition.h"
@@ -29,14 +30,49 @@
 
 namespace
 {
+TArray<FJargonEffectSpec> BuildHookEffectPreview(
+	const UJargonAbilityDefinition* AbilityDefinition,
+	const TArray<FJargonEffectSpec>& RawEffects)
+{
+	if (AbilityDefinition)
+	{
+		TArray<FJargonEffectSpec> BuiltEffects;
+		AbilityDefinition->BuildEffectSpecs(BuiltEffects);
+		return BuiltEffects;
+	}
+
+	return RawEffects;
+}
+
+FJargonEffectExecutionReport ExecuteAbilityOrRawEffects(
+	const UJargonAbilityDefinition* AbilityDefinition,
+	const TArray<FJargonEffectSpec>& RawEffects,
+	const FJargonEffectContext& Context,
+	const FString& SourceLabel,
+	const FString& HookName)
+{
+	if (AbilityDefinition)
+	{
+		return FJargonEffectExecutor::ExecuteAbility(AbilityDefinition, Context, SourceLabel, nullptr);
+	}
+
+	FJargonEffectExecutionRequest ExecutionRequest;
+	ExecutionRequest.Effects = &RawEffects;
+	ExecutionRequest.Context = Context;
+	ExecutionRequest.SourceLabel = SourceLabel;
+	ExecutionRequest.HookName = HookName;
+	return FJargonEffectExecutor::Execute(ExecutionRequest);
+}
+
 void ResolveRunRelicEffects(
 	AJargonCombatGameMode* CombatGameMode,
 	UJargonRelicDefinition* RelicDefinition,
+	const UJargonAbilityDefinition* AbilityDefinition,
 	const TArray<FJargonEffectSpec>& Effects,
 	const FJargonEffectContext& Context,
 	const TCHAR* HookName)
 {
-	if (!CombatGameMode || !RelicDefinition || Effects.Num() <= 0)
+	if (!CombatGameMode || !RelicDefinition || (!AbilityDefinition && Effects.Num() <= 0))
 	{
 		return;
 	}
@@ -59,22 +95,12 @@ void ResolveRunRelicEffects(
 		: FText::Format(FText::FromString(TEXT("{0} triggered")), RelicDefinition->DisplayName);
 	CombatGameMode->EmitCombatCue(RelicCue);
 
-	FJargonEffectResult EffectResult;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(Effects, Context, EffectResult);
-	if (!bResolved)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Run relic '%s' failed to resolve %s effects."),
-			*GetNameSafe(RelicDefinition),
-			HookName ? HookName : TEXT("unknown"));
-		return;
-	}
-
-	if (EffectResult.bContinuesAsynchronously)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Run relic '%s' started an async %s effect. Async relic effects are not specially sequenced yet."),
-			*GetNameSafe(RelicDefinition),
-			HookName ? HookName : TEXT("unknown"));
-	}
+	ExecuteAbilityOrRawEffects(
+		AbilityDefinition,
+		Effects,
+		Context,
+		GetNameSafe(RelicDefinition),
+		HookName ? HookName : TEXT("RunRelic"));
 }
 
 FText GetHeroClassDisplayText(EJargonHeroClass HeroClass)
@@ -407,7 +433,34 @@ TArray<FJargonEffectSpec> BuildHeroClassPassiveEffects(
 	OutPassiveName = PassiveDefinition->PassiveName.IsEmpty()
 		? GetHeroDisplayText(HeroDefinition)
 		: PassiveDefinition->PassiveName;
-	return PassiveDefinition->Effects;
+	if (PassiveDefinition->Ability && PassiveDefinition->PassiveName.IsEmpty())
+	{
+		OutPassiveName = PassiveDefinition->Ability->GetExecutionLabel();
+	}
+
+	return BuildHookEffectPreview(PassiveDefinition->Ability, PassiveDefinition->Effects);
+}
+
+const UJargonAbilityDefinition* FindHeroClassPassiveAbility(
+	const UJargonHeroDefinition* HeroDefinition,
+	EJargonEffectTrigger Trigger)
+{
+	if (!HeroDefinition)
+	{
+		return nullptr;
+	}
+
+	if (Trigger == EJargonEffectTrigger::OnCombatStart)
+	{
+		return HeroDefinition->CombatStartPassive.Ability;
+	}
+
+	if (Trigger == EJargonEffectTrigger::OnTurnStart)
+	{
+		return HeroDefinition->PlayerTurnStartPassive.Ability;
+	}
+
+	return nullptr;
 }
 
 TArray<FJargonEffectSpec> BuildHeroAspectPassiveEffects(
@@ -431,7 +484,11 @@ TArray<FJargonEffectSpec> BuildHeroAspectPassiveEffects(
 		OutPassiveName = AspectDefinition->TurnStartPassiveName.IsEmpty()
 			? GetHeroAspectDisplayText(AspectDefinition, HeroAspect)
 			: AspectDefinition->TurnStartPassiveName;
-		return AspectDefinition->TurnStartEffects;
+		if (AspectDefinition->TurnStartAbility && AspectDefinition->TurnStartPassiveName.IsEmpty())
+		{
+			OutPassiveName = AspectDefinition->TurnStartAbility->GetExecutionLabel();
+		}
+		return BuildHookEffectPreview(AspectDefinition->TurnStartAbility, AspectDefinition->TurnStartEffects);
 	}
 
 	if (Trigger == EJargonEffectTrigger::OnEnemyDeath)
@@ -439,10 +496,40 @@ TArray<FJargonEffectSpec> BuildHeroAspectPassiveEffects(
 		OutPassiveName = AspectDefinition->EnemyDeathPassiveName.IsEmpty()
 			? GetHeroAspectDisplayText(AspectDefinition, HeroAspect)
 			: AspectDefinition->EnemyDeathPassiveName;
-		return AspectDefinition->EnemyDeathEffects;
+		if (AspectDefinition->EnemyDeathAbility && AspectDefinition->EnemyDeathPassiveName.IsEmpty())
+		{
+			OutPassiveName = AspectDefinition->EnemyDeathAbility->GetExecutionLabel();
+		}
+		return BuildHookEffectPreview(AspectDefinition->EnemyDeathAbility, AspectDefinition->EnemyDeathEffects);
 	}
 
 	return TArray<FJargonEffectSpec>();
+}
+
+const UJargonAbilityDefinition* FindHeroAspectPassiveAbility(
+	const UJargonHeroDefinition* HeroDefinition,
+	EJargonHeroAspect HeroAspect,
+	EJargonEffectTrigger Trigger)
+{
+	const FJargonHeroAspectDefinition* AspectDefinition = HeroDefinition
+		? HeroDefinition->FindAspectDefinitionByAspect(HeroAspect)
+		: nullptr;
+	if (!AspectDefinition)
+	{
+		return nullptr;
+	}
+
+	if (Trigger == EJargonEffectTrigger::OnTurnStart)
+	{
+		return AspectDefinition->TurnStartAbility;
+	}
+
+	if (Trigger == EJargonEffectTrigger::OnEnemyDeath)
+	{
+		return AspectDefinition->EnemyDeathAbility;
+	}
+
+	return nullptr;
 }
 
 bool TryBuildHeroAspectInfo(
@@ -1002,7 +1089,10 @@ void AJargonCombatGameMode::EmitHeroAspectTransformationCue(const FJargonHeroAsp
 	AspectActivatedCue.ElementType = AspectDefinition->RequiredElement;
 	AspectActivatedCue.ElementChargeCount = GetElementCharges(AspectDefinition->RequiredElement);
 	AspectActivatedCue.Value = AspectActivatedCue.ElementChargeCount;
-	ApplyPassiveCueEffectMetadata(AspectActivatedCue, AspectDefinition->TransformationEffects, true);
+	const TArray<FJargonEffectSpec> TransformationPreviewEffects = BuildHookEffectPreview(
+		AspectDefinition->TransformationAbility,
+		AspectDefinition->TransformationEffects);
+	ApplyPassiveCueEffectMetadata(AspectActivatedCue, TransformationPreviewEffects, true);
 	AspectActivatedCue.ElementType = AspectDefinition->RequiredElement;
 	AspectActivatedCue.ElementChargeCount = GetElementCharges(AspectDefinition->RequiredElement);
 	AspectActivatedCue.TextOverride = BuildHeroAspectActivatedCueText(
@@ -1015,7 +1105,9 @@ void AJargonCombatGameMode::EmitHeroAspectTransformationCue(const FJargonHeroAsp
 
 void AJargonCombatGameMode::ResolveHeroAspectTransformationEffects(const FJargonHeroAspectDefinition& AspectDefinition)
 {
-	if (!ActiveHeroDefinition || !PlayerUnit || AspectDefinition.TransformationEffects.Num() <= 0)
+	if (!ActiveHeroDefinition ||
+		!PlayerUnit ||
+		(!AspectDefinition.TransformationAbility && AspectDefinition.TransformationEffects.Num() <= 0))
 	{
 		return;
 	}
@@ -1030,20 +1122,15 @@ void AJargonCombatGameMode::ResolveHeroAspectTransformationEffects(const FJargon
 		ActiveHeroDefinition);
 	Context.TriggeringUnit = PlayerUnit;
 
-	FJargonEffectResult Result;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(AspectDefinition.TransformationEffects, Context, Result);
-	if (!bResolved)
+	const FJargonEffectExecutionReport ExecutionReport = ExecuteAbilityOrRawEffects(
+		AspectDefinition.TransformationAbility,
+		AspectDefinition.TransformationEffects,
+		Context,
+		GetNameSafe(ActiveHeroDefinition),
+		BuildHeroAspectActivatedCueText(&AspectDefinition, AspectDefinition.Aspect).ToString());
+	if (!ExecutionReport.bResolverSucceeded)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Hero aspect transformation '%s' failed to resolve for hero '%s'."),
-			*BuildHeroAspectActivatedCueText(&AspectDefinition, AspectDefinition.Aspect).ToString(),
-			*GetNameSafe(ActiveHeroDefinition));
 		return;
-	}
-
-	if (Result.bContinuesAsynchronously)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Hero aspect transformation '%s' started an async effect. Async transformation effects are not specially sequenced yet."),
-			*BuildHeroAspectActivatedCueText(&AspectDefinition, AspectDefinition.Aspect).ToString());
 	}
 }
 
@@ -2452,7 +2539,11 @@ void AJargonCombatGameMode::ExecuteHeroClassCombatStartPassive()
 		ActiveHeroDefinition,
 		EJargonEffectTrigger::OnCombatStart,
 		PassiveName);
-	ResolveHeroClassPassiveEffects(EJargonEffectTrigger::OnCombatStart, PassiveName, Effects);
+	ResolveHeroClassPassiveEffects(
+		EJargonEffectTrigger::OnCombatStart,
+		PassiveName,
+		Effects,
+		FindHeroClassPassiveAbility(ActiveHeroDefinition, EJargonEffectTrigger::OnCombatStart));
 }
 
 void AJargonCombatGameMode::ExecuteHeroClassPlayerTurnStartPassive()
@@ -2467,15 +2558,20 @@ void AJargonCombatGameMode::ExecuteHeroClassPlayerTurnStartPassive()
 		ActiveHeroDefinition,
 		EJargonEffectTrigger::OnTurnStart,
 		PassiveName);
-	ResolveHeroClassPassiveEffects(EJargonEffectTrigger::OnTurnStart, PassiveName, Effects);
+	ResolveHeroClassPassiveEffects(
+		EJargonEffectTrigger::OnTurnStart,
+		PassiveName,
+		Effects,
+		FindHeroClassPassiveAbility(ActiveHeroDefinition, EJargonEffectTrigger::OnTurnStart));
 }
 
 void AJargonCombatGameMode::ResolveHeroClassPassiveEffects(
 	EJargonEffectTrigger Trigger,
 	const FText& PassiveName,
-	const TArray<FJargonEffectSpec>& Effects)
+	const TArray<FJargonEffectSpec>& Effects,
+	const UJargonAbilityDefinition* AbilityDefinition)
 {
-	if (!ActiveHeroDefinition || !PlayerUnit || Effects.Num() <= 0)
+	if (!ActiveHeroDefinition || !PlayerUnit || (!AbilityDefinition && Effects.Num() <= 0))
 	{
 		return;
 	}
@@ -2508,20 +2604,15 @@ void AJargonCombatGameMode::ResolveHeroClassPassiveEffects(
 	EmitCombatCue(ClassPassiveCue);
 	BP_OnHeroClassPassiveTriggered(ActiveHeroDefinition->HeroClass, Trigger, ClassPassiveCue.TextOverride);
 
-	FJargonEffectResult Result;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(Effects, Context, Result);
-	if (!bResolved)
+	const FJargonEffectExecutionReport ExecutionReport = ExecuteAbilityOrRawEffects(
+		AbilityDefinition,
+		Effects,
+		Context,
+		GetNameSafe(ActiveHeroDefinition),
+		ClassPassiveCue.TextOverride.ToString());
+	if (!ExecutionReport.bResolverSucceeded)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Hero class passive '%s' failed to resolve for hero '%s'."),
-			*ClassPassiveCue.TextOverride.ToString(),
-			*GetNameSafe(ActiveHeroDefinition));
 		return;
-	}
-
-	if (Result.bContinuesAsynchronously)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Hero class passive '%s' started an async effect. Async class passives are not specially sequenced yet."),
-			*ClassPassiveCue.TextOverride.ToString());
 	}
 }
 
@@ -2542,6 +2633,7 @@ void AJargonCombatGameMode::ExecuteHeroAspectPlayerTurnStartPassive()
 		EJargonEffectTrigger::OnTurnStart,
 		PassiveName,
 		Effects,
+		FindHeroAspectPassiveAbility(ActiveHeroDefinition, HeroRuntimeState.ActiveAspect, EJargonEffectTrigger::OnTurnStart),
 		PlayerUnit,
 		PlayerUnit->GetCurrentTile(),
 		PlayerUnit);
@@ -2568,6 +2660,7 @@ void AJargonCombatGameMode::ExecuteHeroAspectEnemyDeathPassive(ABattleUnit* Dead
 		EJargonEffectTrigger::OnEnemyDeath,
 		PassiveName,
 		Effects,
+		FindHeroAspectPassiveAbility(ActiveHeroDefinition, HeroRuntimeState.ActiveAspect, EJargonEffectTrigger::OnEnemyDeath),
 		PlayerUnit,
 		DeathTile ? DeathTile : PlayerUnit->GetCurrentTile(),
 		DeadEnemy);
@@ -2577,11 +2670,15 @@ void AJargonCombatGameMode::ResolveHeroAspectPassiveEffects(
 	EJargonEffectTrigger Trigger,
 	const FText& PassiveName,
 	const TArray<FJargonEffectSpec>& Effects,
+	const UJargonAbilityDefinition* AbilityDefinition,
 	ABattleUnit* PrimaryUnitTarget,
 	AGridTile* PrimaryTileTarget,
 	ABattleUnit* TriggeringUnit)
 {
-	if (!ActiveHeroDefinition || !PlayerUnit || HeroRuntimeState.ActiveAspect == EJargonHeroAspect::None || Effects.Num() <= 0)
+	if (!ActiveHeroDefinition ||
+		!PlayerUnit ||
+		HeroRuntimeState.ActiveAspect == EJargonHeroAspect::None ||
+		(!AbilityDefinition && Effects.Num() <= 0))
 	{
 		return;
 	}
@@ -2621,20 +2718,15 @@ void AJargonCombatGameMode::ResolveHeroAspectPassiveEffects(
 	EmitCombatCue(AspectPassiveCue);
 	BP_OnHeroAspectPassiveTriggered(HeroRuntimeState.ActiveAspect, Trigger, AspectPassiveCue.TextOverride);
 
-	FJargonEffectResult Result;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(Effects, Context, Result);
-	if (!bResolved)
+	const FJargonEffectExecutionReport ExecutionReport = ExecuteAbilityOrRawEffects(
+		AbilityDefinition,
+		Effects,
+		Context,
+		GetNameSafe(ActiveHeroDefinition),
+		AspectPassiveCue.TextOverride.ToString());
+	if (!ExecutionReport.bResolverSucceeded)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Hero aspect passive '%s' failed to resolve for hero '%s'."),
-			*AspectPassiveCue.TextOverride.ToString(),
-			*GetNameSafe(ActiveHeroDefinition));
 		return;
-	}
-
-	if (Result.bContinuesAsynchronously)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Hero aspect passive '%s' started an async effect. Async aspect passives are not specially sequenced yet."),
-			*AspectPassiveCue.TextOverride.ToString());
 	}
 }
 
@@ -2656,7 +2748,7 @@ void AJargonCombatGameMode::ExecuteRunRelicOnCombatStartEffects()
 	const TArray<UJargonRelicDefinition*> RunRelics = GameInstance->GetRunRelics();
 	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
 	{
-		if (!RelicDefinition || RelicDefinition->OnCombatStartEffects.Num() <= 0)
+		if (!RelicDefinition || (!RelicDefinition->OnCombatStartAbility && RelicDefinition->OnCombatStartEffects.Num() <= 0))
 		{
 			continue;
 		}
@@ -2670,7 +2762,13 @@ void AJargonCombatGameMode::ExecuteRunRelicOnCombatStartEffects()
 			PlayerTile,
 			PlayerUnit);
 
-		ResolveRunRelicEffects(this, RelicDefinition, RelicDefinition->OnCombatStartEffects, EffectContext, TEXT("OnCombatStart"));
+		ResolveRunRelicEffects(
+			this,
+			RelicDefinition,
+			RelicDefinition->OnCombatStartAbility,
+			RelicDefinition->OnCombatStartEffects,
+			EffectContext,
+			TEXT("OnCombatStart"));
 		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
 		{
 			return;
@@ -2696,7 +2794,7 @@ void AJargonCombatGameMode::ExecuteRunRelicOnPlayerTurnStartEffects()
 	const TArray<UJargonRelicDefinition*> RunRelics = GameInstance->GetRunRelics();
 	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
 	{
-		if (!RelicDefinition || RelicDefinition->OnPlayerTurnStartEffects.Num() <= 0)
+		if (!RelicDefinition || (!RelicDefinition->OnPlayerTurnStartAbility && RelicDefinition->OnPlayerTurnStartEffects.Num() <= 0))
 		{
 			continue;
 		}
@@ -2710,7 +2808,13 @@ void AJargonCombatGameMode::ExecuteRunRelicOnPlayerTurnStartEffects()
 			PlayerTile,
 			PlayerUnit);
 
-		ResolveRunRelicEffects(this, RelicDefinition, RelicDefinition->OnPlayerTurnStartEffects, EffectContext, TEXT("OnPlayerTurnStart"));
+		ResolveRunRelicEffects(
+			this,
+			RelicDefinition,
+			RelicDefinition->OnPlayerTurnStartAbility,
+			RelicDefinition->OnPlayerTurnStartEffects,
+			EffectContext,
+			TEXT("OnPlayerTurnStart"));
 		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
 		{
 			return;
@@ -2740,7 +2844,7 @@ void AJargonCombatGameMode::ExecuteRunRelicOnEnemyDeathEffects(ABattleUnit* Dead
 	const TArray<UJargonRelicDefinition*> RunRelics = GameInstance->GetRunRelics();
 	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
 	{
-		if (!RelicDefinition || RelicDefinition->OnEnemyDeathEffects.Num() <= 0)
+		if (!RelicDefinition || (!RelicDefinition->OnEnemyDeathAbility && RelicDefinition->OnEnemyDeathEffects.Num() <= 0))
 		{
 			continue;
 		}
@@ -2754,7 +2858,13 @@ void AJargonCombatGameMode::ExecuteRunRelicOnEnemyDeathEffects(ABattleUnit* Dead
 			DeathTile,
 			DeadEnemy);
 
-		ResolveRunRelicEffects(this, RelicDefinition, RelicDefinition->OnEnemyDeathEffects, EffectContext, TEXT("OnEnemyDeath"));
+		ResolveRunRelicEffects(
+			this,
+			RelicDefinition,
+			RelicDefinition->OnEnemyDeathAbility,
+			RelicDefinition->OnEnemyDeathEffects,
+			EffectContext,
+			TEXT("OnEnemyDeath"));
 		if (CombatPhase == ECombatPhase::Victory || CombatPhase == ECombatPhase::Defeat)
 		{
 			return;
@@ -3160,8 +3270,9 @@ void AJargonCombatGameMode::ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit)
 		return;
 	}
 
+	UJargonAbilityDefinition* OnSummonedAbility = SummonedUnit->GetOnSummonedAbility();
 	const TArray<FJargonEffectSpec>& OnSummonedEffects = SummonedUnit->GetOnSummonedEffects();
-	if (OnSummonedEffects.Num() <= 0)
+	if (!OnSummonedAbility && OnSummonedEffects.Num() <= 0)
 	{
 		return;
 	}
@@ -3182,19 +3293,15 @@ void AJargonCombatGameMode::ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit)
 		SummonedTile,
 		SummonedUnit);
 
-	FJargonEffectResult EffectResult;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(OnSummonedEffects, EffectContext, EffectResult);
-	if (!bResolved)
+	const FJargonEffectExecutionReport ExecutionReport = ExecuteAbilityOrRawEffects(
+		OnSummonedAbility,
+		OnSummonedEffects,
+		EffectContext,
+		GetNameSafe(SummonedUnit),
+		TEXT("OnSummonedEffects"));
+	if (!ExecutionReport.bResolverSucceeded)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Summoned unit '%s' failed to resolve its OnSummonedEffects."),
-			*GetNameSafe(SummonedUnit));
 		return;
-	}
-
-	if (EffectResult.bContinuesAsynchronously)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Summoned unit '%s' started an async OnSummonedEffect. Later summon-entry effects may have been skipped by the resolver."),
-			*GetNameSafe(SummonedUnit));
 	}
 }
 
@@ -3205,8 +3312,9 @@ void AJargonCombatGameMode::ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit)
 		return;
 	}
 
+	UJargonAbilityDefinition* OnTurnStartAbility = SourceUnit->GetOnTurnStartAbility();
 	const TArray<FJargonEffectSpec>& AuthoredEffects = SourceUnit->GetOnTurnStartEffects();
-	if (AuthoredEffects.Num() <= 0)
+	if (!OnTurnStartAbility && AuthoredEffects.Num() <= 0)
 	{
 		return;
 	}
@@ -3227,19 +3335,15 @@ void AJargonCombatGameMode::ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit)
 		SourceTile,
 		SourceUnit);
 
-	FJargonEffectResult EffectResult;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(AuthoredEffects, EffectContext, EffectResult);
-	if (!bResolved)
+	const FJargonEffectExecutionReport ExecutionReport = ExecuteAbilityOrRawEffects(
+		OnTurnStartAbility,
+		AuthoredEffects,
+		EffectContext,
+		GetNameSafe(SourceUnit),
+		TEXT("OnTurnStartEffects"));
+	if (!ExecutionReport.bResolverSucceeded)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' failed to resolve its OnTurnStartEffects."),
-			*GetNameSafe(SourceUnit));
 		return;
-	}
-
-	if (EffectResult.bContinuesAsynchronously)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' started an async OnTurnStartEffect. Async unit turn-start effects are not fully sequenced yet."),
-			*GetNameSafe(SourceUnit));
 	}
 }
 
@@ -3257,8 +3361,9 @@ void AJargonCombatGameMode::ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTi
 
 	DeadUnit->MarkDeathEffectsExecuted();
 
+	UJargonAbilityDefinition* OnDeathAbility = DeadUnit->GetOnDeathAbility();
 	const TArray<FJargonEffectSpec>& AuthoredEffects = DeadUnit->GetOnDeathEffects();
-	if (AuthoredEffects.Num() <= 0)
+	if (!OnDeathAbility && AuthoredEffects.Num() <= 0)
 	{
 		return;
 	}
@@ -3282,19 +3387,15 @@ void AJargonCombatGameMode::ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTi
 		*GetNameSafe(DeadUnit),
 		*DeathTile->GetCoord().ToString());
 
-	FJargonEffectResult EffectResult;
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(AuthoredEffects, EffectContext, EffectResult);
-	if (!bResolved)
+	const FJargonEffectExecutionReport ExecutionReport = ExecuteAbilityOrRawEffects(
+		OnDeathAbility,
+		AuthoredEffects,
+		EffectContext,
+		GetNameSafe(DeadUnit),
+		TEXT("OnDeathEffects"));
+	if (!ExecutionReport.bResolverSucceeded)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' failed to resolve its OnDeathEffects."),
-			*GetNameSafe(DeadUnit));
 		return;
-	}
-
-	if (EffectResult.bContinuesAsynchronously)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Unit '%s' started an async OnDeathEffect. Async death effects are not fully sequenced yet."),
-			*GetNameSafe(DeadUnit));
 	}
 }
 
@@ -3933,12 +4034,12 @@ void AJargonCombatGameMode::HandleVictory()
 	ClearEnemyTurnTimer();
 	ClearBasicAttackTimer();
 	ClearPendingMovementSequence();
-	SetCombatPhase(ECombatPhase::Victory);
-	LogCombatPacingSummary(true);
 
 	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
 	if (!GameInstance)
 	{
+		SetCombatPhase(ECombatPhase::Victory);
+		LogCombatPacingSummary(true);
 		UE_LOG(LogTemp, Warning, TEXT("Combat victory occurred but UJargonGameInstance was not available."));
 		return;
 	}
@@ -3950,7 +4051,8 @@ void AJargonCombatGameMode::HandleVictory()
 	}
 
 	GameInstance->HandleCombatVictory(AccumulatedEnemyKillCurrency, DefeatedEnemyCount);
-	ReturnToExploration();
+	SetCombatPhase(ECombatPhase::Victory);
+	LogCombatPacingSummary(true);
 }
 
 void AJargonCombatGameMode::HandleDefeat()
@@ -3964,18 +4066,19 @@ void AJargonCombatGameMode::HandleDefeat()
 	ClearEnemyTurnTimer();
 	ClearBasicAttackTimer();
 	ClearPendingMovementSequence();
-	SetCombatPhase(ECombatPhase::Defeat);
-	LogCombatPacingSummary(false);
 
 	UJargonGameInstance* GameInstance = GetGameInstance<UJargonGameInstance>();
 	if (!GameInstance)
 	{
+		SetCombatPhase(ECombatPhase::Defeat);
+		LogCombatPacingSummary(false);
 		UE_LOG(LogTemp, Warning, TEXT("Combat defeat occurred but UJargonGameInstance was not available."));
 		return;
 	}
 
 	GameInstance->HandleCombatDefeat(AccumulatedEnemyKillCurrency, DefeatedEnemyCount);
-	ReturnToExploration();
+	SetCombatPhase(ECombatPhase::Defeat);
+	LogCombatPacingSummary(false);
 }
 
 void AJargonCombatGameMode::ReturnToExploration()

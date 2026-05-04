@@ -7,6 +7,7 @@
 #include "JargonRelicDefinition.generated.h"
 
 class UJargonHeroDefinition;
+class UJargonAbilityDefinition;
 class UTexture2D;
 
 UENUM(BlueprintType)
@@ -48,13 +49,22 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Eligibility", meta = (ToolTip = "Optional hero aspect-kit filter. Empty means any hero aspect kit can claim this boon. Eligibility checks aspects authored on the active Hero Definition, not the currently active combat aspect."))
 	TArray<EJargonHeroAspect> EligibleHeroAspects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects resolved once after combatants spawn and before the first player turn starts. The player unit is the source/self target."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Abilities", meta = (ToolTip = "Preferred reusable ability definition resolved once after combatants spawn and before the first player turn starts. Runtime prefers this over raw OnCombatStartEffects when assigned."))
+	TObjectPtr<UJargonAbilityDefinition> OnCombatStartAbility = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Temporary raw shared effects resolved once after combatants spawn and before the first player turn starts. Prefer OnCombatStartAbility for new authoring."))
 	TArray<FJargonEffectSpec> OnCombatStartEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects resolved during player turn start. The player unit is the source/self target."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Abilities", meta = (ToolTip = "Preferred reusable ability definition resolved during player turn start. Runtime prefers this over raw OnPlayerTurnStartEffects when assigned."))
+	TObjectPtr<UJargonAbilityDefinition> OnPlayerTurnStartAbility = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Temporary raw shared effects resolved during player turn start. Prefer OnPlayerTurnStartAbility for new authoring."))
 	TArray<FJargonEffectSpec> OnPlayerTurnStartEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Shared effects resolved after an enemy dies. The player unit is the source, and the enemy death tile is the primary tile target."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Abilities", meta = (ToolTip = "Preferred reusable ability definition resolved after an enemy dies. Runtime prefers this over raw OnEnemyDeathEffects when assigned."))
+	TObjectPtr<UJargonAbilityDefinition> OnEnemyDeathAbility = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero Boon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Temporary raw shared effects resolved after an enemy dies. Prefer OnEnemyDeathAbility for new authoring."))
 	TArray<FJargonEffectSpec> OnEnemyDeathEffects;
 
 	UFUNCTION(BlueprintPure, Category = "Hero Boon")

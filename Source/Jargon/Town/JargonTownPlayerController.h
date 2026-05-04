@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "Combat/Widgets/JargonHoverInfoTypes.h"
-#include "Core/JargonRunStateTypes.h"
 #include "Exploration/JargonExplorationPlayerController.h"
 #include "JargonTownPlayerController.generated.h"
 
@@ -10,7 +9,6 @@ class UTownHUDWidget;
 class UCardShopWidget;
 class UCombatHoverInfoWidget;
 class UDeckEditWidget;
-class UPostMatchReportWidget;
 class UUserWidget;
 
 UCLASS()
@@ -34,9 +32,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Town UI")
 	TSubclassOf<UDeckEditWidget> DeckEditWidgetClass;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Town UI")
-	TSubclassOf<UPostMatchReportWidget> PostMatchReportWidgetClass;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Town UI|Hover", meta = (AllowPrivateAccess = "true", ToolTip = "Optional Blueprint child of CombatHoverInfoWidget reused for description-only town/deck hover info."))
 	TSubclassOf<UCombatHoverInfoWidget> TownHoverInfoWidgetClass;
 
@@ -51,9 +46,6 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UDeckEditWidget> DeckEditWidget = nullptr;
-
-	UPROPERTY()
-	TObjectPtr<UPostMatchReportWidget> PostMatchReportWidget = nullptr;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Town UI|Hover", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatHoverInfoWidget> TownHoverInfoWidget = nullptr;
@@ -78,12 +70,10 @@ protected:
 
 	void HideCardShopWithoutInputUpdate();
 	void HideDeckEditWithoutInputUpdate();
-	void HidePostMatchReportWithoutInputUpdate();
 
 	void HandleOpenShopPressed();
 	void HandleOpenDeckEditPressed();
 	void HandleCloseTownPanelPressed();
-	void TryOpenPendingPostCombatReport();
 	void SetCurrentTownHoverInfo(const FJargonCombatHoverInfo& NewHoverInfo);
 
 public:
@@ -98,12 +88,6 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Town UI")
 	void CloseDeckEdit();
-
-	UFUNCTION(BlueprintCallable, Category = "Town UI")
-	void OpenPostMatchReport(const FJargonPostCombatReportData& ReportData);
-
-	UFUNCTION(BlueprintCallable, Category = "Town UI")
-	void ClosePostMatchReport();
 
 	UFUNCTION(BlueprintCallable, Category = "Town UI")
 	void CloseActiveTownPanel();
@@ -153,9 +137,4 @@ public:
 		return DeckEditWidget;
 	}
 
-	UFUNCTION(BlueprintPure, Category = "Town UI")
-	UPostMatchReportWidget* GetPostMatchReportWidget() const
-	{
-		return PostMatchReportWidget;
-	}
 };

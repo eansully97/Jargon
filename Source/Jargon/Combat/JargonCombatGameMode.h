@@ -28,6 +28,7 @@ class UJargonDeckDefinition;
 class UJargonHeroDefinition;
 class UJargonSummonedUnitDefinition;
 class UJargonTileEffectDefinition;
+class UJargonAbilityDefinition;
 struct FJargonHeroAspectDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatPhaseChangedSignature, ECombatPhase, NewPhase);
@@ -401,13 +402,18 @@ protected:
 	void ExecuteRunRelicOnEnemyDeathEffects(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
 	void ExecuteHeroClassCombatStartPassive();
 	void ExecuteHeroClassPlayerTurnStartPassive();
-	void ResolveHeroClassPassiveEffects(EJargonEffectTrigger Trigger, const FText& PassiveName, const TArray<FJargonEffectSpec>& Effects);
+	void ResolveHeroClassPassiveEffects(
+		EJargonEffectTrigger Trigger,
+		const FText& PassiveName,
+		const TArray<FJargonEffectSpec>& Effects,
+		const UJargonAbilityDefinition* AbilityDefinition);
 	void ExecuteHeroAspectPlayerTurnStartPassive();
 	void ExecuteHeroAspectEnemyDeathPassive(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
 	void ResolveHeroAspectPassiveEffects(
 		EJargonEffectTrigger Trigger,
 		const FText& PassiveName,
 		const TArray<FJargonEffectSpec>& Effects,
+		const UJargonAbilityDefinition* AbilityDefinition,
 		ABattleUnit* PrimaryUnitTarget,
 		AGridTile* PrimaryTileTarget,
 		ABattleUnit* TriggeringUnit);

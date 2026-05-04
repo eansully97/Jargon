@@ -37,6 +37,8 @@ This is not a request for GAS, colored card costs, a broad condition framework, 
 
 - CardScript inline entries are editor-facing effect lines, even though source class names still say `UJargonCardAction` / `EJargonCardKeyword`.
 - `FJargonEffectSpec` remains the shared runtime language.
+- `FJargonEffectExecutor` is the shared orchestration layer for executing authored effect arrays. Gameplay systems should use it instead of calling `FJargonEffectResolver::ResolveEffects` directly.
+- `FJargonEffectResolver` remains the primitive operation resolver for individual effect specs, target delivery, filters, payload application, and trace events.
 - `JargonEffectContracts` in `JargonEffectTypes.h` owns lightweight operation contract helpers for required payloads, suspicious delivery/filter combinations, ignored payload fields, and trace payload summaries.
 - Data validation and card audit output should use the same contract vocabulary where possible.
 

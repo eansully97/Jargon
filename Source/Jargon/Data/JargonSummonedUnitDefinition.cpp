@@ -1,6 +1,7 @@
 #include "Data/JargonSummonedUnitDefinition.h"
 
 #include "Animation/AnimationAsset.h"
+#include "Data/JargonAbilityDefinition.h"
 
 #if WITH_EDITOR
 #include "Data/JargonDataAssetValidationHelpers.h"
@@ -90,7 +91,10 @@ bool UJargonSummonedUnitDefinition::IsValidDefinition() const
 		&& MaxHP > 0
 		&& MoveRange >= 0
 		&& AttackRange > 0
-		&& AttackDamage >= 0;
+		&& AttackDamage >= 0
+		&& (!OnSummonedAbility || OnSummonedAbility->IsValidDefinition())
+		&& (!OnTurnStartAbility || OnTurnStartAbility->IsValidDefinition())
+		&& (!OnDeathAbility || OnDeathAbility->IsValidDefinition());
 }
 
 FString UJargonSummonedUnitDefinition::GetDebugSummary() const
@@ -118,9 +122,9 @@ FString UJargonSummonedUnitDefinition::GetAuditSummary() const
 		*BoolToAuditText(bCanMove),
 		*BoolToAuditText(bCanAttack),
 		*BoolToAuditText(bSummonEntersWithAttackExhausted),
-		OnSummonedEffects.Num(),
-		OnTurnStartEffects.Num(),
-		OnDeathEffects.Num(),
+		OnSummonedAbility ? 1 : OnSummonedEffects.Num(),
+		OnTurnStartAbility ? 1 : OnTurnStartEffects.Num(),
+		OnDeathAbility ? 1 : OnDeathEffects.Num(),
 		*BoolToAuditText(IsValidDefinition()),
 		*BuildWarningsSummary(this));
 }
@@ -180,6 +184,19 @@ EDataValidationResult UJargonSummonedUnitDefinition::IsDataValid(FDataValidation
 			Context);
 	}
 
+	if (OnSummonedAbility)
+	{
+		if (!OnSummonedAbility->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("OnSummonedAbility is assigned but is not a valid ability definition."));
+		}
+
+		if (OnSummonedEffects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnSummonedAbility and raw OnSummonedEffects are both authored. Runtime will prefer OnSummonedAbility; clear raw effects after migration verification."));
+		}
+	}
+
 	for (int32 EffectIndex = 0; EffectIndex < OnTurnStartEffects.Num(); ++EffectIndex)
 	{
 		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
@@ -190,6 +207,19 @@ EDataValidationResult UJargonSummonedUnitDefinition::IsDataValid(FDataValidation
 			Context);
 	}
 
+	if (OnTurnStartAbility)
+	{
+		if (!OnTurnStartAbility->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("OnTurnStartAbility is assigned but is not a valid ability definition."));
+		}
+
+		if (OnTurnStartEffects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnTurnStartAbility and raw OnTurnStartEffects are both authored. Runtime will prefer OnTurnStartAbility; clear raw effects after migration verification."));
+		}
+	}
+
 	for (int32 EffectIndex = 0; EffectIndex < OnDeathEffects.Num(); ++EffectIndex)
 	{
 		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
@@ -198,6 +228,19 @@ EDataValidationResult UJargonSummonedUnitDefinition::IsDataValid(FDataValidation
 			FString::Printf(TEXT("OnDeathEffects effect %d"), EffectIndex),
 			EJargonEffectTrigger::OnDeath,
 			Context);
+	}
+
+	if (OnDeathAbility)
+	{
+		if (!OnDeathAbility->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("OnDeathAbility is assigned but is not a valid ability definition."));
+		}
+
+		if (OnDeathEffects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnDeathAbility and raw OnDeathEffects are both authored. Runtime will prefer OnDeathAbility; clear raw effects after migration verification."));
+		}
 	}
 
 	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;

@@ -6,6 +6,7 @@
 #include "Combat/Widgets/ElementalBonusChoiceTypes.h"
 #include "Combat/Widgets/JargonHoverInfoTypes.h"
 #include "Core/JargonHeroTypes.h"
+#include "Core/JargonRunStateTypes.h"
 #include "Core/JargonTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "JargonCombatPlayerController.generated.h"
@@ -17,6 +18,7 @@ class UCardDefinition;
 class UCombatHUDWidget;
 class UCombatHoverInfoWidget;
 class UElementalBonusChoiceWidget;
+class UPostMatchReportWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDeckChangedSignature, int32, NewCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHandChangedSignature, int32, NewCount);
@@ -55,6 +57,9 @@ public:
 	UFUNCTION(Exec)
 	void JargonLogNextCardEffectTrace();
 
+	UFUNCTION(Exec)
+	void JargonResetRunSave();
+
 	UFUNCTION(BlueprintPure, Category = "Combat|Hover")
 	FJargonCombatHoverInfo GetCurrentCombatHoverInfo() const
 	{
@@ -72,6 +77,18 @@ public:
 	{
 		return ElementalBonusChoiceWidget;
 	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Post Match")
+	UPostMatchReportWidget* GetPostMatchReportWidget() const
+	{
+		return PostMatchReportWidget;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Post Match")
+	void ShowPostMatchReport(const FJargonPostCombatReportData& ReportData);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Post Match")
+	void ContinueFromPostMatchReport();
 
 	UFUNCTION(BlueprintPure, Category = "Combat|Elemental Bonus")
 	FJargonElementalBonusChoiceRequest GetPendingElementalBonusChoiceRequest() const
@@ -137,6 +154,7 @@ protected:
 	void BroadcastCardCounts();
 	void InitializeCombatHoverInfoWidget();
 	void InitializeElementalBonusChoiceWidget();
+	void HidePostMatchReport();
 	void UpdateCombatHoverInfo();
 	void SetCurrentCombatHoverInfo(const FJargonCombatHoverInfo& NewHoverInfo);
 	FJargonCombatHoverInfo BuildCombatHoverInfoFromHit(const FHitResult& HitResult) const;
@@ -150,6 +168,9 @@ protected:
 
 	UFUNCTION()
 	void HandleCombatPhaseChanged(ECombatPhase NewPhase);
+
+	UFUNCTION()
+	void HandlePostMatchContinueRequested();
 
 	UFUNCTION()
 	void HandleCombatEnergyChanged(int32 NewEnergy);
@@ -184,6 +205,15 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Elemental Bonus", meta = (AllowPrivateAccess = "true"))
 	int32 ElementalBonusChoiceWidgetZOrder = 25;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Post Match", meta = (AllowPrivateAccess = "true", ToolTip = "Blueprint child of PostMatchReportWidget shown in combat after victory or defeat. Continue returns to the saved exploration location."))
+	TSubclassOf<UPostMatchReportWidget> PostMatchReportWidgetClass;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Post Match", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPostMatchReportWidget> PostMatchReportWidget = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Post Match", meta = (AllowPrivateAccess = "true"))
+	int32 PostMatchReportWidgetZOrder = 30;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
 	TObjectPtr<UCardDefinition> SelectedCard = nullptr;
@@ -220,4 +250,7 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Elemental Bonus")
 	bool bLoggedMissingElementalBonusPromptThisCombat = false;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Post Match")
+	bool bPostMatchContinueRequested = false;
 };

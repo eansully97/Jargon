@@ -18,6 +18,7 @@ class UBattleUnitStatusWidget;
 class UAnimationAsset;
 class UMaterialInstanceDynamic;
 class ABattleUnit;
+class UJargonAbilityDefinition;
 class UJargonSummonedUnitDefinition;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBattleUnitMovementCompletedSignature, ABattleUnit*);
@@ -338,14 +339,29 @@ public:
 		return OnSummonedEffects;
 	}
 
+	UJargonAbilityDefinition* GetOnSummonedAbility() const
+	{
+		return OnSummonedAbility;
+	}
+
 	const TArray<FJargonEffectSpec>& GetOnTurnStartEffects() const
 	{
 		return OnTurnStartEffects;
 	}
 
+	UJargonAbilityDefinition* GetOnTurnStartAbility() const
+	{
+		return OnTurnStartAbility;
+	}
+
 	const TArray<FJargonEffectSpec>& GetOnDeathEffects() const
 	{
 		return OnDeathEffects;
+	}
+
+	UJargonAbilityDefinition* GetOnDeathAbility() const
+	{
+		return OnDeathAbility;
 	}
 
 	bool HasExecutedDeathEffects() const
@@ -460,11 +476,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true"))
 	TArray<FJargonEffectSpec> OnSummonedEffects;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Abilities", meta = (AllowPrivateAccess = "true", ToolTip = "Preferred reusable ability definition resolved when this unit is summoned. Runtime prefers this over raw OnSummonedEffects when assigned."))
+	TObjectPtr<UJargonAbilityDefinition> OnSummonedAbility = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true", ToolTip = "Shared effects resolved at the start of this unit's side turn. Use self and radius effects here; targeted activated abilities are not supported yet."))
 	TArray<FJargonEffectSpec> OnTurnStartEffects;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Abilities", meta = (AllowPrivateAccess = "true", ToolTip = "Preferred reusable ability definition resolved at the start of this unit's side turn. Runtime prefers this over raw OnTurnStartEffects when assigned."))
+	TObjectPtr<UJargonAbilityDefinition> OnTurnStartAbility = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Effects", meta = (AllowPrivateAccess = "true", ToolTip = "Shared effects resolved once when this unit dies. The death tile is captured before occupancy is cleared."))
 	TArray<FJargonEffectSpec> OnDeathEffects;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit|Abilities", meta = (AllowPrivateAccess = "true", ToolTip = "Preferred reusable ability definition resolved once when this unit dies. Runtime prefers this over raw OnDeathEffects when assigned."))
+	TObjectPtr<UJargonAbilityDefinition> OnDeathAbility = nullptr;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Battle Unit|Summon", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UJargonSummonedUnitDefinition> AppliedSummonedUnitDefinition = nullptr;

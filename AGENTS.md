@@ -9,6 +9,7 @@ Jargon is a single-player Unreal Engine tactical card / board game.
 - Blueprint children own visuals, UI polish, layout, meshes, VFX, SFX, and editor setup.
 - Do not add Gameplay Ability System unless explicitly requested after discussion.
 - Do not replace the lightweight shared Jargon effect system.
+- New gameplay effect execution entry points should use `FJargonEffectExecutor`; do not call `FJargonEffectResolver::ResolveEffects` directly outside the effect runtime unless explicitly documenting a low-level exception.
 - Do not add new fallback-first architecture or compatibility paths unless explicitly requested.
 - Remove legacy fallback paths once a Data Asset path exists and the migration target is clear; breakage during migration is acceptable when the follow-up fix list is explicit.
 - Preserve the `Town -> Exploration -> Combat -> Rewards -> Town` loop.
@@ -16,6 +17,7 @@ Jargon is a single-player Unreal Engine tactical card / board game.
 - Energy remains the normal card play resource. Element charges are combat-local optional combo resources.
 - `UCardDefinition` owns manual card art prompt generation. Do not recreate `CardCreationTemplateTool`, image generation, PNG import, or placeholder art assignment unless explicitly requested.
 - Cards author gameplay through inline `CardScript` actions that build `FJargonEffectSpec` arrays. Do not reintroduce raw card effect structs or compatibility authoring arrays.
+- New non-card abilities should prefer `UJargonAbilityDefinition` with a targeting profile, presentation-only cue metadata, and instanced ability effect lines; raw non-card `FJargonEffectSpec` arrays are temporary migration surfaces, not the long-term authoring target.
 - Card authoring should distinguish `Operation` from `Keyword`: operations are backend primitives such as damage/heal/draw/summon, while keywords are reusable rules terms such as status definitions, traits, and future modifiers.
 - Card effect lines should be described as `Operation + Delivery + Filter + Payload`, with lightweight conditions only where already supported, such as elemental bonuses.
 - Elemental bonuses are manually chosen at card play time through an assigned elemental bonus choice widget class. Do not restore automatic elemental bonus resolution or boolean-gated prompt flow.

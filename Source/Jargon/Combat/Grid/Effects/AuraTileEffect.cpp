@@ -1,6 +1,6 @@
 #include "AuraTileEffect.h"
 
-#include "Combat/Effects/JargonEffectResolver.h"
+#include "Combat/Effects/JargonEffectExecutor.h"
 #include "Combat/Units/BattleUnit.h"
 #include "Data/JargonTileEffectDefinition.h"
 
@@ -12,23 +12,32 @@ void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMod
 		return;
 	}
 
-	if (Definition->Effects.Num() <= 0)
+	if (!Definition->TriggerAbility && Definition->Effects.Num() <= 0)
 	{
 		return;
 	}
 
-	FJargonEffectResult EffectResult;
 	const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode);
-	const bool bResolved = FJargonEffectResolver::ResolveEffects(Definition->Effects, EffectContext, EffectResult);
-	if (!bResolved)
+	FJargonEffectExecutionReport ExecutionReport;
+	if (Definition->TriggerAbility)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Aura '%s' failed to resolve tile effect definition '%s'."),
-			*GetNameSafe(this),
-			*GetNameSafe(Definition));
-		return;
+		ExecutionReport = FJargonEffectExecutor::ExecuteAbility(
+			Definition->TriggerAbility,
+			EffectContext,
+			FString::Printf(TEXT("%s Aura Tile Effect '%s' OnPlayerTurnStart"), *GetNameSafe(this), *GetNameSafe(Definition)));
+	}
+	else
+	{
+		FJargonEffectExecutionRequest ExecutionRequest;
+		ExecutionRequest.Effects = &Definition->Effects;
+		ExecutionRequest.Context = EffectContext;
+		ExecutionRequest.SourceLabel = GetNameSafe(this);
+		ExecutionRequest.HookName = FString::Printf(TEXT("Aura Tile Effect '%s' OnPlayerTurnStart"), *GetNameSafe(Definition));
+		ExecutionRequest.bLogNoResolvedEffects = true;
+		ExecutionReport = FJargonEffectExecutor::Execute(ExecutionRequest);
 	}
 
-	if (!EffectResult.bResolvedAnyEffect)
+	if (!ExecutionReport.bResolverSucceeded || !ExecutionReport.Result.bResolvedAnyEffect)
 	{
 		return;
 	}

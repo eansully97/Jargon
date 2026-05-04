@@ -1,5 +1,7 @@
 #include "Data/JargonTileEffectDefinition.h"
 
+#include "Data/JargonAbilityDefinition.h"
+
 #if WITH_EDITOR
 #include "Data/JargonDataAssetValidationHelpers.h"
 #include "Misc/DataValidation.h"
@@ -8,7 +10,8 @@
 bool UJargonTileEffectDefinition::IsValidDefinition() const
 {
 	return !DisplayName.IsEmpty()
-		&& Effects.Num() > 0
+		&& (TriggerAbility != nullptr || Effects.Num() > 0)
+		&& (!TriggerAbility || TriggerAbility->IsValidDefinition())
 		&& Duration >= 0
 		&& EffectRadius >= 0
 		&& (TileEffectCategory == ECardCategory::Trap || TileEffectCategory == ECardCategory::Aura);
@@ -39,9 +42,22 @@ EDataValidationResult UJargonTileEffectDefinition::IsDataValid(FDataValidationCo
 		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("EffectRadius must be >= 0. Current value: %d."), EffectRadius));
 	}
 
-	if (Effects.Num() <= 0)
+	if (!TriggerAbility && Effects.Num() <= 0)
 	{
-		JargonDataAssetValidation::AddError(Context, this, TEXT("Effects is empty."));
+		JargonDataAssetValidation::AddError(Context, this, TEXT("TriggerAbility or raw Effects is required."));
+	}
+
+	if (TriggerAbility)
+	{
+		if (!TriggerAbility->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("TriggerAbility is assigned but is not a valid ability definition."));
+		}
+
+		if (Effects.Num() > 0)
+		{
+			JargonDataAssetValidation::AddWarning(Context, this, TEXT("TriggerAbility and raw Effects are both authored. Runtime will prefer TriggerAbility; clear raw Effects after migration verification."));
+		}
 	}
 
 	if (EffectRadius > 0 && Effects.Num() > 0)

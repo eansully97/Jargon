@@ -42,4 +42,9 @@ void AJargonExplorationGameMode::HandleStartingNewPlayer_Implementation(APlayerC
 
 	PlayerPawn->SetActorTransform(GameInstance->GetReturnTransform());
 	GameInstance->CompleteReturnToExploration();
+
+	if (AJargonExplorationPlayerController* ExplorationController = Cast<AJargonExplorationPlayerController>(NewPlayer))
+	{
+		ExplorationController->RestoreExplorationInputState();
+	}
 }

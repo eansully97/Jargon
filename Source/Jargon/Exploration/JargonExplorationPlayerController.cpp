@@ -1,6 +1,7 @@
 #include "Exploration/JargonExplorationPlayerController.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Core/JargonGameInstance.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "EnhancedInputComponent.h"
@@ -16,19 +17,8 @@
 #include "NavigationSystem.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
-#include "UObject/ConstructorHelpers.h"
 #include "World/Interactions/JargonInteractableActor.h"
 #include "World/Interactions/JargonInteractionPromptWidget.h"
-
-namespace
-{
-template <typename TAssetType>
-TAssetType* LoadOptionalAsset(const TCHAR* AssetPath)
-{
-	ConstructorHelpers::FObjectFinder<TAssetType> AssetFinder(AssetPath);
-	return AssetFinder.Succeeded() ? AssetFinder.Object.Get() : nullptr;
-}
-}
 
 AJargonExplorationPlayerController::AJargonExplorationPlayerController()
 {
@@ -48,11 +38,6 @@ AJargonExplorationPlayerController::AJargonExplorationPlayerController()
 	FollowTime = 0.f;
 	FollowMoveUpdateTime = 0.f;
 	ShortPressThreshold = 0.2f;
-
-	DefaultMappingContext = LoadOptionalAsset<UInputMappingContext>(TEXT("/Game/TopDown/Input/IMC_Default.IMC_Default"));
-	SetDestinationClickAction = LoadOptionalAsset<UInputAction>(TEXT("/Game/TopDown/Input/Actions/IA_SetDestination_Click.IA_SetDestination_Click"));
-	SetDestinationTouchAction = LoadOptionalAsset<UInputAction>(TEXT("/Game/TopDown/Input/Actions/IA_SetDestination_Touch.IA_SetDestination_Touch"));
-	FXCursor = LoadOptionalAsset<UNiagaraSystem>(TEXT("/Game/TopDown/Cursor/FX_Cursor_Success.FX_Cursor_Success"));
 }
 
 void AJargonExplorationPlayerController::BeginPlay()
@@ -60,7 +45,21 @@ void AJargonExplorationPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	CreateInteractionPromptWidget();
+	RestoreExplorationInputState();
 	UpdateInteractionPromptWidget();
+}
+
+void AJargonExplorationPlayerController::JargonResetRunSave()
+{
+	UJargonGameInstance* JargonGameInstance = GetGameInstance<UJargonGameInstance>();
+	if (!JargonGameInstance)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("JargonResetRunSave failed because JargonGameInstance was unavailable."));
+		return;
+	}
+
+	JargonGameInstance->ResetRunState();
+	UE_LOG(LogJargon, Display, TEXT("JargonResetRunSave cleared the active run and deleted the run save slot."));
 }
 
 void AJargonExplorationPlayerController::PlayerTick(float DeltaTime)
@@ -89,7 +88,8 @@ void AJargonExplorationPlayerController::TickHeldCursorFollow(float DeltaTime)
 		return;
 	}
 
-	if (!IsInputKeyDown(EKeys::LeftMouseButton))
+	const FKey FollowKey = bIsTouch ? EKeys::TouchKeys[ETouchIndex::Touch1] : EKeys::LeftMouseButton;
+	if (!IsInputKeyDown(FollowKey))
 	{
 		return;
 	}
@@ -133,6 +133,8 @@ void AJargonExplorationPlayerController::SetupInputComponent()
 		}
 	}
 
+	bool bBoundClickMoveWithEnhancedInput = false;
+	bool bBoundTouchMoveWithEnhancedInput = false;
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
 		if (SetDestinationClickAction)
@@ -141,6 +143,7 @@ void AJargonExplorationPlayerController::SetupInputComponent()
 			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Triggered, this, &AJargonExplorationPlayerController::OnSetDestinationTriggered);
 			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Completed, this, &AJargonExplorationPlayerController::OnSetDestinationReleased);
 			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Canceled, this, &AJargonExplorationPlayerController::OnSetDestinationReleased);
+			bBoundClickMoveWithEnhancedInput = true;
 		}
 
 		if (SetDestinationTouchAction)
@@ -149,6 +152,7 @@ void AJargonExplorationPlayerController::SetupInputComponent()
 			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Triggered, this, &AJargonExplorationPlayerController::OnTouchTriggered);
 			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Completed, this, &AJargonExplorationPlayerController::OnTouchReleased);
 			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Canceled, this, &AJargonExplorationPlayerController::OnTouchReleased);
+			bBoundTouchMoveWithEnhancedInput = true;
 		}
 
 	}
@@ -159,6 +163,18 @@ void AJargonExplorationPlayerController::SetupInputComponent()
 
 	if (InputComponent)
 	{
+		if (!bBoundClickMoveWithEnhancedInput)
+		{
+			InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AJargonExplorationPlayerController::OnInputStarted);
+			InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &AJargonExplorationPlayerController::OnSetDestinationReleased);
+		}
+
+		if (!bBoundTouchMoveWithEnhancedInput)
+		{
+			InputComponent->BindKey(EKeys::TouchKeys[ETouchIndex::Touch1], IE_Pressed, this, &AJargonExplorationPlayerController::OnTouchStarted);
+			InputComponent->BindKey(EKeys::TouchKeys[ETouchIndex::Touch1], IE_Released, this, &AJargonExplorationPlayerController::OnTouchReleased);
+		}
+
 		InputComponent->BindAction(TEXT("Interact"), IE_Pressed, this, &AJargonExplorationPlayerController::HandleInteractPressed);
 	}
 }
@@ -230,6 +246,26 @@ void AJargonExplorationPlayerController::SetWorldClickMovementEnabled(bool bEnab
 		StopMovement();
 	}
 
+	RefreshInteractionPromptData();
+}
+
+void AJargonExplorationPlayerController::RestoreExplorationInputState()
+{
+	bShowMouseCursor = true;
+	bEnableClickEvents = true;
+	bEnableMouseOverEvents = true;
+	DefaultMouseCursor = EMouseCursor::Default;
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+
+	bWorldClickMovementEnabled = true;
+	ResetClickMoveState();
+	EndCameraPan();
+	EndCameraRotate();
+	FlushPressedKeys();
 	RefreshInteractionPromptData();
 }
 
