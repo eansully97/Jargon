@@ -16,12 +16,13 @@ Authored source -> FJargonEffectSpec[] -> FJargonEffectExecutionRequest -> FJarg
 Reusable non-card ability definitions add one authoring step above this:
 
 ```text
-Ability Definition -> Targeting Profile -> Ability Effect Lines -> FJargonEffectSpec[] -> FJargonEffectExecutor -> FJargonEffectResolver
+Hook Context -> Ability Definition -> Targeting Profile / Placement Profile -> Ability Effect Lines -> FJargonEffectSpec[] -> FJargonEffectExecutor -> FJargonEffectResolver
 ```
 
 ## Executor Responsibilities
 
 - Receive an already-built `FJargonEffectContext`.
+- Carry the hook context type for logging, validation language, and audit readability.
 - Forward authored effect arrays and optional trace output to `FJargonEffectResolver`.
 - Build effect specs from `UJargonAbilityDefinition` through `ExecuteAbility` when a hook is definition-authored.
 - Return a compact `FJargonEffectExecutionReport`.
@@ -40,9 +41,13 @@ Ability cue metadata lives on `UJargonAbilityDefinition`, but it is only authori
 
 New gameplay primitives belong in the resolver. New execution entry points should go through the executor.
 
+Spawn operations use placement data from the authored effect spec. Delivery still describes target gathering; placement describes where a summoned unit or tile effect appears. This keeps passive summons, death spawns, trap triggers, and aura hooks readable without creating delivery names that secretly mean "spawn near this thing."
+
 ## Authoring Guardrail
 
-Do not call `FJargonEffectResolver::ResolveEffects` directly from gameplay systems outside the effect runtime. Build a `FJargonEffectExecutionRequest`, set a readable `SourceLabel` and `HookName`, and call `FJargonEffectExecutor::Execute`.
+Do not call `FJargonEffectResolver::ResolveEffects` directly from gameplay systems outside the effect runtime. Build a `FJargonEffectExecutionRequest`, set a readable `SourceLabel`, `HookName`, and `HookContextType`, and call `FJargonEffectExecutor::Execute`.
+
+When executing a `UJargonAbilityDefinition`, call `FJargonEffectExecutor::ExecuteAbility` with the hook context that matches the runtime event. Missing ability references mean the hook is empty; do not add raw effect array fallbacks.
 
 Direct resolver calls should generally exist only inside:
 
@@ -52,7 +57,7 @@ Direct resolver calls should generally exist only inside:
 
 ## Deferred Work
 
-- Migrating current raw hero/summon/tile-effect/boon effect arrays into ability definitions.
+- Migrating future enemy/unit active abilities into ability definitions. Hero class/aspects, summons, tile effects, and hero boons are already ability-only.
 - A dedicated cue adapter that reads ability cue metadata and resolved effect results.
 - Typed operation payload structs.
 - General condition or modifier frameworks.

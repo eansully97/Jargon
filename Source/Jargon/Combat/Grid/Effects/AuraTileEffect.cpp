@@ -12,30 +12,18 @@ void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMod
 		return;
 	}
 
-	if (!Definition->TriggerAbility && Definition->Effects.Num() <= 0)
+	if (!Definition->TriggerAbility)
 	{
 		return;
 	}
 
 	const FJargonEffectContext EffectContext = BuildEffectContext(CombatGameMode);
-	FJargonEffectExecutionReport ExecutionReport;
-	if (Definition->TriggerAbility)
-	{
-		ExecutionReport = FJargonEffectExecutor::ExecuteAbility(
-			Definition->TriggerAbility,
-			EffectContext,
-			FString::Printf(TEXT("%s Aura Tile Effect '%s' OnPlayerTurnStart"), *GetNameSafe(this), *GetNameSafe(Definition)));
-	}
-	else
-	{
-		FJargonEffectExecutionRequest ExecutionRequest;
-		ExecutionRequest.Effects = &Definition->Effects;
-		ExecutionRequest.Context = EffectContext;
-		ExecutionRequest.SourceLabel = GetNameSafe(this);
-		ExecutionRequest.HookName = FString::Printf(TEXT("Aura Tile Effect '%s' OnPlayerTurnStart"), *GetNameSafe(Definition));
-		ExecutionRequest.bLogNoResolvedEffects = true;
-		ExecutionReport = FJargonEffectExecutor::Execute(ExecutionRequest);
-	}
+	const FJargonEffectExecutionReport ExecutionReport = FJargonEffectExecutor::ExecuteAbility(
+		Definition->TriggerAbility,
+		EffectContext,
+		FString::Printf(TEXT("%s Aura Tile Effect '%s' OnPlayerTurnStart"), *GetNameSafe(this), *GetNameSafe(Definition)),
+		nullptr,
+		EJargonAbilityHookContextType::AuraPlayerTurnStart);
 
 	if (!ExecutionReport.bResolverSucceeded || !ExecutionReport.Result.bResolvedAnyEffect)
 	{

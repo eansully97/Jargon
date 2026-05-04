@@ -127,7 +127,7 @@ public:
 	bool TryPlayCardOnSelf(UCardDefinition* Card);
 	bool TryPlayCardOnSelf(UCardDefinition* Card, const TArray<int32>& SelectedElementalBonusIndices);
 	bool StartPlayerControlledMoveSequence(ABattleUnit* MovingUnit, const TArray<AGridTile*>& Path, bool bConsumeMoveAction);
-	void ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTile* DeathTile);
+	void ExecuteOnDeathAbility(ABattleUnit* DeadUnit, AGridTile* DeathTile);
 	ABattleTileEffect* SpawnPersistentTileEffectFromDefinition(
 		UJargonTileEffectDefinition* Definition,
 		TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass,
@@ -397,9 +397,9 @@ protected:
 	void ResolveNextEnemyAction();
 	bool ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
 	void EndEnemyTurn();
-	void ExecuteRunRelicOnCombatStartEffects();
-	void ExecuteRunRelicOnPlayerTurnStartEffects();
-	void ExecuteRunRelicOnEnemyDeathEffects(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
+	void ExecuteRunRelicOnCombatStartAbilities();
+	void ExecuteRunRelicOnPlayerTurnStartAbilities();
+	void ExecuteRunRelicOnEnemyDeathAbilities(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
 	void ExecuteHeroClassCombatStartPassive();
 	void ExecuteHeroClassPlayerTurnStartPassive();
 	void ResolveHeroClassPassiveEffects(
@@ -417,8 +417,8 @@ protected:
 		ABattleUnit* PrimaryUnitTarget,
 		AGridTile* PrimaryTileTarget,
 		ABattleUnit* TriggeringUnit);
-	void ExecuteOnSummonedEffects(ABattleUnit* SummonedUnit);
-	void ExecuteOnTurnStartEffects(ABattleUnit* SourceUnit);
+	void ExecuteOnSummonedAbility(ABattleUnit* SummonedUnit);
+	void ExecuteOnTurnStartAbility(ABattleUnit* SourceUnit);
 	void NotifyPlayerTurnStartTileEffects();
 	void RefreshSelectedFriendlyUnitPresentation();
 	void SetSelectedFriendlyUnit(ABattleUnit* NewSelectedFriendlyUnit);

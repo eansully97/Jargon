@@ -129,6 +129,16 @@ private:
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context);
 
+	static AGridTile* ResolvePlacementTile(
+		const FJargonEffectSpec& EffectSpec,
+		const FJargonEffectContext& Context);
+	static AGridTile* ResolvePlacementAnchorTile(
+		EJargonAbilityPlacementAnchor PlacementAnchor,
+		const FJargonEffectContext& Context);
+	static AGridTile* FindNearestEmptyWalkableTile(
+		const FJargonEffectContext& Context,
+		AGridTile* AnchorTile);
+
 	static AGridTile* GetResolvedTargetTile(const FJargonEffectContext& Context);
 	static ABattleUnit* GetResolvedTargetUnit(const FJargonEffectContext& Context);
 	static AGridTile* GetResolvedSourceTile(const FJargonEffectContext& Context);

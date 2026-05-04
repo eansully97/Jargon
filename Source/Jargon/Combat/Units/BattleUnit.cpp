@@ -628,10 +628,6 @@ void ABattleUnit::ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Def
 	DeathAnimation = Definition->DeathAnimationOverride;
 	PlayIdleAnimation();
 
-	OnSummonedEffects.Append(Definition->OnSummonedEffects);
-	OnTurnStartEffects.Append(Definition->OnTurnStartEffects);
-	OnDeathEffects.Append(Definition->OnDeathEffects);
-
 	OnSummonedAbility = Definition->OnSummonedAbility;
 	OnTurnStartAbility = Definition->OnTurnStartAbility;
 	OnDeathAbility = Definition->OnDeathAbility;

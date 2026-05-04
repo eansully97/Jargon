@@ -9,6 +9,67 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogJargonHeroDefinition, Log, All);
 
+#if WITH_EDITOR
+namespace
+{
+void ValidateHeroAbilityForHook(
+	const UObject* Owner,
+	const UJargonAbilityDefinition* Ability,
+	const FString& Label,
+	EJargonEffectTrigger ExpectedTrigger,
+	EJargonAbilityHookContextType ExpectedHookContext,
+	FDataValidationContext& Context)
+{
+	if (!Ability)
+	{
+		return;
+	}
+
+	if (!Ability->IsValidDefinition())
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Owner,
+			FString::Printf(TEXT("%s is assigned but is not a valid ability definition."), *Label));
+	}
+
+	if (Ability->ExpectedTrigger != ExpectedTrigger)
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Owner,
+			FString::Printf(
+				TEXT("%s expects trigger %s but this hook requires %s."),
+				*Label,
+				*JargonEffectContracts::GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(Ability->ExpectedTrigger)),
+				*JargonEffectContracts::GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(ExpectedTrigger))));
+	}
+
+	if (Ability->ExpectedHookContext == EJargonAbilityHookContextType::None)
+	{
+		JargonDataAssetValidation::AddWarning(
+			Context,
+			Owner,
+			FString::Printf(
+				TEXT("%s has ExpectedHookContext=None; set it to %s for clearer targeting/placement validation."),
+				*Label,
+				*JargonEffectContracts::GetHookContextName(ExpectedHookContext)));
+	}
+	else if (Ability->ExpectedHookContext != ExpectedHookContext)
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Owner,
+			FString::Printf(
+				TEXT("%s expects hook context %s but this hook requires %s."),
+				*Label,
+				*JargonEffectContracts::GetHookContextName(Ability->ExpectedHookContext),
+				*JargonEffectContracts::GetHookContextName(ExpectedHookContext)));
+	}
+}
+}
+#endif
+
 void UJargonHeroDefinition::ApplyRecommendedClassPreset()
 {
 	switch (HeroClass)
@@ -182,51 +243,8 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("AttackDamage must be >= 0. Current value: %d."), AttackDamage));
 	}
 
-	for (int32 EffectIndex = 0; EffectIndex < CombatStartPassive.Effects.Num(); ++EffectIndex)
-	{
-		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-			this,
-			CombatStartPassive.Effects[EffectIndex],
-			FString::Printf(TEXT("CombatStartPassive effect %d"), EffectIndex),
-			EJargonEffectTrigger::OnCombatStart,
-			Context);
-	}
-
-	if (CombatStartPassive.Ability)
-	{
-		if (!CombatStartPassive.Ability->IsValidDefinition())
-		{
-			JargonDataAssetValidation::AddError(Context, this, TEXT("CombatStartPassive Ability is assigned but is not a valid ability definition."));
-		}
-
-		if (CombatStartPassive.Effects.Num() > 0)
-		{
-			JargonDataAssetValidation::AddWarning(Context, this, TEXT("CombatStartPassive has both Ability and raw Effects authored. Runtime will prefer Ability; migrate or clear raw Effects after verification."));
-		}
-	}
-
-	for (int32 EffectIndex = 0; EffectIndex < PlayerTurnStartPassive.Effects.Num(); ++EffectIndex)
-	{
-		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-			this,
-			PlayerTurnStartPassive.Effects[EffectIndex],
-			FString::Printf(TEXT("PlayerTurnStartPassive effect %d"), EffectIndex),
-			EJargonEffectTrigger::OnTurnStart,
-			Context);
-	}
-
-	if (PlayerTurnStartPassive.Ability)
-	{
-		if (!PlayerTurnStartPassive.Ability->IsValidDefinition())
-		{
-			JargonDataAssetValidation::AddError(Context, this, TEXT("PlayerTurnStartPassive Ability is assigned but is not a valid ability definition."));
-		}
-
-		if (PlayerTurnStartPassive.Effects.Num() > 0)
-		{
-			JargonDataAssetValidation::AddWarning(Context, this, TEXT("PlayerTurnStartPassive has both Ability and raw Effects authored. Runtime will prefer Ability; migrate or clear raw Effects after verification."));
-		}
-	}
+	ValidateHeroAbilityForHook(this, CombatStartPassive.Ability, TEXT("CombatStartPassive Ability"), EJargonEffectTrigger::OnCombatStart, EJargonAbilityHookContextType::HeroClassCombatStart, Context);
+	ValidateHeroAbilityForHook(this, PlayerTurnStartPassive.Ability, TEXT("PlayerTurnStartPassive Ability"), EJargonEffectTrigger::OnTurnStart, EJargonAbilityHookContextType::HeroClassTurnStart, Context);
 
 	TSet<EJargonHeroAspect> SeenAspects;
 	TSet<EJargonElementType> SeenRequiredElements;
@@ -266,70 +284,34 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 
 		if (AspectDefinition.TransformationAbility)
 		{
-			if (!AspectDefinition.TransformationAbility->IsValidDefinition())
-			{
-				JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("HeroAspects entry %d TransformationAbility is assigned but is not a valid ability definition."), AspectIndex));
-			}
-
-			if (AspectDefinition.TransformationEffects.Num() > 0)
-			{
-				JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has both TransformationAbility and raw TransformationEffects. Runtime will prefer the ability definition."), AspectIndex));
-			}
+			ValidateHeroAbilityForHook(
+				this,
+				AspectDefinition.TransformationAbility,
+				FString::Printf(TEXT("HeroAspects entry %d TransformationAbility"), AspectIndex),
+				EJargonEffectTrigger::Activated,
+				EJargonAbilityHookContextType::HeroAspectTransformed,
+				Context);
 		}
 
 		if (AspectDefinition.TurnStartAbility)
 		{
-			if (!AspectDefinition.TurnStartAbility->IsValidDefinition())
-			{
-				JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("HeroAspects entry %d TurnStartAbility is assigned but is not a valid ability definition."), AspectIndex));
-			}
-
-			if (AspectDefinition.TurnStartEffects.Num() > 0)
-			{
-				JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has both TurnStartAbility and raw TurnStartEffects. Runtime will prefer the ability definition."), AspectIndex));
-			}
+			ValidateHeroAbilityForHook(
+				this,
+				AspectDefinition.TurnStartAbility,
+				FString::Printf(TEXT("HeroAspects entry %d TurnStartAbility"), AspectIndex),
+				EJargonEffectTrigger::OnTurnStart,
+				EJargonAbilityHookContextType::HeroAspectTurnStart,
+				Context);
 		}
 
 		if (AspectDefinition.EnemyDeathAbility)
 		{
-			if (!AspectDefinition.EnemyDeathAbility->IsValidDefinition())
-			{
-				JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("HeroAspects entry %d EnemyDeathAbility is assigned but is not a valid ability definition."), AspectIndex));
-			}
-
-			if (AspectDefinition.EnemyDeathEffects.Num() > 0)
-			{
-				JargonDataAssetValidation::AddWarning(Context, this, FString::Printf(TEXT("HeroAspects entry %d has both EnemyDeathAbility and raw EnemyDeathEffects. Runtime will prefer the ability definition."), AspectIndex));
-			}
-		}
-
-		for (int32 EffectIndex = 0; EffectIndex < AspectDefinition.TransformationEffects.Num(); ++EffectIndex)
-		{
-			JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
+			ValidateHeroAbilityForHook(
 				this,
-				AspectDefinition.TransformationEffects[EffectIndex],
-				FString::Printf(TEXT("HeroAspects entry %d TransformationEffects effect %d"), AspectIndex, EffectIndex),
-				EJargonEffectTrigger::Activated,
-				Context);
-		}
-
-		for (int32 EffectIndex = 0; EffectIndex < AspectDefinition.TurnStartEffects.Num(); ++EffectIndex)
-		{
-			JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-				this,
-				AspectDefinition.TurnStartEffects[EffectIndex],
-				FString::Printf(TEXT("HeroAspects entry %d TurnStartEffects effect %d"), AspectIndex, EffectIndex),
-				EJargonEffectTrigger::OnTurnStart,
-				Context);
-		}
-
-		for (int32 EffectIndex = 0; EffectIndex < AspectDefinition.EnemyDeathEffects.Num(); ++EffectIndex)
-		{
-			JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-				this,
-				AspectDefinition.EnemyDeathEffects[EffectIndex],
-				FString::Printf(TEXT("HeroAspects entry %d EnemyDeathEffects effect %d"), AspectIndex, EffectIndex),
+				AspectDefinition.EnemyDeathAbility,
+				FString::Printf(TEXT("HeroAspects entry %d EnemyDeathAbility"), AspectIndex),
 				EJargonEffectTrigger::OnEnemyDeath,
+				EJargonAbilityHookContextType::HeroAspectEnemyDeath,
 				Context);
 		}
 	}

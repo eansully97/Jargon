@@ -8,13 +8,62 @@
 #include "Misc/DataValidation.h"
 #endif
 
+#if WITH_EDITOR
+namespace
+{
+void ValidateRelicAbilityForHook(
+	const UJargonRelicDefinition* Owner,
+	const UJargonAbilityDefinition* Ability,
+	const TCHAR* Label,
+	EJargonEffectTrigger ExpectedTrigger,
+	EJargonAbilityHookContextType ExpectedHookContext,
+	FDataValidationContext& Context)
+{
+	if (!Ability)
+	{
+		return;
+	}
+
+	if (!Ability->IsValidDefinition())
+	{
+		JargonDataAssetValidation::AddError(Context, Owner, FString::Printf(TEXT("%s is assigned but is not a valid ability definition."), Label));
+	}
+
+	if (Ability->ExpectedTrigger != ExpectedTrigger)
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Owner,
+			FString::Printf(
+				TEXT("%s expects trigger %s but this hook requires %s."),
+				Label,
+				*JargonEffectContracts::GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(Ability->ExpectedTrigger)),
+				*JargonEffectContracts::GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(ExpectedTrigger))));
+	}
+
+	if (Ability->ExpectedHookContext == EJargonAbilityHookContextType::None)
+	{
+		JargonDataAssetValidation::AddWarning(Context, Owner, FString::Printf(TEXT("%s has ExpectedHookContext=None; set it to %s."), Label, *JargonEffectContracts::GetHookContextName(ExpectedHookContext)));
+	}
+	else if (Ability->ExpectedHookContext != ExpectedHookContext)
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Owner,
+			FString::Printf(
+				TEXT("%s expects hook context %s but this hook requires %s."),
+				Label,
+				*JargonEffectContracts::GetHookContextName(Ability->ExpectedHookContext),
+				*JargonEffectContracts::GetHookContextName(ExpectedHookContext)));
+	}
+}
+}
+#endif
+
 bool UJargonRelicDefinition::HasAnyEffects() const
 {
-	return OnCombatStartEffects.Num() > 0
-		|| OnCombatStartAbility != nullptr
-		|| OnPlayerTurnStartEffects.Num() > 0
+	return OnCombatStartAbility != nullptr
 		|| OnPlayerTurnStartAbility != nullptr
-		|| OnEnemyDeathEffects.Num() > 0
 		|| OnEnemyDeathAbility != nullptr;
 }
 
@@ -87,73 +136,19 @@ EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext
 		JargonDataAssetValidation::AddWarning(Context, this, TEXT("EligibleHeroAspects contains None; remove it or leave the array empty to allow any aspect kit."));
 	}
 
-	for (int32 EffectIndex = 0; EffectIndex < OnCombatStartEffects.Num(); ++EffectIndex)
-	{
-		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-			this,
-			OnCombatStartEffects[EffectIndex],
-			FString::Printf(TEXT("OnCombatStartEffects effect %d"), EffectIndex),
-			EJargonEffectTrigger::OnCombatStart,
-			Context);
-	}
-
 	if (OnCombatStartAbility)
 	{
-		if (!OnCombatStartAbility->IsValidDefinition())
-		{
-			JargonDataAssetValidation::AddError(Context, this, TEXT("OnCombatStartAbility is assigned but is not a valid ability definition."));
-		}
-
-		if (OnCombatStartEffects.Num() > 0)
-		{
-			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnCombatStartAbility and raw OnCombatStartEffects are both authored. Runtime will prefer the ability definition."));
-		}
-	}
-
-	for (int32 EffectIndex = 0; EffectIndex < OnPlayerTurnStartEffects.Num(); ++EffectIndex)
-	{
-		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-			this,
-			OnPlayerTurnStartEffects[EffectIndex],
-			FString::Printf(TEXT("OnPlayerTurnStartEffects effect %d"), EffectIndex),
-			EJargonEffectTrigger::OnTurnStart,
-			Context);
+		ValidateRelicAbilityForHook(this, OnCombatStartAbility, TEXT("OnCombatStartAbility"), EJargonEffectTrigger::OnCombatStart, EJargonAbilityHookContextType::BoonCombatStart, Context);
 	}
 
 	if (OnPlayerTurnStartAbility)
 	{
-		if (!OnPlayerTurnStartAbility->IsValidDefinition())
-		{
-			JargonDataAssetValidation::AddError(Context, this, TEXT("OnPlayerTurnStartAbility is assigned but is not a valid ability definition."));
-		}
-
-		if (OnPlayerTurnStartEffects.Num() > 0)
-		{
-			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnPlayerTurnStartAbility and raw OnPlayerTurnStartEffects are both authored. Runtime will prefer the ability definition."));
-		}
-	}
-
-	for (int32 EffectIndex = 0; EffectIndex < OnEnemyDeathEffects.Num(); ++EffectIndex)
-	{
-		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-			this,
-			OnEnemyDeathEffects[EffectIndex],
-			FString::Printf(TEXT("OnEnemyDeathEffects effect %d"), EffectIndex),
-			EJargonEffectTrigger::OnEnemyDeath,
-			Context);
+		ValidateRelicAbilityForHook(this, OnPlayerTurnStartAbility, TEXT("OnPlayerTurnStartAbility"), EJargonEffectTrigger::OnTurnStart, EJargonAbilityHookContextType::BoonPlayerTurnStart, Context);
 	}
 
 	if (OnEnemyDeathAbility)
 	{
-		if (!OnEnemyDeathAbility->IsValidDefinition())
-		{
-			JargonDataAssetValidation::AddError(Context, this, TEXT("OnEnemyDeathAbility is assigned but is not a valid ability definition."));
-		}
-
-		if (OnEnemyDeathEffects.Num() > 0)
-		{
-			JargonDataAssetValidation::AddWarning(Context, this, TEXT("OnEnemyDeathAbility and raw OnEnemyDeathEffects are both authored. Runtime will prefer the ability definition."));
-		}
+		ValidateRelicAbilityForHook(this, OnEnemyDeathAbility, TEXT("OnEnemyDeathAbility"), EJargonEffectTrigger::OnEnemyDeath, EJargonAbilityHookContextType::BoonEnemyDeath, Context);
 	}
 
 	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;

@@ -46,11 +46,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ToolTip = "Whether this definition destroys its runtime tile-effect actor after successfully resolving on unit enter.", EditCondition = "Trigger == EJargonTileEffectTrigger::OnUnitEnter", EditConditionHides))
 	bool bDestroyAfterUnitEnter = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Ability", meta = (ToolTip = "Preferred reusable ability definition resolved when this tile effect triggers. When assigned at runtime, it replaces raw Effects for this hook."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Ability", meta = (ToolTip = "Reusable ability definition resolved when this tile effect triggers. Required for valid trap and aura definitions."))
 	TObjectPtr<UJargonAbilityDefinition> TriggerAbility = nullptr;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Effects", meta = (TitleProperty = "Operation", ToolTip = "Temporary raw shared gameplay effects resolved when this tile effect triggers. Prefer TriggerAbility for new authoring."))
-	TArray<FJargonEffectSpec> Effects;
 
 	UFUNCTION(BlueprintPure, Category = "Tile Effect|Validation")
 	bool IsValidDefinition() const;

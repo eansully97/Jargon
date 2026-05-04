@@ -577,11 +577,6 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 		break;
 
 	case EJargonEffectOperation::SummonUnit:
-		if (!IsLiveSourceUnit(Context))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("SummonUnit requires a living SourceUnit."));
-			return false;
-		}
 		if (!EffectSpec.SummonedUnitDefinition)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect requires SummonedUnitDefinition."));
@@ -592,9 +587,10 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 			UE_LOG(LogTemp, Warning, TEXT("SummonUnit effect requires RuntimeSummonedUnitClass."));
 			return false;
 		}
-		if (!GetResolvedTargetTile(Context))
+		if (!ResolvePlacementTile(EffectSpec, Context))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("SummonUnit requires a target tile."));
+			UE_LOG(LogTemp, Warning, TEXT("SummonUnit could not resolve placement tile. Placement=%s."),
+				*JargonEffectContracts::GetPlacementAnchorName(EffectSpec.PlacementAnchor));
 			return false;
 		}
 		break;
@@ -610,16 +606,10 @@ bool FJargonEffectResolver::ValidateEffectForContext(
 			UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect requires RuntimeTileEffectClass."));
 			return false;
 		}
-		if (!GetResolvedTargetTile(Context))
+		if (!ResolvePlacementTile(EffectSpec, Context))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect requires a source or target tile."));
-			return false;
-		}
-		if (EffectSpec.Delivery != EJargonEffectDelivery::ExplicitTile &&
-			EffectSpec.Delivery != EJargonEffectDelivery::Self)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect currently supports Delivery ExplicitTile or Self, not %s."),
-				DeliveryName);
+			UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect could not resolve placement tile. Placement=%s."),
+				*JargonEffectContracts::GetPlacementAnchorName(EffectSpec.PlacementAnchor));
 			return false;
 		}
 		break;
@@ -1089,16 +1079,17 @@ bool FJargonEffectResolver::ResolveSummonUnitEffect(
 	FJargonEffectTrace* OutTrace,
 	int32 EffectIndex)
 {
-	if (!Context.GameMode || !IsLiveSourceUnit(Context))
+	if (!Context.GameMode)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SummonUnit requires GameMode and a living SourceUnit."));
+		UE_LOG(LogTemp, Warning, TEXT("SummonUnit requires GameMode."));
 		return false;
 	}
 
-	AGridTile* TargetTile = GetResolvedTargetTile(Context);
+	AGridTile* TargetTile = ResolvePlacementTile(EffectSpec, Context);
 	if (!TargetTile)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SummonUnit requires a target tile."));
+		UE_LOG(LogTemp, Warning, TEXT("SummonUnit could not resolve placement tile. Placement=%s."),
+			*JargonEffectContracts::GetPlacementAnchorName(EffectSpec.PlacementAnchor));
 		return false;
 	}
 
@@ -1117,7 +1108,7 @@ bool FJargonEffectResolver::ResolveSummonUnitEffect(
 	ABattleUnit* SpawnedUnit = Context.GameMode->SpawnSummonedUnitFromDefinition(
 		EffectSpec.SummonedUnitDefinition.Get(),
 		EffectSpec.RuntimeSummonedUnitClass,
-		Context.SourceUnit,
+		Context.SourceUnit.Get(),
 		TargetTile,
 		EffectSpec.bSummonEntersWithAttackExhausted,
 		true);
@@ -1144,10 +1135,11 @@ bool FJargonEffectResolver::ResolvePlaceTileEffect(
 		return false;
 	}
 
-	AGridTile* TargetTile = GetResolvedTargetTile(Context);
+	AGridTile* TargetTile = ResolvePlacementTile(EffectSpec, Context);
 	if (!TargetTile)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect requires a target tile."));
+		UE_LOG(LogTemp, Warning, TEXT("PlaceTileEffect could not resolve placement tile. Placement=%s."),
+			*JargonEffectContracts::GetPlacementAnchorName(EffectSpec.PlacementAnchor));
 		return false;
 	}
 
@@ -1817,6 +1809,118 @@ bool FJargonEffectResolver::CanTreatNoTargetsAsNoOp(const FJargonEffectContext& 
 	default:
 		return false;
 	}
+}
+
+AGridTile* FJargonEffectResolver::ResolvePlacementTile(
+	const FJargonEffectSpec& EffectSpec,
+	const FJargonEffectContext& Context)
+{
+	AGridTile* AnchorTile = ResolvePlacementAnchorTile(EffectSpec.PlacementAnchor, Context);
+	if (!AnchorTile)
+	{
+		return nullptr;
+	}
+
+	switch (EffectSpec.PlacementAnchor)
+	{
+	case EJargonAbilityPlacementAnchor::NearestEmptyToSourceTile:
+	case EJargonAbilityPlacementAnchor::NearestEmptyToPrimaryTile:
+	case EJargonAbilityPlacementAnchor::NearestEmptyToTriggeringUnit:
+	case EJargonAbilityPlacementAnchor::NearestEmptyToOwningTile:
+		return FindNearestEmptyWalkableTile(Context, AnchorTile);
+
+	case EJargonAbilityPlacementAnchor::AbilityTargetTile:
+	case EJargonAbilityPlacementAnchor::SourceTile:
+	case EJargonAbilityPlacementAnchor::PrimaryTile:
+	case EJargonAbilityPlacementAnchor::TriggeringUnitTile:
+	case EJargonAbilityPlacementAnchor::OwningTileEffectTile:
+	default:
+		return AnchorTile;
+	}
+}
+
+AGridTile* FJargonEffectResolver::ResolvePlacementAnchorTile(
+	EJargonAbilityPlacementAnchor PlacementAnchor,
+	const FJargonEffectContext& Context)
+{
+	switch (PlacementAnchor)
+	{
+	case EJargonAbilityPlacementAnchor::AbilityTargetTile:
+		return GetResolvedTargetTile(Context);
+
+	case EJargonAbilityPlacementAnchor::SourceTile:
+	case EJargonAbilityPlacementAnchor::NearestEmptyToSourceTile:
+		return GetResolvedSourceTile(Context);
+
+	case EJargonAbilityPlacementAnchor::PrimaryTile:
+	case EJargonAbilityPlacementAnchor::NearestEmptyToPrimaryTile:
+		return GetResolvedTargetTile(Context);
+
+	case EJargonAbilityPlacementAnchor::TriggeringUnitTile:
+	case EJargonAbilityPlacementAnchor::NearestEmptyToTriggeringUnit:
+		return Context.TriggeringUnit ? Context.TriggeringUnit->GetCurrentTile() : nullptr;
+
+	case EJargonAbilityPlacementAnchor::OwningTileEffectTile:
+	case EJargonAbilityPlacementAnchor::NearestEmptyToOwningTile:
+		return Context.OwningTileEffect ? Context.OwningTileEffect->GetCurrentTile() : nullptr;
+
+	default:
+		return nullptr;
+	}
+}
+
+AGridTile* FJargonEffectResolver::FindNearestEmptyWalkableTile(
+	const FJargonEffectContext& Context,
+	AGridTile* AnchorTile)
+{
+	if (!AnchorTile)
+	{
+		return nullptr;
+	}
+
+	if (AnchorTile->IsWalkable())
+	{
+		return AnchorTile;
+	}
+
+	AGridBoard* GridBoard = Context.GameMode ? Context.GameMode->GetGridBoard() : AnchorTile->GetOwningGridBoard();
+	if (!GridBoard)
+	{
+		return nullptr;
+	}
+
+	AGridTile* BestTile = nullptr;
+	int32 BestDistance = MAX_int32;
+	FHexCoord BestCoord;
+	bool bHasBestCoord = false;
+
+	const TArray<AGridTile*> CandidateTiles = GridBoard->GetTilesWithinRadius(AnchorTile, 999);
+	for (AGridTile* CandidateTile : CandidateTiles)
+	{
+		if (!CandidateTile || !CandidateTile->IsWalkable())
+		{
+			continue;
+		}
+
+		const FHexCoord CandidateCoord = CandidateTile->GetCoord();
+		const int32 CandidateDistance = GridBoard->GetTileDistance(AnchorTile, CandidateTile);
+		const bool bBetterDistance = CandidateDistance < BestDistance;
+		const bool bSameDistanceEarlierCoord =
+			CandidateDistance == BestDistance &&
+			(!bHasBestCoord ||
+				CandidateCoord.Q < BestCoord.Q ||
+				(CandidateCoord.Q == BestCoord.Q && CandidateCoord.R < BestCoord.R));
+
+		if (!BestTile || bBetterDistance || bSameDistanceEarlierCoord)
+		{
+			BestTile = CandidateTile;
+			BestDistance = CandidateDistance;
+			BestCoord = CandidateCoord;
+			bHasBestCoord = true;
+		}
+	}
+
+	return BestTile;
 }
 
 AGridTile* FJargonEffectResolver::GetResolvedTargetTile(const FJargonEffectContext& Context)

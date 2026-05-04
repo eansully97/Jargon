@@ -72,6 +72,179 @@ enum class EJargonEffectTrigger : uint8
 	OnEnemyDeath UMETA(DisplayName = "On Enemy Death")
 };
 
+UENUM(BlueprintType)
+enum class EJargonAbilityHookContextType : uint8
+{
+	None UMETA(DisplayName = "None"),
+	HeroClassCombatStart UMETA(DisplayName = "Hero Class - Combat Start"),
+	HeroClassTurnStart UMETA(DisplayName = "Hero Class - Turn Start"),
+	HeroAspectTransformed UMETA(DisplayName = "Hero Aspect - Transformed"),
+	HeroAspectTurnStart UMETA(DisplayName = "Hero Aspect - Turn Start"),
+	HeroAspectEnemyDeath UMETA(DisplayName = "Hero Aspect - Enemy Death"),
+	SummonOnSummoned UMETA(DisplayName = "Summon - On Summoned"),
+	SummonTurnStart UMETA(DisplayName = "Summon - Turn Start"),
+	SummonDeath UMETA(DisplayName = "Summon - Death"),
+	TrapUnitEnter UMETA(DisplayName = "Trap - Unit Enter"),
+	AuraPlayerTurnStart UMETA(DisplayName = "Aura - Player Turn Start"),
+	BoonCombatStart UMETA(DisplayName = "Boon - Combat Start"),
+	BoonPlayerTurnStart UMETA(DisplayName = "Boon - Player Turn Start"),
+	BoonEnemyDeath UMETA(DisplayName = "Boon - Enemy Death")
+};
+
+USTRUCT(BlueprintType)
+struct JARGON_API FJargonAbilityHookContextProfile
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	EJargonAbilityHookContextType ContextType = EJargonAbilityHookContextType::None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	bool bHasSourceUnit = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	bool bHasSourceTile = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	bool bHasPrimaryUnit = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	bool bHasPrimaryTile = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	bool bHasTriggeringUnit = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	bool bHasOwningTileEffect = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
+	bool bHasSourceTeam = true;
+
+	static FJargonAbilityHookContextProfile FromContextType(EJargonAbilityHookContextType ContextType)
+	{
+		FJargonAbilityHookContextProfile Profile;
+		Profile.ContextType = ContextType;
+
+		switch (ContextType)
+		{
+		case EJargonAbilityHookContextType::HeroClassCombatStart:
+		case EJargonAbilityHookContextType::HeroClassTurnStart:
+		case EJargonAbilityHookContextType::HeroAspectTransformed:
+		case EJargonAbilityHookContextType::HeroAspectTurnStart:
+		case EJargonAbilityHookContextType::SummonOnSummoned:
+		case EJargonAbilityHookContextType::SummonTurnStart:
+		case EJargonAbilityHookContextType::BoonCombatStart:
+		case EJargonAbilityHookContextType::BoonPlayerTurnStart:
+			Profile.bHasSourceUnit = true;
+			Profile.bHasSourceTile = true;
+			Profile.bHasPrimaryUnit = true;
+			Profile.bHasPrimaryTile = true;
+			break;
+
+		case EJargonAbilityHookContextType::HeroAspectEnemyDeath:
+		case EJargonAbilityHookContextType::BoonEnemyDeath:
+			Profile.bHasSourceUnit = true;
+			Profile.bHasSourceTile = true;
+			Profile.bHasPrimaryUnit = true;
+			Profile.bHasPrimaryTile = true;
+			Profile.bHasTriggeringUnit = true;
+			break;
+
+		case EJargonAbilityHookContextType::SummonDeath:
+			Profile.bHasSourceTile = true;
+			Profile.bHasPrimaryTile = true;
+			break;
+
+		case EJargonAbilityHookContextType::TrapUnitEnter:
+			Profile.bHasSourceTile = true;
+			Profile.bHasPrimaryUnit = true;
+			Profile.bHasPrimaryTile = true;
+			Profile.bHasTriggeringUnit = true;
+			Profile.bHasOwningTileEffect = true;
+			break;
+
+		case EJargonAbilityHookContextType::AuraPlayerTurnStart:
+			Profile.bHasSourceTile = true;
+			Profile.bHasPrimaryTile = true;
+			Profile.bHasOwningTileEffect = true;
+			break;
+
+		case EJargonAbilityHookContextType::None:
+		default:
+			break;
+		}
+
+		return Profile;
+	}
+
+	static FString GetContextName(EJargonAbilityHookContextType ContextType)
+	{
+		if (const UEnum* Enum = StaticEnum<EJargonAbilityHookContextType>())
+		{
+			return Enum->GetDisplayNameTextByValue(static_cast<int64>(ContextType)).ToString();
+		}
+
+		return TEXT("Hook Context");
+	}
+
+	FString GetAvailableRolesSummary() const
+	{
+		TArray<FString> Roles;
+		if (bHasSourceUnit)
+		{
+			Roles.Add(TEXT("Source Unit"));
+		}
+		if (bHasSourceTile)
+		{
+			Roles.Add(TEXT("Source Tile"));
+		}
+		if (bHasPrimaryUnit)
+		{
+			Roles.Add(TEXT("Primary Unit"));
+		}
+		if (bHasPrimaryTile)
+		{
+			Roles.Add(TEXT("Primary Tile"));
+		}
+		if (bHasTriggeringUnit)
+		{
+			Roles.Add(TEXT("Triggering Unit"));
+		}
+		if (bHasOwningTileEffect)
+		{
+			Roles.Add(TEXT("Owning Tile Effect"));
+		}
+		if (bHasSourceTeam)
+		{
+			Roles.Add(TEXT("Source Team"));
+		}
+
+		return Roles.Num() > 0 ? FString::Join(Roles, TEXT(" | ")) : TEXT("No explicit hook roles");
+	}
+
+	FString GetSummary() const
+	{
+		return FString::Printf(
+			TEXT("%s Roles=[%s]"),
+			*GetContextName(ContextType),
+			*GetAvailableRolesSummary());
+	}
+};
+
+UENUM(BlueprintType)
+enum class EJargonAbilityPlacementAnchor : uint8
+{
+	AbilityTargetTile UMETA(DisplayName = "Ability Target Tile"),
+	SourceTile UMETA(DisplayName = "Source Tile"),
+	PrimaryTile UMETA(DisplayName = "Primary Tile"),
+	TriggeringUnitTile UMETA(DisplayName = "Triggering Unit Tile"),
+	OwningTileEffectTile UMETA(DisplayName = "Owning Tile Effect Tile"),
+	NearestEmptyToSourceTile UMETA(DisplayName = "Nearest Empty To Source Tile"),
+	NearestEmptyToPrimaryTile UMETA(DisplayName = "Nearest Empty To Primary Tile"),
+	NearestEmptyToTriggeringUnit UMETA(DisplayName = "Nearest Empty To Triggering Unit"),
+	NearestEmptyToOwningTile UMETA(DisplayName = "Nearest Empty To Owning Tile")
+};
+
 /**
  * Reusable authored gameplay effect spec.
  *
@@ -92,6 +265,12 @@ struct JARGON_API FJargonEffectSpec
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ToolTip = "Which units are valid after delivery gathers candidates. Use EnemyToSource for hostile effects, FriendlyToSource for buffs/heals, SourceOnly for self effects, or Any when team does not matter."))
 	EJargonEffectTargetFilter TargetFilter = EJargonEffectTargetFilter::None;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement", meta = (
+		ToolTip = "Spawn-only placement contract used by SummonUnit and PlaceTileEffect. Placement is separate from Delivery: Delivery finds effect recipients; Placement finds where spawned actors appear.",
+		EditCondition = "Operation == EJargonEffectOperation::SummonUnit || Operation == EJargonEffectOperation::PlaceTileEffect",
+		EditConditionHides))
+	EJargonAbilityPlacementAnchor PlacementAnchor = EJargonAbilityPlacementAnchor::AbilityTargetTile;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (
 		ClampMin = "0",
@@ -228,6 +407,26 @@ namespace JargonEffectContracts
 		return GetEnumTokenName(StaticEnum<EJargonEffectTargetFilter>(), static_cast<int64>(TargetFilter));
 	}
 
+	inline FString GetHookContextName(EJargonAbilityHookContextType HookContextType)
+	{
+		if (const UEnum* Enum = StaticEnum<EJargonAbilityHookContextType>())
+		{
+			return Enum->GetDisplayNameTextByValue(static_cast<int64>(HookContextType)).ToString();
+		}
+
+		return GetEnumTokenName(StaticEnum<EJargonAbilityHookContextType>(), static_cast<int64>(HookContextType));
+	}
+
+	inline FString GetPlacementAnchorName(EJargonAbilityPlacementAnchor PlacementAnchor)
+	{
+		if (const UEnum* Enum = StaticEnum<EJargonAbilityPlacementAnchor>())
+		{
+			return Enum->GetDisplayNameTextByValue(static_cast<int64>(PlacementAnchor)).ToString();
+		}
+
+		return GetEnumTokenName(StaticEnum<EJargonAbilityPlacementAnchor>(), static_cast<int64>(PlacementAnchor));
+	}
+
 	inline FString GetElementName(EJargonElementType ElementType)
 	{
 		return GetEnumTokenName(StaticEnum<EJargonElementType>(), static_cast<int64>(ElementType));
@@ -298,8 +497,6 @@ namespace JargonEffectContracts
 	inline bool RequiresTileTarget(EJargonEffectOperation Operation)
 	{
 		return Operation == EJargonEffectOperation::MoveSource
-			|| Operation == EJargonEffectOperation::SummonUnit
-			|| Operation == EJargonEffectOperation::PlaceTileEffect
 			|| Operation == EJargonEffectOperation::DestroyTileEffect;
 	}
 
@@ -388,6 +585,7 @@ namespace JargonEffectContracts
 			Fields.Add(FString::Printf(TEXT("PullDistance=%d"), EffectSpec.PullDistance));
 			break;
 		case EJargonEffectOperation::SummonUnit:
+			Fields.Add(FString::Printf(TEXT("Placement=%s"), *GetPlacementAnchorName(EffectSpec.PlacementAnchor)));
 			Fields.Add(FString::Printf(TEXT("SummonDefinition=%s"), EffectSpec.SummonedUnitDefinition ? TEXT("Assigned") : TEXT("None")));
 			if (UClass* RuntimeSummonClass = EffectSpec.RuntimeSummonedUnitClass.DebugAccessRawClassPtr())
 			{
@@ -400,6 +598,7 @@ namespace JargonEffectContracts
 			Fields.Add(FString::Printf(TEXT("AttackExhausted=%s"), EffectSpec.bSummonEntersWithAttackExhausted ? TEXT("true") : TEXT("false")));
 			break;
 		case EJargonEffectOperation::PlaceTileEffect:
+			Fields.Add(FString::Printf(TEXT("Placement=%s"), *GetPlacementAnchorName(EffectSpec.PlacementAnchor)));
 			Fields.Add(FString::Printf(TEXT("TileEffectDefinition=%s"), EffectSpec.TileEffectDefinition ? TEXT("Assigned") : TEXT("None")));
 			if (UClass* RuntimeTileEffectClass = EffectSpec.RuntimeTileEffectClass.DebugAccessRawClassPtr())
 			{
@@ -470,6 +669,12 @@ namespace JargonEffectContracts
 			(EffectSpec.TileEffectDefinition || EffectSpec.RuntimeTileEffectClass.DebugAccessRawClassPtr()))
 		{
 			OutWarnings.Add(FString::Printf(TEXT("%s ignores tile-effect payload fields."), *OperationName));
+		}
+		if (EffectSpec.Operation != EJargonEffectOperation::SummonUnit &&
+			EffectSpec.Operation != EJargonEffectOperation::PlaceTileEffect &&
+			EffectSpec.PlacementAnchor != EJargonAbilityPlacementAnchor::AbilityTargetTile)
+		{
+			OutWarnings.Add(FString::Printf(TEXT("%s ignores PlacementAnchor=%s."), *OperationName, *GetPlacementAnchorName(EffectSpec.PlacementAnchor)));
 		}
 	}
 

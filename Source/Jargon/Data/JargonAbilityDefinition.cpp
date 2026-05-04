@@ -13,17 +13,17 @@
 
 namespace
 {
-FString BoolText(bool bValue)
+FString AbilityBoolText(bool bValue)
 {
 	return bValue ? TEXT("true") : TEXT("false");
 }
 
-FString PluralSuffix(int32 Value)
+FString AbilityPluralSuffix(int32 Value)
 {
 	return FMath::Abs(Value) == 1 ? TEXT("") : TEXT("s");
 }
 
-FString ElementName(EJargonElementType ElementType)
+FString AbilityElementName(EJargonElementType ElementType)
 {
 	const UEnum* Enum = StaticEnum<EJargonElementType>();
 	return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(ElementType)).ToString() : TEXT("Element");
@@ -45,6 +45,11 @@ FString TargetingPresetName(EJargonAbilityTargetingPreset Preset)
 	return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(Preset)).ToString() : TEXT("Targeting");
 }
 
+FString PlacementAnchorName(EJargonAbilityPlacementAnchor Anchor)
+{
+	return JargonEffectContracts::GetPlacementAnchorName(Anchor);
+}
+
 FString MakeEditorTitle(FString Summary)
 {
 	Summary.TrimStartAndEndInline();
@@ -53,12 +58,21 @@ FString MakeEditorTitle(FString Summary)
 		Summary.LeftChopInline(1);
 		Summary.TrimEndInline();
 	}
-	return Summary.IsEmpty() ? TEXT("Ability Effect Line") : Summary;
+	return Summary.IsEmpty() ? TEXT("Effect Line") : Summary;
 }
 
 FString FormatAbilityActionSummary(const FString& Operation, const FString& Delivery, const FString& Payload)
 {
 	return FString::Printf(TEXT("Operation=%s Delivery=%s Payload=%s"), *Operation, *Delivery, *Payload);
+}
+
+FString FormatAbilitySpawnActionSummary(
+	const FString& Operation,
+	const FString& Delivery,
+	const FString& Placement,
+	const FString& Payload)
+{
+	return FString::Printf(TEXT("Operation=%s Delivery=%s Placement=%s Payload=%s"), *Operation, *Delivery, *Placement, *Payload);
 }
 
 FString GetStatusDisplayName(const UJargonStatusEffectDefinition* StatusEffectDefinition)
@@ -100,18 +114,6 @@ void ApplySelfTargeting(FJargonEffectSpec& Effect)
 	Effect.TargetFilter = EJargonEffectTargetFilter::SourceOnly;
 	Effect.Radius = 0;
 	Effect.ChainCount = 3;
-}
-
-FJargonEffectSpec MakeDefaultTargetedValueEffect(
-	const UJargonAbilityDefinition* AbilityDefinition,
-	EJargonEffectOperation Operation,
-	int32 Value)
-{
-	FJargonEffectSpec Effect;
-	Effect.Operation = Operation;
-	Effect.Value = FMath::Max(0, Value);
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
-	return Effect;
 }
 
 bool IsEffectSpecDefinitionValid(const FJargonEffectSpec& EffectSpec)
@@ -179,10 +181,115 @@ bool IsEffectSpecDefinitionValid(const FJargonEffectSpec& EffectSpec)
 
 	return true;
 }
+
+void AppendTargetingContextWarnings(
+	const FJargonAbilityTargetingProfile& TargetingProfile,
+	const FJargonAbilityHookContextProfile& HookContextProfile,
+	TArray<FString>& OutWarnings)
+{
+	if (HookContextProfile.ContextType == EJargonAbilityHookContextType::None)
+	{
+		return;
+	}
+
+	if (TargetingProfile.bUseCustomResolverTargeting)
+	{
+		OutWarnings.Add(TEXT("uses advanced custom resolver targeting; prefer a context-safe targeting preset for normal authoring."));
+	}
+
+	switch (TargetingProfile.Preset)
+	{
+	case EJargonAbilityTargetingPreset::Self:
+		if (!HookContextProfile.bHasSourceUnit)
+		{
+			OutWarnings.Add(TEXT("targets Self, but this hook has no live Source Unit role."));
+		}
+		break;
+
+	case EJargonAbilityTargetingPreset::SelectedEnemy:
+	case EJargonAbilityTargetingPreset::SelectedAlly:
+	case EJargonAbilityTargetingPreset::SelectedUnit:
+	case EJargonAbilityTargetingPreset::ChainEnemies:
+		if (!HookContextProfile.bHasPrimaryUnit && !HookContextProfile.bHasTriggeringUnit)
+		{
+			OutWarnings.Add(TEXT("targets a Primary/Triggering Unit, but this hook does not provide one."));
+		}
+		break;
+
+	case EJargonAbilityTargetingPreset::TargetTile:
+		if (!HookContextProfile.bHasPrimaryTile)
+		{
+			OutWarnings.Add(TEXT("targets Primary Tile, but this hook does not provide one."));
+		}
+		break;
+
+	case EJargonAbilityTargetingPreset::EnemiesInRadius:
+	case EJargonAbilityTargetingPreset::AlliesInRadius:
+	case EJargonAbilityTargetingPreset::UnitsInRadius:
+	case EJargonAbilityTargetingPreset::TilesInRadius:
+		if (!HookContextProfile.bHasPrimaryTile &&
+			!HookContextProfile.bHasSourceTile &&
+			!HookContextProfile.bHasTriggeringUnit &&
+			!HookContextProfile.bHasOwningTileEffect)
+		{
+			OutWarnings.Add(TEXT("uses radius targeting, but this hook has no tile anchor."));
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
+void AppendPlacementContextWarnings(
+	const FJargonAbilityPlacementProfile& PlacementProfile,
+	const FJargonAbilityHookContextProfile& HookContextProfile,
+	TArray<FString>& OutWarnings)
+{
+	if (HookContextProfile.ContextType == EJargonAbilityHookContextType::None)
+	{
+		return;
+	}
+
+	if (PlacementProfile.Anchor == EJargonAbilityPlacementAnchor::AbilityTargetTile &&
+		!HookContextProfile.bHasPrimaryTile &&
+		!HookContextProfile.bHasPrimaryUnit &&
+		!HookContextProfile.bHasTriggeringUnit)
+	{
+		OutWarnings.Add(TEXT("places on Ability Target Tile, but this hook has no primary tile, primary unit, or triggering unit."));
+	}
+
+	if (PlacementProfile.RequiresSourceTile() && !HookContextProfile.bHasSourceTile)
+	{
+		OutWarnings.Add(TEXT("places from Source Tile, but this hook does not provide Source Tile."));
+	}
+
+	if (PlacementProfile.RequiresPrimaryTile() &&
+		PlacementProfile.Anchor != EJargonAbilityPlacementAnchor::AbilityTargetTile &&
+		!HookContextProfile.bHasPrimaryTile)
+	{
+		OutWarnings.Add(TEXT("places from Primary Tile, but this hook does not provide Primary Tile."));
+	}
+
+	if (PlacementProfile.RequiresTriggeringUnit() && !HookContextProfile.bHasTriggeringUnit)
+	{
+		OutWarnings.Add(TEXT("places from Triggering Unit, but this hook does not provide Triggering Unit."));
+	}
+
+	if (PlacementProfile.RequiresOwningTileEffect() && !HookContextProfile.bHasOwningTileEffect)
+	{
+		OutWarnings.Add(TEXT("places from Owning Tile Effect, but this hook does not provide Owning Tile Effect."));
+	}
+}
 }
 
 EJargonEffectDelivery FJargonAbilityTargetingProfile::GetDelivery() const
 {
+	if (bUseCustomResolverTargeting)
+	{
+		return CustomDelivery;
+	}
+
 	switch (Preset)
 	{
 	case EJargonAbilityTargetingPreset::Self:
@@ -212,6 +319,11 @@ EJargonEffectDelivery FJargonAbilityTargetingProfile::GetDelivery() const
 
 EJargonEffectTargetFilter FJargonAbilityTargetingProfile::GetTargetFilter() const
 {
+	if (bUseCustomResolverTargeting)
+	{
+		return CustomTargetFilter;
+	}
+
 	switch (Preset)
 	{
 	case EJargonAbilityTargetingPreset::Self:
@@ -237,6 +349,13 @@ EJargonEffectTargetFilter FJargonAbilityTargetingProfile::GetTargetFilter() cons
 
 bool FJargonAbilityTargetingProfile::UsesRadius() const
 {
+	if (bUseCustomResolverTargeting)
+	{
+		return CustomDelivery == EJargonEffectDelivery::UnitsInRadius
+			|| CustomDelivery == EJargonEffectDelivery::TilesInRadius
+			|| CustomDelivery == EJargonEffectDelivery::ChainUnits;
+	}
+
 	return Preset == EJargonAbilityTargetingPreset::EnemiesInRadius
 		|| Preset == EJargonAbilityTargetingPreset::AlliesInRadius
 		|| Preset == EJargonAbilityTargetingPreset::UnitsInRadius
@@ -246,13 +365,20 @@ bool FJargonAbilityTargetingProfile::UsesRadius() const
 
 bool FJargonAbilityTargetingProfile::UsesChain() const
 {
+	if (bUseCustomResolverTargeting)
+	{
+		return CustomDelivery == EJargonEffectDelivery::ChainUnits;
+	}
+
 	return Preset == EJargonAbilityTargetingPreset::ChainEnemies;
 }
 
 FString FJargonAbilityTargetingProfile::GetSummary() const
 {
 	TArray<FString> Parts;
-	Parts.Add(FString::Printf(TEXT("Preset=%s"), *TargetingPresetName(Preset)));
+	Parts.Add(bUseCustomResolverTargeting
+		? TEXT("Advanced Custom Resolver Targeting")
+		: TargetingPresetName(Preset));
 	Parts.Add(FString::Printf(TEXT("Delivery=%s"), *DeliveryName(GetDelivery())));
 	Parts.Add(FString::Printf(TEXT("Filter=%s"), *FilterName(GetTargetFilter())));
 	if (UsesRadius())
@@ -270,8 +396,78 @@ void FJargonAbilityTargetingProfile::ApplyToEffectSpec(FJargonEffectSpec& Effect
 {
 	Effect.Delivery = GetDelivery();
 	Effect.TargetFilter = GetTargetFilter();
-	Effect.Radius = UsesRadius() ? FMath::Max(0, Radius) : 0;
-	Effect.ChainCount = UsesChain() ? FMath::Max(1, ChainCount) : 3;
+	Effect.Radius = UsesRadius() ? FMath::Max(0, bUseCustomResolverTargeting ? CustomRadius : Radius) : 0;
+	Effect.ChainCount = UsesChain() ? FMath::Max(1, bUseCustomResolverTargeting ? CustomChainCount : ChainCount) : 3;
+}
+
+FString FJargonAbilityPlacementProfile::GetSummary() const
+{
+	return PlacementAnchorName(Anchor);
+}
+
+FString FJargonAbilityPlacementProfile::GetRulesTextFragment() const
+{
+	switch (Anchor)
+	{
+	case EJargonAbilityPlacementAnchor::AbilityTargetTile:
+		return TEXT("on the ability target tile");
+	case EJargonAbilityPlacementAnchor::SourceTile:
+		return TEXT("on the source tile");
+	case EJargonAbilityPlacementAnchor::PrimaryTile:
+		return TEXT("on the primary tile");
+	case EJargonAbilityPlacementAnchor::TriggeringUnitTile:
+		return TEXT("on the triggering unit's tile");
+	case EJargonAbilityPlacementAnchor::OwningTileEffectTile:
+		return TEXT("on the owning tile effect's tile");
+	case EJargonAbilityPlacementAnchor::NearestEmptyToSourceTile:
+		return TEXT("in the nearest empty tile to the source tile");
+	case EJargonAbilityPlacementAnchor::NearestEmptyToPrimaryTile:
+		return TEXT("in the nearest empty tile to the primary tile");
+	case EJargonAbilityPlacementAnchor::NearestEmptyToTriggeringUnit:
+		return TEXT("in the nearest empty tile to the triggering unit");
+	case EJargonAbilityPlacementAnchor::NearestEmptyToOwningTile:
+		return TEXT("in the nearest empty tile to the owning tile effect");
+	default:
+		return TEXT("at the resolved placement tile");
+	}
+}
+
+void FJargonAbilityPlacementProfile::ApplyToEffectSpec(FJargonEffectSpec& Effect) const
+{
+	Effect.PlacementAnchor = Anchor;
+}
+
+bool FJargonAbilityPlacementProfile::UsesNearestEmptyTile() const
+{
+	return Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToSourceTile
+		|| Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToPrimaryTile
+		|| Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToTriggeringUnit
+		|| Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToOwningTile;
+}
+
+bool FJargonAbilityPlacementProfile::RequiresSourceTile() const
+{
+	return Anchor == EJargonAbilityPlacementAnchor::SourceTile
+		|| Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToSourceTile;
+}
+
+bool FJargonAbilityPlacementProfile::RequiresPrimaryTile() const
+{
+	return Anchor == EJargonAbilityPlacementAnchor::PrimaryTile
+		|| Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToPrimaryTile
+		|| Anchor == EJargonAbilityPlacementAnchor::AbilityTargetTile;
+}
+
+bool FJargonAbilityPlacementProfile::RequiresTriggeringUnit() const
+{
+	return Anchor == EJargonAbilityPlacementAnchor::TriggeringUnitTile
+		|| Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToTriggeringUnit;
+}
+
+bool FJargonAbilityPlacementProfile::RequiresOwningTileEffect() const
+{
+	return Anchor == EJargonAbilityPlacementAnchor::OwningTileEffectTile
+		|| Anchor == EJargonAbilityPlacementAnchor::NearestEmptyToOwningTile;
 }
 
 FText FJargonAbilityCueDefinition::GetLabelOrFallback(const FText& Fallback) const
@@ -291,7 +487,7 @@ FString FJargonAbilityCueDefinition::GetAuditSummary() const
 
 UJargonAbilityAction::UJargonAbilityAction()
 {
-	EditorTitle = FText::FromString(TEXT("Ability Effect Line"));
+	EditorTitle = FText::FromString(TEXT("Effect Line"));
 }
 
 void UJargonAbilityAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
@@ -305,7 +501,7 @@ FString UJargonAbilityAction::GetOperationName() const
 
 FString UJargonAbilityAction::GetDeliverySummary() const
 {
-	return TEXT("Ability Targeting Profile");
+	return bOverrideTargetingProfile ? TargetingOverride.GetSummary() : TEXT("Ability Targeting Profile");
 }
 
 FString UJargonAbilityAction::GetPayloadSummary() const
@@ -325,7 +521,24 @@ FString UJargonAbilityAction::GetRulesText() const
 
 void UJargonAbilityAction::RefreshEditorTitle()
 {
-	EditorTitle = FText::FromString(MakeEditorTitle(GetActionSummary()));
+	FString Title = GetRulesText();
+	const FString DeliverySummary = GetDeliverySummary();
+	if (!DeliverySummary.IsEmpty() && DeliverySummary != TEXT("Self"))
+	{
+		Title = FString::Printf(TEXT("%s [%s]"), *MakeEditorTitle(Title), *DeliverySummary);
+	}
+	EditorTitle = FText::FromString(MakeEditorTitle(Title));
+}
+
+void UJargonAbilityAction::ApplyTargetingToEffectSpec(const UJargonAbilityDefinition* AbilityDefinition, FJargonEffectSpec& Effect) const
+{
+	if (bOverrideTargetingProfile)
+	{
+		TargetingOverride.ApplyToEffectSpec(Effect);
+		return;
+	}
+
+	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
 }
 
 void UJargonAbilityAction::PostLoad()
@@ -369,6 +582,39 @@ bool UJargonAbilityAction::ValidateAction(
 			Context);
 	}
 
+	if (AbilityDefinition)
+	{
+		const FJargonAbilityHookContextProfile HookContextProfile =
+			FJargonAbilityHookContextProfile::FromContextType(AbilityDefinition->ExpectedHookContext);
+		const FJargonAbilityTargetingProfile& EffectiveTargeting =
+			bOverrideTargetingProfile ? TargetingOverride : AbilityDefinition->TargetingProfile;
+
+		TArray<FString> ContextWarnings;
+		AppendTargetingContextWarnings(EffectiveTargeting, HookContextProfile, ContextWarnings);
+
+		if (const UJargonAbilitySummonAction* SummonAction = Cast<UJargonAbilitySummonAction>(this))
+		{
+			AppendPlacementContextWarnings(SummonAction->PlacementProfile, HookContextProfile, ContextWarnings);
+		}
+		else if (const UJargonAbilityPlaceTileEffectAction* PlaceTileEffectAction = Cast<UJargonAbilityPlaceTileEffectAction>(this))
+		{
+			AppendPlacementContextWarnings(PlaceTileEffectAction->PlacementProfile, HookContextProfile, ContextWarnings);
+		}
+
+		for (const FString& ContextWarning : ContextWarnings)
+		{
+			JargonDataAssetValidation::AddWarning(
+				Context,
+				AbilityDefinition,
+				FString::Printf(
+					TEXT("%s context warning for %s: %s Available roles: %s"),
+					*ActionLabel,
+					*FJargonAbilityHookContextProfile::GetContextName(AbilityDefinition->ExpectedHookContext),
+					*ContextWarning,
+					*HookContextProfile.GetAvailableRolesSummary()));
+		}
+	}
+
 	return bValid;
 }
 #endif
@@ -380,7 +626,11 @@ UJargonAbilityDamageAction::UJargonAbilityDamageAction()
 
 void UJargonAbilityDamageAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
 {
-	OutEffects.Add(MakeDefaultTargetedValueEffect(AbilityDefinition, EJargonEffectOperation::DealDamage, Damage));
+	FJargonEffectSpec Effect;
+	Effect.Operation = EJargonEffectOperation::DealDamage;
+	Effect.Value = FMath::Max(0, Damage);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
+	OutEffects.Add(Effect);
 }
 
 FString UJargonAbilityDamageAction::GetOperationName() const
@@ -405,8 +655,11 @@ UJargonAbilityLifestealDamageAction::UJargonAbilityLifestealDamageAction()
 
 void UJargonAbilityLifestealDamageAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
 {
-	FJargonEffectSpec Effect = MakeDefaultTargetedValueEffect(AbilityDefinition, EJargonEffectOperation::DealDamage, Damage);
+	FJargonEffectSpec Effect;
+	Effect.Operation = EJargonEffectOperation::DealDamage;
+	Effect.Value = FMath::Max(0, Damage);
 	Effect.bLifesteal = true;
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -432,7 +685,11 @@ UJargonAbilityHealAction::UJargonAbilityHealAction()
 
 void UJargonAbilityHealAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
 {
-	OutEffects.Add(MakeDefaultTargetedValueEffect(AbilityDefinition, EJargonEffectOperation::Heal, Healing));
+	FJargonEffectSpec Effect;
+	Effect.Operation = EJargonEffectOperation::Heal;
+	Effect.Value = FMath::Max(0, Healing);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
+	OutEffects.Add(Effect);
 }
 
 FString UJargonAbilityHealAction::GetOperationName() const
@@ -457,7 +714,11 @@ UJargonAbilityShieldAction::UJargonAbilityShieldAction()
 
 void UJargonAbilityShieldAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
 {
-	OutEffects.Add(MakeDefaultTargetedValueEffect(AbilityDefinition, EJargonEffectOperation::ApplyShield, Shield));
+	FJargonEffectSpec Effect;
+	Effect.Operation = EJargonEffectOperation::ApplyShield;
+	Effect.Value = FMath::Max(0, Shield);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
+	OutEffects.Add(Effect);
 }
 
 FString UJargonAbilityShieldAction::GetOperationName() const
@@ -482,8 +743,11 @@ UJargonAbilityStatusAction::UJargonAbilityStatusAction()
 
 void UJargonAbilityStatusAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
 {
-	FJargonEffectSpec Effect = MakeDefaultTargetedValueEffect(AbilityDefinition, EJargonEffectOperation::ApplyStatus, Amount);
+	FJargonEffectSpec Effect;
+	Effect.Operation = EJargonEffectOperation::ApplyStatus;
+	Effect.Value = FMath::Max(0, Amount);
 	Effect.StatusEffectDefinition = StatusEffectDefinition;
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -512,7 +776,7 @@ void UJargonAbilityCleanseStatusAction::BuildEffectSpecs(const UJargonAbilityDef
 	FJargonEffectSpec Effect;
 	Effect.Operation = EJargonEffectOperation::CleanseStatus;
 	Effect.StatusEffectDefinition = StatusEffectDefinition;
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -545,7 +809,7 @@ void UJargonAbilityMoveAction::BuildEffectSpecs(const UJargonAbilityDefinition* 
 	FJargonEffectSpec Effect;
 	Effect.Operation = EJargonEffectOperation::MoveSource;
 	Effect.MoveDistance = FMath::Max(0, Distance);
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -556,12 +820,12 @@ FString UJargonAbilityMoveAction::GetOperationName() const
 
 FString UJargonAbilityMoveAction::GetPayloadSummary() const
 {
-	return FString::Printf(TEXT("%d tile%s"), Distance, *PluralSuffix(Distance));
+	return FString::Printf(TEXT("%d tile%s"), Distance, *AbilityPluralSuffix(Distance));
 }
 
 FString UJargonAbilityMoveAction::GetRulesText() const
 {
-	return FString::Printf(TEXT("Move up to %d tile%s."), Distance, *PluralSuffix(Distance));
+	return FString::Printf(TEXT("Move up to %d tile%s."), Distance, *AbilityPluralSuffix(Distance));
 }
 
 UJargonAbilityPushAction::UJargonAbilityPushAction()
@@ -575,7 +839,7 @@ void UJargonAbilityPushAction::BuildEffectSpecs(const UJargonAbilityDefinition* 
 	Effect.Operation = EJargonEffectOperation::PushTarget;
 	Effect.PushDistance = FMath::Max(0, Distance);
 	Effect.CollisionDamage = FMath::Max(0, CollisionDamage);
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -587,15 +851,15 @@ FString UJargonAbilityPushAction::GetOperationName() const
 FString UJargonAbilityPushAction::GetPayloadSummary() const
 {
 	return CollisionDamage > 0
-		? FString::Printf(TEXT("%d tile%s Collision=%d damage"), Distance, *PluralSuffix(Distance), CollisionDamage)
-		: FString::Printf(TEXT("%d tile%s"), Distance, *PluralSuffix(Distance));
+		? FString::Printf(TEXT("%d tile%s Collision=%d damage"), Distance, *AbilityPluralSuffix(Distance), CollisionDamage)
+		: FString::Printf(TEXT("%d tile%s"), Distance, *AbilityPluralSuffix(Distance));
 }
 
 FString UJargonAbilityPushAction::GetRulesText() const
 {
 	return CollisionDamage > 0
-		? FString::Printf(TEXT("Push %d tile%s. Collision deals %d damage."), Distance, *PluralSuffix(Distance), CollisionDamage)
-		: FString::Printf(TEXT("Push %d tile%s."), Distance, *PluralSuffix(Distance));
+		? FString::Printf(TEXT("Push %d tile%s. Collision deals %d damage."), Distance, *AbilityPluralSuffix(Distance), CollisionDamage)
+		: FString::Printf(TEXT("Push %d tile%s."), Distance, *AbilityPluralSuffix(Distance));
 }
 
 UJargonAbilityPullAction::UJargonAbilityPullAction()
@@ -608,7 +872,7 @@ void UJargonAbilityPullAction::BuildEffectSpecs(const UJargonAbilityDefinition* 
 	FJargonEffectSpec Effect;
 	Effect.Operation = EJargonEffectOperation::PullTarget;
 	Effect.PullDistance = FMath::Max(0, Distance);
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -619,17 +883,18 @@ FString UJargonAbilityPullAction::GetOperationName() const
 
 FString UJargonAbilityPullAction::GetPayloadSummary() const
 {
-	return FString::Printf(TEXT("%d tile%s"), Distance, *PluralSuffix(Distance));
+	return FString::Printf(TEXT("%d tile%s"), Distance, *AbilityPluralSuffix(Distance));
 }
 
 FString UJargonAbilityPullAction::GetRulesText() const
 {
-	return FString::Printf(TEXT("Pull %d tile%s."), Distance, *PluralSuffix(Distance));
+	return FString::Printf(TEXT("Pull %d tile%s."), Distance, *AbilityPluralSuffix(Distance));
 }
 
 UJargonAbilitySummonAction::UJargonAbilitySummonAction()
 {
 	EditorTitle = FText::FromString(TEXT("Summon Unit"));
+	PlacementProfile.Anchor = EJargonAbilityPlacementAnchor::AbilityTargetTile;
 }
 
 void UJargonAbilitySummonAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
@@ -639,7 +904,8 @@ void UJargonAbilitySummonAction::BuildEffectSpecs(const UJargonAbilityDefinition
 	Effect.SummonedUnitDefinition = SummonedUnitDefinition;
 	Effect.RuntimeSummonedUnitClass = RuntimeSummonedUnitClass;
 	Effect.bSummonEntersWithAttackExhausted = bSummonEntersWithAttackExhausted;
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
+	PlacementProfile.ApplyToEffectSpec(Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -657,7 +923,16 @@ FString UJargonAbilitySummonAction::GetPayloadSummary() const
 		TEXT("%s Runtime=%s AttackExhausted=%s"),
 		SummonName.IsEmpty() ? TEXT("MissingDefinition") : *SummonName,
 		*GetNameSafe(RuntimeSummonedUnitClass.Get()),
-		*BoolText(bSummonEntersWithAttackExhausted));
+		*AbilityBoolText(bSummonEntersWithAttackExhausted));
+}
+
+FString UJargonAbilitySummonAction::GetActionSummary() const
+{
+	return FormatAbilitySpawnActionSummary(
+		GetOperationName(),
+		GetDeliverySummary(),
+		PlacementProfile.GetSummary(),
+		GetPayloadSummary());
 }
 
 FString UJargonAbilitySummonAction::GetRulesText() const
@@ -665,12 +940,13 @@ FString UJargonAbilitySummonAction::GetRulesText() const
 	const FString SummonName = SummonedUnitDefinition && !SummonedUnitDefinition->DisplayName.IsEmpty()
 		? SummonedUnitDefinition->DisplayName.ToString()
 		: TEXT("a unit");
-	return FString::Printf(TEXT("Summon %s."), *SummonName);
+	return FString::Printf(TEXT("Summon %s %s."), *SummonName, *PlacementProfile.GetRulesTextFragment());
 }
 
 UJargonAbilityPlaceTileEffectAction::UJargonAbilityPlaceTileEffectAction()
 {
 	EditorTitle = FText::FromString(TEXT("Place Tile Effect"));
+	PlacementProfile.Anchor = EJargonAbilityPlacementAnchor::AbilityTargetTile;
 }
 
 void UJargonAbilityPlaceTileEffectAction::BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const
@@ -681,7 +957,8 @@ void UJargonAbilityPlaceTileEffectAction::BuildEffectSpecs(const UJargonAbilityD
 	Effect.TileEffectDefinition = TileEffectDefinition;
 	Effect.RuntimeTileEffectClass = RuntimeTileEffectClass;
 	Effect.TileEffectCategory = TileEffectCategory;
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
+	PlacementProfile.ApplyToEffectSpec(Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -702,12 +979,21 @@ FString UJargonAbilityPlaceTileEffectAction::GetPayloadSummary() const
 		*StaticEnum<ECardCategory>()->GetNameStringByValue(static_cast<int64>(TileEffectCategory)));
 }
 
+FString UJargonAbilityPlaceTileEffectAction::GetActionSummary() const
+{
+	return FormatAbilitySpawnActionSummary(
+		GetOperationName(),
+		GetDeliverySummary(),
+		PlacementProfile.GetSummary(),
+		GetPayloadSummary());
+}
+
 FString UJargonAbilityPlaceTileEffectAction::GetRulesText() const
 {
 	const FString TileEffectName = TileEffectDefinition && !TileEffectDefinition->DisplayName.IsEmpty()
 		? TileEffectDefinition->DisplayName.ToString()
 		: TEXT("a tile effect");
-	return FString::Printf(TEXT("Place %s."), *TileEffectName);
+	return FString::Printf(TEXT("Place %s %s."), *TileEffectName, *PlacementProfile.GetRulesTextFragment());
 }
 
 UJargonAbilityDestroyTileEffectAction::UJargonAbilityDestroyTileEffectAction()
@@ -719,7 +1005,7 @@ void UJargonAbilityDestroyTileEffectAction::BuildEffectSpecs(const UJargonAbilit
 {
 	FJargonEffectSpec Effect;
 	Effect.Operation = EJargonEffectOperation::DestroyTileEffect;
-	ApplyAbilityDefaultTargeting(AbilityDefinition, Effect);
+	ApplyTargetingToEffectSpec(AbilityDefinition, Effect);
 	OutEffects.Add(Effect);
 }
 
@@ -764,12 +1050,12 @@ FString UJargonAbilityDrawCardsAction::GetDeliverySummary() const
 
 FString UJargonAbilityDrawCardsAction::GetPayloadSummary() const
 {
-	return FString::Printf(TEXT("%d card%s"), Count, *PluralSuffix(Count));
+	return FString::Printf(TEXT("%d card%s"), Count, *AbilityPluralSuffix(Count));
 }
 
 FString UJargonAbilityDrawCardsAction::GetRulesText() const
 {
-	return FString::Printf(TEXT("Draw %d card%s."), Count, *PluralSuffix(Count));
+	return FString::Printf(TEXT("Draw %d card%s."), Count, *AbilityPluralSuffix(Count));
 }
 
 UJargonAbilityGainEnergyAction::UJargonAbilityGainEnergyAction()
@@ -833,12 +1119,12 @@ FString UJargonAbilityGainElementChargeAction::GetDeliverySummary() const
 
 FString UJargonAbilityGainElementChargeAction::GetPayloadSummary() const
 {
-	return FString::Printf(TEXT("%d %s charge%s"), Amount, *ElementName(ElementType), *PluralSuffix(Amount));
+	return FString::Printf(TEXT("%d %s charge%s"), Amount, *AbilityElementName(ElementType), *AbilityPluralSuffix(Amount));
 }
 
 FString UJargonAbilityGainElementChargeAction::GetRulesText() const
 {
-	return FString::Printf(TEXT("Gain %d %s charge%s."), Amount, *ElementName(ElementType), *PluralSuffix(Amount));
+	return FString::Printf(TEXT("Gain %d %s charge%s."), Amount, *AbilityElementName(ElementType), *AbilityPluralSuffix(Amount));
 }
 
 void UJargonAbilityDefinition::BuildEffectSpecs(TArray<FJargonEffectSpec>& OutEffects) const
@@ -897,9 +1183,10 @@ FString UJargonAbilityDefinition::GetAuditSummary() const
 	BuildEffectSpecs(BuiltEffects);
 
 	return FString::Printf(
-		TEXT("DisplayName=%s Trigger=%s Targeting=[%s] Cue=[%s] Actions=%d Effects=%d IsValidDefinition=%s ActionSummaries=[%s]"),
+		TEXT("DisplayName=%s Trigger=%s HookContext=[%s] Targeting=[%s] Cue=[%s] Actions=%d Effects=%d IsValidDefinition=%s ActionSummaries=[%s]"),
 		*DisplayName.ToString(),
 		*JargonEffectContracts::GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(ExpectedTrigger)),
+		*FJargonAbilityHookContextProfile::FromContextType(ExpectedHookContext).GetSummary(),
 		*TargetingProfile.GetSummary(),
 		*CueDefinition.GetAuditSummary(),
 		Actions.Num(),
@@ -931,6 +1218,11 @@ EDataValidationResult UJargonAbilityDefinition::IsDataValid(FDataValidationConte
 		JargonDataAssetValidation::AddWarning(Context, this, TEXT("RulesText is recommended so reusable abilities are readable in editor and future UI."));
 	}
 
+	if (ExpectedHookContext == EJargonAbilityHookContextType::None)
+	{
+		JargonDataAssetValidation::AddWarning(Context, this, TEXT("ExpectedHookContext is None. Assign the hook context this ability is authored for so targeting and placement validation can explain available roles."));
+	}
+
 	if (Actions.Num() <= 0)
 	{
 		JargonDataAssetValidation::AddError(Context, this, TEXT("At least one ability effect line is required."));
@@ -946,6 +1238,24 @@ EDataValidationResult UJargonAbilityDefinition::IsDataValid(FDataValidationConte
 	if (TargetingProfile.UsesRadius() && TargetingProfile.Radius <= 0)
 	{
 		JargonDataAssetValidation::AddWarning(Context, this, TEXT("TargetingProfile uses radius targeting but Radius <= 0."));
+	}
+
+	{
+		const FJargonAbilityHookContextProfile HookContextProfile =
+			FJargonAbilityHookContextProfile::FromContextType(ExpectedHookContext);
+		TArray<FString> TargetingContextWarnings;
+		AppendTargetingContextWarnings(TargetingProfile, HookContextProfile, TargetingContextWarnings);
+		for (const FString& TargetingContextWarning : TargetingContextWarnings)
+		{
+			JargonDataAssetValidation::AddWarning(
+				Context,
+				this,
+				FString::Printf(
+					TEXT("Ability default targeting context warning for %s: %s Available roles: %s"),
+					*FJargonAbilityHookContextProfile::GetContextName(ExpectedHookContext),
+					*TargetingContextWarning,
+					*HookContextProfile.GetAvailableRolesSummary()));
+		}
 	}
 
 	for (int32 ActionIndex = 0; ActionIndex < Actions.Num(); ++ActionIndex)

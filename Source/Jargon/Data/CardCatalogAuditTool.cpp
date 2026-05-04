@@ -83,9 +83,9 @@ struct FSummonAuditRow
 	int32 AttackRange = 0;
 	int32 AttackDamage = 0;
 	FString Team;
-	int32 OnSummonedEffectsCount = 0;
-	int32 OnTurnStartEffectsCount = 0;
-	int32 OnDeathEffectsCount = 0;
+	int32 OnSummonedAbilityCount = 0;
+	int32 OnTurnStartAbilityCount = 0;
+	int32 OnDeathAbilityCount = 0;
 	bool bIsValidDefinition = false;
 	bool bScannedByPath = false;
 	bool bReferencedByScannedCards = false;
@@ -4077,9 +4077,9 @@ void AppendSummonCsvLine(const FSummonAuditRow& Row, FString& Csv)
 	Fields.Add(CsvEscapeInt(Row.AttackRange));
 	Fields.Add(CsvEscapeInt(Row.AttackDamage));
 	Fields.Add(CsvEscape(Row.Team));
-	Fields.Add(CsvEscapeInt(Row.OnSummonedEffectsCount));
-	Fields.Add(CsvEscapeInt(Row.OnTurnStartEffectsCount));
-	Fields.Add(CsvEscapeInt(Row.OnDeathEffectsCount));
+	Fields.Add(CsvEscapeInt(Row.OnSummonedAbilityCount));
+	Fields.Add(CsvEscapeInt(Row.OnTurnStartAbilityCount));
+	Fields.Add(CsvEscapeInt(Row.OnDeathAbilityCount));
 	Fields.Add(CsvEscapeBool(Row.bIsValidDefinition));
 	Fields.Add(CsvEscapeBool(Row.bScannedByPath));
 	Fields.Add(CsvEscapeBool(Row.bReferencedByScannedCards));
@@ -4561,9 +4561,9 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		Row.AttackRange = Definition->AttackRange;
 		Row.AttackDamage = Definition->AttackDamage;
 		Row.Team = GetTeamName(Definition->Team);
-		Row.OnSummonedEffectsCount = Definition->OnSummonedEffects.Num();
-		Row.OnTurnStartEffectsCount = Definition->OnTurnStartEffects.Num();
-		Row.OnDeathEffectsCount = Definition->OnDeathEffects.Num();
+		Row.OnSummonedAbilityCount = Definition->OnSummonedAbility ? 1 : 0;
+		Row.OnTurnStartAbilityCount = Definition->OnTurnStartAbility ? 1 : 0;
+		Row.OnDeathAbilityCount = Definition->OnDeathAbility ? 1 : 0;
 		Row.bIsValidDefinition = Definition->IsValidDefinition();
 		Row.bScannedByPath = ScannedSummonDefinitionPaths.Contains(Row.AssetPath);
 		Row.bReferencedByScannedCards = ReferencedSummonDefinitionPaths.Contains(Row.AssetPath);
@@ -4820,7 +4820,7 @@ void UCardCatalogAuditTool::RunCardCatalogAudit()
 		}
 
 		FString SummonCsv;
-		SummonCsv += TEXT("SummonAssetPath,SummonAssetName,DisplayName,MaxHP,MoveRange,AttackRange,AttackDamage,Team,OnSummonedEffectsCount,OnTurnStartEffectsCount,OnDeathEffectsCount,IsValidDefinition,ScannedByPath,ReferencedByScannedCards,Summary,Warnings") LINE_TERMINATOR;
+		SummonCsv += TEXT("SummonAssetPath,SummonAssetName,DisplayName,MaxHP,MoveRange,AttackRange,AttackDamage,Team,OnSummonedAbilityCount,OnTurnStartAbilityCount,OnDeathAbilityCount,IsValidDefinition,ScannedByPath,ReferencedByScannedCards,Summary,Warnings") LINE_TERMINATOR;
 		for (const FSummonAuditRow& Row : SummonRows)
 		{
 			AppendSummonCsvLine(Row, SummonCsv);

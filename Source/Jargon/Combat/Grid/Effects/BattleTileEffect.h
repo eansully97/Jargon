@@ -38,9 +38,9 @@ enum class EJargonTileEffectOperation : uint8
 /*
  * Legacy tile-effect operation/filter enums.
  *
- * New trap/aura authoring should prefer FJargonEffectSpec arrays on TrapTileEffect
- * and AuraTileEffect. These enums remain for existing fallback behavior and older
- * Blueprint children while content migrates naturally.
+ * New trap/aura gameplay authoring lives in UJargonTileEffectDefinition.TriggerAbility.
+ * These enums remain only for older Blueprint helper nodes until those visual
+ * children are cleaned up.
  */
 UCLASS(Blueprintable)
 class JARGON_API ABattleTileEffect : public AActor

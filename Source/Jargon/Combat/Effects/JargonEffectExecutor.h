@@ -15,6 +15,7 @@ struct JARGON_API FJargonEffectExecutionRequest
 {
 	const TArray<FJargonEffectSpec>* Effects = nullptr;
 	FJargonEffectContext Context;
+	EJargonAbilityHookContextType HookContextType = EJargonAbilityHookContextType::None;
 	FString SourceLabel;
 	FString HookName;
 	FJargonEffectTrace* OutTrace = nullptr;
@@ -48,5 +49,6 @@ public:
 		const UJargonAbilityDefinition* AbilityDefinition,
 		const FJargonEffectContext& Context,
 		const FString& SourceLabel = FString(),
-		FJargonEffectTrace* OutTrace = nullptr);
+		FJargonEffectTrace* OutTrace = nullptr,
+		EJargonAbilityHookContextType HookContextType = EJargonAbilityHookContextType::None);
 };

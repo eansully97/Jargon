@@ -24,14 +24,14 @@ UENUM(BlueprintType)
 enum class EJargonAbilityTargetingPreset : uint8
 {
 	Self UMETA(DisplayName = "Self"),
-	SelectedEnemy UMETA(DisplayName = "Selected Enemy"),
-	SelectedAlly UMETA(DisplayName = "Selected Ally"),
-	SelectedUnit UMETA(DisplayName = "Selected Unit"),
-	TargetTile UMETA(DisplayName = "Target Tile"),
-	EnemiesInRadius UMETA(DisplayName = "Enemies In Radius"),
-	AlliesInRadius UMETA(DisplayName = "Allies In Radius"),
-	UnitsInRadius UMETA(DisplayName = "Units In Radius"),
-	TilesInRadius UMETA(DisplayName = "Tiles In Radius"),
+	SelectedEnemy UMETA(DisplayName = "Primary Enemy"),
+	SelectedAlly UMETA(DisplayName = "Primary Ally"),
+	SelectedUnit UMETA(DisplayName = "Primary Unit"),
+	TargetTile UMETA(DisplayName = "Primary Tile"),
+	EnemiesInRadius UMETA(DisplayName = "Enemies In Radius Around Anchor"),
+	AlliesInRadius UMETA(DisplayName = "Allies In Radius Around Anchor"),
+	UnitsInRadius UMETA(DisplayName = "Units In Radius Around Anchor"),
+	TilesInRadius UMETA(DisplayName = "Tiles In Radius Around Anchor"),
 	ChainEnemies UMETA(DisplayName = "Chain Enemies")
 };
 
@@ -49,6 +49,21 @@ struct JARGON_API FJargonAbilityTargetingProfile
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting", meta = (ClampMin = "1", ToolTip = "Maximum unit count for chain presets.", EditCondition = "Preset == EJargonAbilityTargetingPreset::ChainEnemies", EditConditionHides))
 	int32 ChainCount = 3;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting|Advanced", meta = (AdvancedDisplay, ToolTip = "Advanced migration escape hatch: use exact resolver delivery/filter values instead of the readable preset. Prefer presets for normal authoring."))
+	bool bUseCustomResolverTargeting = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting|Advanced", meta = (AdvancedDisplay, ToolTip = "Exact backend delivery used only when custom resolver targeting is enabled.", EditCondition = "bUseCustomResolverTargeting", EditConditionHides))
+	EJargonEffectDelivery CustomDelivery = EJargonEffectDelivery::ExplicitUnit;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting|Advanced", meta = (AdvancedDisplay, ToolTip = "Exact backend target filter used only when custom resolver targeting is enabled.", EditCondition = "bUseCustomResolverTargeting", EditConditionHides))
+	EJargonEffectTargetFilter CustomTargetFilter = EJargonEffectTargetFilter::Any;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting|Advanced", meta = (AdvancedDisplay, ClampMin = "0", ToolTip = "Exact backend radius used only when custom resolver targeting is enabled and the delivery supports radius.", EditCondition = "bUseCustomResolverTargeting", EditConditionHides))
+	int32 CustomRadius = 0;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting|Advanced", meta = (AdvancedDisplay, ClampMin = "1", ToolTip = "Exact backend chain count used only when custom resolver targeting is enabled with ChainUnits delivery.", EditCondition = "bUseCustomResolverTargeting", EditConditionHides))
+	int32 CustomChainCount = 3;
+
 	EJargonEffectDelivery GetDelivery() const;
 	EJargonEffectTargetFilter GetTargetFilter() const;
 	FString GetSummary() const;
@@ -58,30 +73,48 @@ struct JARGON_API FJargonAbilityTargetingProfile
 };
 
 USTRUCT(BlueprintType)
+struct JARGON_API FJargonAbilityPlacementProfile
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Placement", meta = (ToolTip = "Where a spawn-style effect should place its runtime actor. Placement is separate from targeting/delivery."))
+	EJargonAbilityPlacementAnchor Anchor = EJargonAbilityPlacementAnchor::AbilityTargetTile;
+
+	FString GetSummary() const;
+	FString GetRulesTextFragment() const;
+	void ApplyToEffectSpec(FJargonEffectSpec& Effect) const;
+	bool UsesNearestEmptyTile() const;
+	bool RequiresSourceTile() const;
+	bool RequiresPrimaryTile() const;
+	bool RequiresTriggeringUnit() const;
+	bool RequiresOwningTileEffect() const;
+};
+
+USTRUCT(BlueprintType)
 struct JARGON_API FJargonAbilityCueDefinition
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Presentation", meta = (ToolTip = "Optional short label for future cue presentation. Empty labels fall back to DisplayName."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Optional Presentation", meta = (AdvancedDisplay, ToolTip = "Optional short label for future cue presentation. Empty labels fall back to DisplayName."))
 	FText CueLabel;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Presentation", meta = (ToolTip = "Optional icon for future presentation. Gameplay never depends on this."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Optional Presentation", meta = (AdvancedDisplay, ToolTip = "Optional icon for future presentation. Gameplay never depends on this."))
 	TObjectPtr<UTexture2D> Icon = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Presentation", meta = (ToolTip = "Optional style/type hint for Blueprint presentation. Gameplay ignores this value."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Optional Presentation", meta = (AdvancedDisplay, ToolTip = "Optional style/type hint for Blueprint presentation. Gameplay ignores this value."))
 	FName CueTypeHint;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Presentation", meta = (ToolTip = "Optional color hint for Blueprint presentation. Gameplay ignores this value."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Optional Presentation", meta = (AdvancedDisplay, ToolTip = "Optional color hint for Blueprint presentation. Gameplay ignores this value."))
 	FLinearColor CueColor = FLinearColor::White;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Presentation", meta = (MultiLine = "true", ToolTip = "Optional floating text override for future presentation. Empty text lets the cue presenter derive text from effect results."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Optional Presentation", meta = (AdvancedDisplay, MultiLine = "true", ToolTip = "Optional floating text override for future presentation. Empty text lets the cue presenter derive text from effect results."))
 	FText FloatingTextOverride;
 
 	FText GetLabelOrFallback(const FText& Fallback) const;
 	FString GetAuditSummary() const;
 };
 
-UCLASS(Abstract, BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line")
+UCLASS(Abstract, BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line")
 class JARGON_API UJargonAbilityAction : public UObject
 {
 	GENERATED_BODY()
@@ -89,8 +122,14 @@ class JARGON_API UJargonAbilityAction : public UObject
 public:
 	UJargonAbilityAction();
 
-	UPROPERTY(VisibleAnywhere, Transient, BlueprintReadOnly, Category = "Ability Effect Line", meta = (ToolTip = "Readable collapsed editor label generated from this ability effect line."))
+	UPROPERTY(VisibleAnywhere, Transient, BlueprintReadOnly, Category = "Effect Line", meta = (ToolTip = "Readable collapsed editor label generated from this Effect Line."))
 	FText EditorTitle;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Advanced Targeting", meta = (AdvancedDisplay, ToolTip = "Use an effect-line targeting profile instead of the ability default. Prefer the ability default unless this line genuinely needs different delivery."))
+	bool bOverrideTargetingProfile = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Advanced Targeting", meta = (AdvancedDisplay, ToolTip = "Optional targeting override for this effect line.", EditCondition = "bOverrideTargetingProfile", EditConditionHides))
+	FJargonAbilityTargetingProfile TargetingOverride;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const;
 	virtual FString GetOperationName() const;
@@ -99,6 +138,7 @@ public:
 	virtual FString GetActionSummary() const;
 	virtual FString GetRulesText() const;
 	virtual void RefreshEditorTitle();
+	void ApplyTargetingToEffectSpec(const UJargonAbilityDefinition* AbilityDefinition, FJargonEffectSpec& Effect) const;
 
 	virtual void PostLoad() override;
 
@@ -108,7 +148,7 @@ public:
 #endif
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Damage")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Damage")
 class JARGON_API UJargonAbilityDamageAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -116,7 +156,7 @@ class JARGON_API UJargonAbilityDamageAction : public UJargonAbilityAction
 public:
 	UJargonAbilityDamageAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: damage dealt to delivered targets."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: damage dealt to delivered targets."))
 	int32 Damage = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -125,7 +165,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Lifesteal Damage")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Lifesteal Damage")
 class JARGON_API UJargonAbilityLifestealDamageAction : public UJargonAbilityDamageAction
 {
 	GENERATED_BODY()
@@ -139,7 +179,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Heal")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Heal")
 class JARGON_API UJargonAbilityHealAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -147,7 +187,7 @@ class JARGON_API UJargonAbilityHealAction : public UJargonAbilityAction
 public:
 	UJargonAbilityHealAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: healing applied to delivered targets."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: healing applied to delivered targets."))
 	int32 Healing = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -156,7 +196,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Shield")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Shield")
 class JARGON_API UJargonAbilityShieldAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -164,7 +204,7 @@ class JARGON_API UJargonAbilityShieldAction : public UJargonAbilityAction
 public:
 	UJargonAbilityShieldAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: Shield applied to delivered targets."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: Shield applied to delivered targets."))
 	int32 Shield = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -173,7 +213,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Apply Status")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Apply Status")
 class JARGON_API UJargonAbilityStatusAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -181,10 +221,10 @@ class JARGON_API UJargonAbilityStatusAction : public UJargonAbilityAction
 public:
 	UJargonAbilityStatusAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: required data-driven status keyword definition applied by this effect line."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: required data-driven status keyword definition applied by this effect line."))
 	TObjectPtr<UJargonStatusEffectDefinition> StatusEffectDefinition = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload amount. Meaning depends on the status definition."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload amount. Meaning depends on the status definition."))
 	int32 Amount = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -193,7 +233,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Cleanse Status")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Cleanse Status")
 class JARGON_API UJargonAbilityCleanseStatusAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -201,7 +241,7 @@ class JARGON_API UJargonAbilityCleanseStatusAction : public UJargonAbilityAction
 public:
 	UJargonAbilityCleanseStatusAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: optional status keyword definition to cleanse. Leave empty to cleanse all negative statuses."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: optional status keyword definition to cleanse. Leave empty to cleanse all negative statuses."))
 	TObjectPtr<UJargonStatusEffectDefinition> StatusEffectDefinition = nullptr;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -210,7 +250,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Move")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Move")
 class JARGON_API UJargonAbilityMoveAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -218,7 +258,7 @@ class JARGON_API UJargonAbilityMoveAction : public UJargonAbilityAction
 public:
 	UJargonAbilityMoveAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: maximum tiles the source can move."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: maximum tiles the source can move."))
 	int32 Distance = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -227,7 +267,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Push")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Push")
 class JARGON_API UJargonAbilityPushAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -235,10 +275,10 @@ class JARGON_API UJargonAbilityPushAction : public UJargonAbilityAction
 public:
 	UJargonAbilityPushAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: tiles to push delivered targets."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: tiles to push delivered targets."))
 	int32 Distance = 1;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "0", ToolTip = "Payload: damage dealt if the push collides with blocked movement."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "0", ToolTip = "Payload: damage dealt if the push collides with blocked movement."))
 	int32 CollisionDamage = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -247,7 +287,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Pull")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Pull")
 class JARGON_API UJargonAbilityPullAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -255,7 +295,7 @@ class JARGON_API UJargonAbilityPullAction : public UJargonAbilityAction
 public:
 	UJargonAbilityPullAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: tiles to pull delivered targets."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: tiles to pull delivered targets."))
 	int32 Distance = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -264,7 +304,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Summon")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Summon")
 class JARGON_API UJargonAbilitySummonAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -272,22 +312,26 @@ class JARGON_API UJargonAbilitySummonAction : public UJargonAbilityAction
 public:
 	UJargonAbilitySummonAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: required data-driven summon definition."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Placement", meta = (ToolTip = "Placement: where the summoned unit should appear. Use nearest-empty anchors for passive summons that do not have a selected tile."))
+	FJargonAbilityPlacementProfile PlacementProfile;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: required data-driven summon definition."))
 	TObjectPtr<UJargonSummonedUnitDefinition> SummonedUnitDefinition = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: required runtime Blueprint child used by SummonUnit."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: required runtime Blueprint child used by SummonUnit."))
 	TSubclassOf<ABattleUnit> RuntimeSummonedUnitClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: whether the summoned unit enters with its attack already spent."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: whether the summoned unit enters with its attack already spent."))
 	bool bSummonEntersWithAttackExhausted = true;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
 	virtual FString GetOperationName() const override;
 	virtual FString GetPayloadSummary() const override;
+	virtual FString GetActionSummary() const override;
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Place Tile Effect")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Place Tile Effect")
 class JARGON_API UJargonAbilityPlaceTileEffectAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -295,22 +339,26 @@ class JARGON_API UJargonAbilityPlaceTileEffectAction : public UJargonAbilityActi
 public:
 	UJargonAbilityPlaceTileEffectAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: required data-driven trap/aura definition."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Placement", meta = (ToolTip = "Placement: where the trap/aura runtime shell should be placed. Use Source Tile or Owning Tile Effect Tile for passive hooks."))
+	FJargonAbilityPlacementProfile PlacementProfile;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: required data-driven trap/aura definition."))
 	TObjectPtr<UJargonTileEffectDefinition> TileEffectDefinition = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: required runtime Blueprint child used by PlaceTileEffect."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: required runtime Blueprint child used by PlaceTileEffect."))
 	TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: card category represented by this tile effect when the ability is not sourced by a card."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: card category represented by this tile effect when the ability is not sourced by a card."))
 	ECardCategory TileEffectCategory = ECardCategory::Trap;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
 	virtual FString GetOperationName() const override;
 	virtual FString GetPayloadSummary() const override;
+	virtual FString GetActionSummary() const override;
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Destroy Tile Effect")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Destroy Tile Effect")
 class JARGON_API UJargonAbilityDestroyTileEffectAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -324,7 +372,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Draw")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Draw")
 class JARGON_API UJargonAbilityDrawCardsAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -332,7 +380,7 @@ class JARGON_API UJargonAbilityDrawCardsAction : public UJargonAbilityAction
 public:
 	UJargonAbilityDrawCardsAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: number of cards to draw."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: number of cards to draw."))
 	int32 Count = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -342,7 +390,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Gain Energy")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Gain Energy")
 class JARGON_API UJargonAbilityGainEnergyAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -350,7 +398,7 @@ class JARGON_API UJargonAbilityGainEnergyAction : public UJargonAbilityAction
 public:
 	UJargonAbilityGainEnergyAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: Energy gained."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: Energy gained."))
 	int32 Amount = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -360,7 +408,7 @@ public:
 	virtual FString GetRulesText() const override;
 };
 
-UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Ability Effect Line - Gain Element Charge")
+UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, DisplayName = "Effect Line - Gain Element Charge")
 class JARGON_API UJargonAbilityGainElementChargeAction : public UJargonAbilityAction
 {
 	GENERATED_BODY()
@@ -368,10 +416,10 @@ class JARGON_API UJargonAbilityGainElementChargeAction : public UJargonAbilityAc
 public:
 	UJargonAbilityGainElementChargeAction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ToolTip = "Payload: element charge type to gain."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ToolTip = "Payload: element charge type to gain."))
 	EJargonElementType ElementType = EJargonElementType::Fire;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: number of charges gained."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Payload", meta = (ClampMin = "1", ToolTip = "Payload: number of charges gained."))
 	int32 Amount = 1;
 
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const override;
@@ -387,7 +435,7 @@ class JARGON_API UJargonAbilityDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability", meta = (DisplayPriority = "1", ToolTip = "Player-facing ability name used by future hooks, logs, cues, and audit output."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability", meta = (DisplayPriority = "1", ToolTip = "Player-facing ability name used by hooks, logs, cues, and audit output."))
 	FText DisplayName;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability", meta = (DisplayPriority = "2", MultiLine = "true", ToolTip = "Authoring description for this reusable non-card ability."))
@@ -396,16 +444,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability", meta = (DisplayPriority = "3", MultiLine = "true", ToolTip = "Player-facing rules text. Leave empty only for internal/debug abilities."))
 	FText RulesText;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Trigger", meta = (ToolTip = "Expected trigger context for validation and future hook wiring. This does not auto-register the ability yet."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Hook", meta = (ToolTip = "Expected trigger context for validation and hook wiring. This does not auto-register the ability by itself."))
 	EJargonEffectTrigger ExpectedTrigger = EJargonEffectTrigger::Activated;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting", meta = (ToolTip = "Readable targeting profile. Ability effect lines use this profile unless they are explicitly self-only operations such as draw, energy, or element charge gain."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Hook", meta = (ToolTip = "Explicit runtime hook context this ability is authored for. Context tells validation which roles exist, such as Source Unit, Primary Tile, Triggering Unit, or Owning Tile Effect."))
+	EJargonAbilityHookContextType ExpectedHookContext = EJargonAbilityHookContextType::None;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Targeting", meta = (ToolTip = "Readable targeting profile. Effect Lines use this profile unless they are explicitly self-only operations such as draw, energy, or element charge gain."))
 	FJargonAbilityTargetingProfile TargetingProfile;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Presentation", meta = (ToolTip = "Optional presentation metadata for future cue widgets and floating text. It never changes gameplay resolution."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Optional Presentation", meta = (AdvancedDisplay, ToolTip = "Optional presentation metadata for cue widgets and floating text. It never changes gameplay resolution."))
 	FJargonAbilityCueDefinition CueDefinition;
 
-	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Ability|Effects", meta = (TitleProperty = "EditorTitle", ToolTip = "Readable ability effect lines. Each line builds one or more FJargonEffectSpec entries for the shared executor/resolver pipeline."))
+	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Ability|Effect Lines", meta = (TitleProperty = "EditorTitle", ToolTip = "Readable Effect Lines. Each line builds one or more FJargonEffectSpec entries for the shared executor/resolver pipeline."))
 	TArray<TObjectPtr<UJargonAbilityAction>> Actions;
 
 	void BuildEffectSpecs(TArray<FJargonEffectSpec>& OutEffects) const;

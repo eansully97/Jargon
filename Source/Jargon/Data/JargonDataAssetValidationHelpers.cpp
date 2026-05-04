@@ -71,7 +71,6 @@ namespace
 		case EJargonEffectOperation::MoveSource:
 		case EJargonEffectOperation::PushTarget:
 		case EJargonEffectOperation::PullTarget:
-		case EJargonEffectOperation::SummonUnit:
 			return true;
 		default:
 			return false;

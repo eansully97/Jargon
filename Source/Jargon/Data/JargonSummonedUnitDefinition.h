@@ -64,23 +64,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Combat", meta = (ToolTip = "Whether this summon should enter with its attack already spent. Card effects can still override this timing value explicitly."))
 	bool bSummonEntersWithAttackExhausted = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Abilities", meta = (ToolTip = "Preferred reusable ability definition resolved when this summon enters combat. When assigned at runtime, it replaces OnSummonedEffects for this hook."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Abilities", meta = (ToolTip = "Reusable ability definition resolved when this summon enters combat. Leave empty for no enter-combat hook."))
 	TObjectPtr<UJargonAbilityDefinition> OnSummonedAbility = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Temporary raw shared effects appended to the spawned unit before OnSummonedEffects execute. Prefer OnSummonedAbility for new authoring."))
-	TArray<FJargonEffectSpec> OnSummonedEffects;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Abilities", meta = (ToolTip = "Preferred reusable ability definition resolved at the start of this summon side's turn. When assigned at runtime, it replaces OnTurnStartEffects for this hook."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Abilities", meta = (ToolTip = "Reusable ability definition resolved at the start of this summon side's turn. Leave empty for no turn-start hook."))
 	TObjectPtr<UJargonAbilityDefinition> OnTurnStartAbility = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Temporary raw shared effects appended to the spawned unit and resolved at the start of this summon side's turn. Prefer OnTurnStartAbility for new authoring."))
-	TArray<FJargonEffectSpec> OnTurnStartEffects;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Abilities", meta = (ToolTip = "Preferred reusable ability definition resolved once when this summon dies. When assigned at runtime, it replaces OnDeathEffects for this hook."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Abilities", meta = (ToolTip = "Reusable ability definition resolved once when this summon dies. Leave empty for no death hook."))
 	TObjectPtr<UJargonAbilityDefinition> OnDeathAbility = nullptr;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Effects", meta = (TitleProperty = "Operation", ToolTip = "Temporary raw shared effects appended to the spawned unit and resolved once when this summon dies. Prefer OnDeathAbility for new authoring."))
-	TArray<FJargonEffectSpec> OnDeathEffects;
 
 	UFUNCTION(BlueprintPure, Category = "Summon|Validation")
 	bool IsValidDefinition() const;

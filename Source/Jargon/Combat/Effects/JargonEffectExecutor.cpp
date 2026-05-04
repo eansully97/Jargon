@@ -71,9 +71,10 @@ FJargonEffectExecutionReport FJargonEffectExecutor::Execute(const FJargonEffectE
 	if (!Report.bResolverSucceeded)
 	{
 		Report.Reason = TEXT("Resolver returned false.");
-		UE_LOG(LogTemp, Warning, TEXT("Effect execution failed for '%s'. Trigger=%s Source=%s Effects=%d Reason=%s"),
+		UE_LOG(LogTemp, Warning, TEXT("Effect execution failed for '%s'. Trigger=%s HookContext=%s Source=%s Effects=%d Reason=%s"),
 			*LogLabel,
 			*GetTriggerLogName(Request.Context.Trigger),
+			*JargonEffectContracts::GetHookContextName(Request.HookContextType),
 			*GetNameSafe(Request.Context.SourceObject.Get()),
 			Request.Effects->Num(),
 			*Report.Reason);
@@ -85,9 +86,10 @@ FJargonEffectExecutionReport FJargonEffectExecutor::Execute(const FJargonEffectE
 		Report.Reason = TEXT("No effects resolved.");
 		if (Request.bLogNoResolvedEffects)
 		{
-			UE_LOG(LogTemp, Verbose, TEXT("Effect execution completed for '%s' with no resolved effects. Trigger=%s Source=%s Effects=%d"),
+			UE_LOG(LogTemp, Verbose, TEXT("Effect execution completed for '%s' with no resolved effects. Trigger=%s HookContext=%s Source=%s Effects=%d"),
 				*LogLabel,
 				*GetTriggerLogName(Request.Context.Trigger),
+				*JargonEffectContracts::GetHookContextName(Request.HookContextType),
 				*GetNameSafe(Request.Context.SourceObject.Get()),
 				Request.Effects->Num());
 		}
@@ -110,7 +112,8 @@ FJargonEffectExecutionReport FJargonEffectExecutor::ExecuteAbility(
 	const UJargonAbilityDefinition* AbilityDefinition,
 	const FJargonEffectContext& Context,
 	const FString& SourceLabel,
-	FJargonEffectTrace* OutTrace)
+	FJargonEffectTrace* OutTrace,
+	EJargonAbilityHookContextType HookContextType)
 {
 	FJargonEffectExecutionReport Report;
 	if (!AbilityDefinition)
@@ -126,6 +129,7 @@ FJargonEffectExecutionReport FJargonEffectExecutor::ExecuteAbility(
 	FJargonEffectExecutionRequest Request;
 	Request.Effects = &BuiltEffects;
 	Request.Context = Context;
+	Request.HookContextType = HookContextType;
 	Request.SourceLabel = SourceLabel.IsEmpty() ? GetNameSafe(AbilityDefinition) : SourceLabel;
 	Request.HookName = AbilityDefinition->GetExecutionLabel().ToString();
 	Request.OutTrace = OutTrace;

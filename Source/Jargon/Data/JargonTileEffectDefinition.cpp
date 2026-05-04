@@ -7,11 +7,64 @@
 #include "Misc/DataValidation.h"
 #endif
 
+#if WITH_EDITOR
+namespace
+{
+void ValidateTileEffectTriggerAbility(
+	const UJargonTileEffectDefinition* Owner,
+	FDataValidationContext& Context)
+{
+	if (!Owner || !Owner->TriggerAbility)
+	{
+		return;
+	}
+
+	if (!Owner->TriggerAbility->IsValidDefinition())
+	{
+		JargonDataAssetValidation::AddError(Context, Owner, TEXT("TriggerAbility is assigned but is not a valid ability definition."));
+	}
+
+	const EJargonEffectTrigger ExpectedTrigger = Owner->Trigger == EJargonTileEffectTrigger::OnPlayerTurnStart
+		? EJargonEffectTrigger::OnTurnStart
+		: EJargonEffectTrigger::OnEnterTile;
+	const EJargonAbilityHookContextType ExpectedHookContext = Owner->Trigger == EJargonTileEffectTrigger::OnPlayerTurnStart
+		? EJargonAbilityHookContextType::AuraPlayerTurnStart
+		: EJargonAbilityHookContextType::TrapUnitEnter;
+
+	if (Owner->TriggerAbility->ExpectedTrigger != ExpectedTrigger)
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Owner,
+			FString::Printf(
+				TEXT("TriggerAbility expects trigger %s but this tile-effect hook requires %s."),
+				*JargonEffectContracts::GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(Owner->TriggerAbility->ExpectedTrigger)),
+				*JargonEffectContracts::GetEnumTokenName(StaticEnum<EJargonEffectTrigger>(), static_cast<int64>(ExpectedTrigger))));
+	}
+
+	if (Owner->TriggerAbility->ExpectedHookContext == EJargonAbilityHookContextType::None)
+	{
+		JargonDataAssetValidation::AddWarning(Context, Owner, FString::Printf(TEXT("TriggerAbility has ExpectedHookContext=None; set it to %s."), *JargonEffectContracts::GetHookContextName(ExpectedHookContext)));
+	}
+	else if (Owner->TriggerAbility->ExpectedHookContext != ExpectedHookContext)
+	{
+		JargonDataAssetValidation::AddError(
+			Context,
+			Owner,
+			FString::Printf(
+				TEXT("TriggerAbility expects hook context %s but this tile-effect hook requires %s."),
+				*JargonEffectContracts::GetHookContextName(Owner->TriggerAbility->ExpectedHookContext),
+				*JargonEffectContracts::GetHookContextName(ExpectedHookContext)));
+	}
+}
+}
+#endif
+
 bool UJargonTileEffectDefinition::IsValidDefinition() const
 {
 	return !DisplayName.IsEmpty()
-		&& (TriggerAbility != nullptr || Effects.Num() > 0)
-		&& (!TriggerAbility || TriggerAbility->IsValidDefinition())
+		&& TriggerAbility != nullptr
+		&& TriggerAbility->IsValidDefinition()
 		&& Duration >= 0
 		&& EffectRadius >= 0
 		&& (TileEffectCategory == ECardCategory::Trap || TileEffectCategory == ECardCategory::Aura);
@@ -42,57 +95,14 @@ EDataValidationResult UJargonTileEffectDefinition::IsDataValid(FDataValidationCo
 		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("EffectRadius must be >= 0. Current value: %d."), EffectRadius));
 	}
 
-	if (!TriggerAbility && Effects.Num() <= 0)
+	if (!TriggerAbility)
 	{
-		JargonDataAssetValidation::AddError(Context, this, TEXT("TriggerAbility or raw Effects is required."));
+		JargonDataAssetValidation::AddError(Context, this, TEXT("TriggerAbility is required."));
 	}
 
 	if (TriggerAbility)
 	{
-		if (!TriggerAbility->IsValidDefinition())
-		{
-			JargonDataAssetValidation::AddError(Context, this, TEXT("TriggerAbility is assigned but is not a valid ability definition."));
-		}
-
-		if (Effects.Num() > 0)
-		{
-			JargonDataAssetValidation::AddWarning(Context, this, TEXT("TriggerAbility and raw Effects are both authored. Runtime will prefer TriggerAbility; clear raw Effects after migration verification."));
-		}
-	}
-
-	if (EffectRadius > 0 && Effects.Num() > 0)
-	{
-		bool bAnySharedEffectUsesRadius = false;
-		for (const FJargonEffectSpec& Effect : Effects)
-		{
-			if (Effect.Radius > 0)
-			{
-				bAnySharedEffectUsesRadius = true;
-				break;
-			}
-		}
-
-		if (!bAnySharedEffectUsesRadius)
-		{
-			JargonDataAssetValidation::AddWarning(
-				Context,
-				this,
-				TEXT("EffectRadius is set, but no shared Effects entry has Radius > 0. Runtime shared effect resolution uses each effect's own Radius value."));
-		}
-	}
-
-	const EJargonEffectTrigger EffectTrigger = Trigger == EJargonTileEffectTrigger::OnPlayerTurnStart
-		? EJargonEffectTrigger::OnTurnStart
-		: EJargonEffectTrigger::OnEnterTile;
-
-	for (int32 EffectIndex = 0; EffectIndex < Effects.Num(); ++EffectIndex)
-	{
-		JargonDataAssetValidation::ValidateJargonEffectSpecForTrigger(
-			this,
-			Effects[EffectIndex],
-			FString::Printf(TEXT("Effects effect %d"), EffectIndex),
-			EffectTrigger,
-			Context);
+		ValidateTileEffectTriggerAbility(this, Context);
 	}
 
 	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;

@@ -17,7 +17,9 @@ Jargon is a single-player Unreal Engine tactical card / board game.
 - Energy remains the normal card play resource. Element charges are combat-local optional combo resources.
 - `UCardDefinition` owns manual card art prompt generation. Do not recreate `CardCreationTemplateTool`, image generation, PNG import, or placeholder art assignment unless explicitly requested.
 - Cards author gameplay through inline `CardScript` actions that build `FJargonEffectSpec` arrays. Do not reintroduce raw card effect structs or compatibility authoring arrays.
-- New non-card abilities should prefer `UJargonAbilityDefinition` with a targeting profile, presentation-only cue metadata, and instanced ability effect lines; raw non-card `FJargonEffectSpec` arrays are temporary migration surfaces, not the long-term authoring target.
+- Non-card ability hooks should use `UJargonAbilityDefinition` with an explicit hook context, targeting profile, placement profile for spawn-style actions, presentation-only cue metadata, and instanced ability effect lines. Do not reintroduce raw non-card `FJargonEffectSpec` authoring arrays for heroes, summons, tile effects, or hero boons.
+- New non-card hooks must define which context roles they provide, such as source unit, source tile, primary unit, primary tile, triggering unit, owning tile effect, and source team.
+- Spawn-style ability actions must use placement profiles. Do not encode placement behavior into delivery names.
 - Card authoring should distinguish `Operation` from `Keyword`: operations are backend primitives such as damage/heal/draw/summon, while keywords are reusable rules terms such as status definitions, traits, and future modifiers.
 - Card effect lines should be described as `Operation + Delivery + Filter + Payload`, with lightweight conditions only where already supported, such as elemental bonuses.
 - Elemental bonuses are manually chosen at card play time through an assigned elemental bonus choice widget class. Do not restore automatic elemental bonus resolution or boolean-gated prompt flow.
