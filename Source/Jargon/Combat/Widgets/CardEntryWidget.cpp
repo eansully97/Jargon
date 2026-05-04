@@ -24,6 +24,22 @@ void UCardEntryWidget::NativePreConstruct()
 	}
 }
 
+void UCardEntryWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+
+	OnCardEntryHovered.Broadcast(this);
+	BP_OnCardHovered();
+}
+
+void UCardEntryWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseLeave(InMouseEvent);
+
+	OnCardEntryUnhovered.Broadcast(this);
+	BP_OnCardUnhovered();
+}
+
 void UCardEntryWidget::InitializeFromCard(UCardDefinition* InCard)
 {
 	CardDefinition = InCard;
@@ -44,5 +60,5 @@ void UCardEntryWidget::HandleCardButtonClicked()
 	}
 
 	OnCardEntryClicked.Broadcast(CardDefinition);
-	BP_OnCardClicked();
+	BP_OnCardClickFeedback();
 }

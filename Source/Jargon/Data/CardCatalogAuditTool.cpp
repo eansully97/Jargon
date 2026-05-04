@@ -1430,7 +1430,7 @@ FString BuildRulesTextForBonusGroup(const FCardAuditElementalBonusGroup& BonusGr
 {
 	const FString BonusPrefix = FString::Printf(
 		TEXT("%s %d %s charge%s:"),
-		BonusGroup.bSpendCharges ? TEXT("Spend") : TEXT("If you have"),
+		BonusGroup.bSpendCharges ? TEXT("Optional: Spend") : TEXT("Optional, if you have"),
 		FMath::Max(0, BonusGroup.RequiredCharges),
 		*GetElementTypeName(BonusGroup.ElementType),
 		*GetPluralSuffix(BonusGroup.RequiredCharges));
@@ -3052,8 +3052,8 @@ void BuildRecommendationDetails(
 		OutDelivery = ElementName == TEXT("Radiance") ? TEXT("Source or ExplicitFriendly") : TEXT("ExplicitUnit");
 		OutPayload = FString::Printf(TEXT("Elemental bonus requires %s charges; payload follows %s lane"), *ElementName, *GetElementLaneDirection(ElementName));
 		OutRulesText = ElementName == TEXT("Radiance")
-			? FString::Printf(TEXT("Gain 1 %s charge. Spend 2 %s: Apply 3 Shield."), *ElementName, *ElementName)
-			: FString::Printf(TEXT("Gain 1 %s charge. Spend 2 %s: Apply 2 %s."), *ElementName, *ElementName, *StatusKeyword);
+			? FString::Printf(TEXT("Gain 1 %s charge. Optional: Spend 2 %s: Apply 3 Shield."), *ElementName, *ElementName)
+			: FString::Printf(TEXT("Gain 1 %s charge. Optional: Spend 2 %s: Apply 2 %s."), *ElementName, *ElementName, *StatusKeyword);
 		return;
 	}
 

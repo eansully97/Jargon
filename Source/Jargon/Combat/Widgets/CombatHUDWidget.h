@@ -28,6 +28,12 @@ public:
 	
 	void RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& HandCards);
 	void SetSelectedCard(UCardDefinition* SelectedCard);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat HUD|Hand Layout")
+	void RaiseHandCardToFront(UCardEntryWidget* CardWidget);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat HUD|Hand Layout")
+	void RestoreHandCardZOrders();
 	
 	UFUNCTION(BlueprintCallable)
 	void SetPhaseText(ECombatPhase NewPhase);
@@ -39,6 +45,9 @@ public:
 	void SetEnergyValues(int32 NewEnergy, int32 NewMaxEnergy);
 
 	void SetElementChargeValues(const TMap<EJargonElementType, int32>& NewElementCharges);
+
+	UFUNCTION(BlueprintPure, Category = "Combat HUD|Elements")
+	int32 GetDisplayedElementCharge(EJargonElementType ElementType) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Combat HUD|Hero")
 	void RefreshHeroIdentity(const FJargonHeroClassInfo& HeroClassInfo, const FJargonHeroAspectInfo& HeroAspectInfo);
@@ -60,11 +69,22 @@ protected:
 	
 	void RefreshSelectedCardText(UCardDefinition* SelectedCard);
 	void RefreshHandLayout();
+	UCardEntryWidget* CreateHandCardWidget(UCardDefinition* Card);
+	void ApplyCardHandLayout(
+		UCardEntryWidget* CardWidget,
+		int32 HandIndex,
+		int32 CardCount,
+		float CenterIndex,
+		float RotationStep,
+		bool bUseExplicitCardSize);
 	
 	FText GetElementDisplayText(EJargonElementType ElementType) const;
 
 	UFUNCTION()
 	void HandleCardEntryClicked(UCardDefinition* ClickedCard);
+
+	void HandleCardEntryHovered(UCardEntryWidget* HoveredCardWidget);
+	void HandleCardEntryUnhovered(UCardEntryWidget* UnhoveredCardWidget);
 
 	UFUNCTION()
 	void HandleEndTurnButtonClicked();
@@ -76,6 +96,15 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat HUD|Hero")
 	void BP_OnHeroIdentityRefreshed(const FJargonHeroClassInfo& HeroClassInfo, const FJargonHeroAspectInfo& HeroAspectInfo);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat HUD|Elements")
+	void BP_OnElementChargeValuesRefreshed(
+		int32 Fire,
+		int32 Frost,
+		int32 Storm,
+		int32 Nature,
+		int32 Radiance,
+		int32 Quietus);
 
 protected:
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
@@ -179,6 +208,9 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat HUD")
 	TObjectPtr<UCardDefinition> SelectedCardDefinition = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat HUD|Elements")
+	TMap<EJargonElementType, int32> DisplayedElementCharges;
 
 	FOnHandCardClicked HandCardClickedDelegate;
 	FOnEndTurnClicked EndTurnClickedDelegate;

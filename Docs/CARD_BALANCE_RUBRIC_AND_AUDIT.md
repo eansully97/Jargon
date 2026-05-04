@@ -35,7 +35,7 @@ Descriptions should be concise, rules-first text. Examples:
 - `Apply 2 Shield.`
 - `Move up to 3 tiles.`
 - `Summon Fire Imp.`
-- `Spend 2 Fire: Deal 2 damage.`
+- `Optional: Spend 2 Fire: Deal 2 damage.`
 
 The audit generates suggested rules text from `Effects` and `ElementalBonusGroups`, then flags authored descriptions that are empty, stale, missing numeric values, missing element names, or using legacy terminology such as Light, Shadow, Mana, or Armor.
 

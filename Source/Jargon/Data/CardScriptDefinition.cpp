@@ -1426,7 +1426,7 @@ FString FJargonCardElementalBonusScript::GetRulesText() const
 
 	return FString::Printf(
 		TEXT("%s %d %s charge%s: %s"),
-		bSpendCharges ? TEXT("Spend") : TEXT("If you have"),
+		bSpendCharges ? TEXT("Optional: Spend") : TEXT("Optional, if you have"),
 		RequiredCharges,
 		*ElementName(ElementType),
 		*PluralSuffix(RequiredCharges),

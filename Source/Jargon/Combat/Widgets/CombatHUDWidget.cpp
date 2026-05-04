@@ -48,8 +48,6 @@ void UCombatHUDWidget::RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& Ha
 		return;
 	}
 
-	APlayerController* OwningPlayerController = GetOwningPlayer();
-
 	for (UCardDefinition* Card : HandCards)
 	{
 		if (!Card)
@@ -57,29 +55,40 @@ void UCombatHUDWidget::RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& Ha
 			continue;
 		}
 
-		UCardEntryWidget* CardWidget = nullptr;
-
-		if (OwningPlayerController)
-		{
-			CardWidget = CreateWidget<UCardEntryWidget>(OwningPlayerController, CardEntryWidgetClass);
-		}
-		else
-		{
-			CardWidget = CreateWidget<UCardEntryWidget>(this, CardEntryWidgetClass);
-		}
-
+		UCardEntryWidget* CardWidget = CreateHandCardWidget(Card);
 		if (!CardWidget)
 		{
 			continue;
 		}
 
 		CardWidget->InitializeFromCard(Card);
+		CardWidget->OnCardEntryClicked.RemoveAll(this);
+		CardWidget->OnCardEntryClicked.AddUObject(this, &UCombatHUDWidget::HandleCardEntryClicked);
+		CardWidget->OnCardEntryHovered.RemoveAll(this);
+		CardWidget->OnCardEntryHovered.AddUObject(this, &UCombatHUDWidget::HandleCardEntryHovered);
+		CardWidget->OnCardEntryUnhovered.RemoveAll(this);
+		CardWidget->OnCardEntryUnhovered.AddUObject(this, &UCombatHUDWidget::HandleCardEntryUnhovered);
 
 		SpawnedCardWidgets.Add(CardWidget);
 		HandCanvasPanel->AddChild(CardWidget);
 	}
 
 	RefreshHandLayout();
+}
+
+UCardEntryWidget* UCombatHUDWidget::CreateHandCardWidget(UCardDefinition* Card)
+{
+	if (!Card || !CardEntryWidgetClass)
+	{
+		return nullptr;
+	}
+
+	if (APlayerController* OwningPlayerController = GetOwningPlayer())
+	{
+		return CreateWidget<UCardEntryWidget>(OwningPlayerController, CardEntryWidgetClass);
+	}
+
+	return CreateWidget<UCardEntryWidget>(this, CardEntryWidgetClass);
 }
 
 void UCombatHUDWidget::HandleEndTurnButtonClicked()
@@ -136,6 +145,44 @@ void UCombatHUDWidget::SetSelectedCard(UCardDefinition* SelectedCard)
 	RefreshHandLayout();
 }
 
+void UCombatHUDWidget::RaiseHandCardToFront(UCardEntryWidget* CardWidget)
+{
+	if (!CardWidget)
+	{
+		return;
+	}
+
+	RestoreHandCardZOrders();
+
+	UCanvasPanelSlot* CardHandSlot = Cast<UCanvasPanelSlot>(CardWidget->Slot);
+	if (!CardHandSlot)
+	{
+		return;
+	}
+
+	CardHandSlot->SetZOrder(SpawnedCardWidgets.Num());
+}
+
+void UCombatHUDWidget::RestoreHandCardZOrders()
+{
+	for (int32 HandIndex = 0; HandIndex < SpawnedCardWidgets.Num(); ++HandIndex)
+	{
+		UCardEntryWidget* CardWidget = SpawnedCardWidgets[HandIndex];
+		if (!CardWidget)
+		{
+			continue;
+		}
+
+		UCanvasPanelSlot* CardHandSlot = Cast<UCanvasPanelSlot>(CardWidget->Slot);
+		if (!CardHandSlot)
+		{
+			continue;
+		}
+
+		CardHandSlot->SetZOrder(HandIndex);
+	}
+}
+
 void UCombatHUDWidget::SetPhaseText(ECombatPhase NewPhase)
 {
 	RefreshPhaseText(NewPhase);
@@ -153,19 +200,29 @@ void UCombatHUDWidget::SetEnergyValues(int32 NewEnergy, int32 NewMaxEnergy)
 
 void UCombatHUDWidget::SetElementChargeValues(const TMap<EJargonElementType, int32>& NewElementCharges)
 {
+	DisplayedElementCharges = NewElementCharges;
+
 	const auto GetChargeAmount = [&NewElementCharges](EJargonElementType ElementType)
 	{
 		const int32* FoundAmount = NewElementCharges.Find(ElementType);
 		return FoundAmount ? FMath::Max(0, *FoundAmount) : 0;
 	};
 
-	RefreshElementCharges(
-		GetChargeAmount(EJargonElementType::Fire),
-		GetChargeAmount(EJargonElementType::Frost),
-		GetChargeAmount(EJargonElementType::Storm),
-		GetChargeAmount(EJargonElementType::Nature),
-		GetChargeAmount(EJargonElementType::Radiance),
-		GetChargeAmount(EJargonElementType::Quietus));
+	const int32 Fire = GetChargeAmount(EJargonElementType::Fire);
+	const int32 Frost = GetChargeAmount(EJargonElementType::Frost);
+	const int32 Storm = GetChargeAmount(EJargonElementType::Storm);
+	const int32 Nature = GetChargeAmount(EJargonElementType::Nature);
+	const int32 Radiance = GetChargeAmount(EJargonElementType::Radiance);
+	const int32 Quietus = GetChargeAmount(EJargonElementType::Quietus);
+
+	RefreshElementCharges(Fire, Frost, Storm, Nature, Radiance, Quietus);
+	BP_OnElementChargeValuesRefreshed(Fire, Frost, Storm, Nature, Radiance, Quietus);
+}
+
+int32 UCombatHUDWidget::GetDisplayedElementCharge(EJargonElementType ElementType) const
+{
+	const int32* FoundCharge = DisplayedElementCharges.Find(ElementType);
+	return FoundCharge ? FMath::Max(0, *FoundCharge) : 0;
 }
 
 void UCombatHUDWidget::RefreshHeroIdentity(
@@ -432,46 +489,71 @@ void UCombatHUDWidget::RefreshHandLayout()
 
 	for (int32 Index = 0; Index < CardCount; ++Index)
 	{
-		UCardEntryWidget* CardWidget = SpawnedCardWidgets[Index];
-		if (!CardWidget)
-		{
-			continue;
-		}
-
-		UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(CardWidget->Slot);
-		if (!CanvasSlot)
-		{
-			continue;
-		}
-
-		const float OffsetFromCenter = static_cast<float>(Index) - CenterIndex;
-		const float AbsOffsetFromCenter = FMath::Abs(OffsetFromCenter);
-		float Y = AbsOffsetFromCenter * CurveAmount;
-		int32 ZOrder = Index;
-
-
-		const float Rotation = FMath::Clamp(
-			OffsetFromCenter * RotationStep,
-			-MaxCardRotation,
-			MaxCardRotation);
-
-		CanvasSlot->SetAnchors(FAnchors(0.5f, 0.5f));
-		CanvasSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-		CanvasSlot->SetPosition(HandCenterPosition + FVector2D(OffsetFromCenter * CardSpacing, Y));
-		CanvasSlot->SetZOrder(ZOrder);
-		CanvasSlot->SetAutoSize(!bUseExplicitCardSize);
-
-		if (bUseExplicitCardSize)
-		{
-			CanvasSlot->SetSize(CardSize);
-		}
-
-		CardWidget->SetRenderTransformPivot(FVector2D(0.5f, 1.0f));
-		CardWidget->SetRenderTransformAngle(Rotation);
+		ApplyCardHandLayout(
+			SpawnedCardWidgets[Index],
+			Index,
+			CardCount,
+			CenterIndex,
+			RotationStep,
+			bUseExplicitCardSize);
 	}
+}
+
+void UCombatHUDWidget::ApplyCardHandLayout(
+	UCardEntryWidget* CardWidget,
+	int32 HandIndex,
+	int32 CardCount,
+	float CenterIndex,
+	float RotationStep,
+	bool bUseExplicitCardSize)
+{
+	if (!CardWidget || HandIndex < 0 || HandIndex >= CardCount)
+	{
+		return;
+	}
+
+	UCanvasPanelSlot* CardHandSlot = Cast<UCanvasPanelSlot>(CardWidget->Slot);
+	if (!CardHandSlot)
+	{
+		return;
+	}
+
+	const float OffsetFromCenter = static_cast<float>(HandIndex) - CenterIndex;
+	const float AbsOffsetFromCenter = FMath::Abs(OffsetFromCenter);
+	const float HandY = AbsOffsetFromCenter * CurveAmount;
+	const int32 HandZOrder = HandIndex;
+
+	const float Rotation = FMath::Clamp(
+		OffsetFromCenter * RotationStep,
+		-MaxCardRotation,
+		MaxCardRotation);
+
+	CardHandSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+	CardHandSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+	CardHandSlot->SetPosition(HandCenterPosition + FVector2D(OffsetFromCenter * CardSpacing, HandY));
+	CardHandSlot->SetZOrder(HandZOrder);
+	CardHandSlot->SetAutoSize(!bUseExplicitCardSize);
+
+	if (bUseExplicitCardSize)
+	{
+		CardHandSlot->SetSize(CardSize);
+	}
+
+	CardWidget->SetRenderTransformPivot(FVector2D(0.5f, 1.0f));
+	CardWidget->SetRenderTransformAngle(Rotation);
 }
 
 void UCombatHUDWidget::HandleCardEntryClicked(UCardDefinition* ClickedCard)
 {
 	HandCardClickedDelegate.Broadcast(ClickedCard);
+}
+
+void UCombatHUDWidget::HandleCardEntryHovered(UCardEntryWidget* HoveredCardWidget)
+{
+	RaiseHandCardToFront(HoveredCardWidget);
+}
+
+void UCombatHUDWidget::HandleCardEntryUnhovered(UCardEntryWidget* /*UnhoveredCardWidget*/)
+{
+	RestoreHandCardZOrders();
 }

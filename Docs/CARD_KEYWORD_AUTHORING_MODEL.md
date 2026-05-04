@@ -41,7 +41,7 @@ CardScript builds `FJargonEffectSpec` arrays directly. The old raw card effect s
 3. For each effect line, set Delivery fields before Payload fields. Delivery answers "who or where receives this?" Payload answers "what amount or definition is applied?"
 4. Use Data Asset payloads for content-specific gameplay: status definitions, summon definitions, and tile-effect definitions.
 5. For runtime actor operations, author both halves explicitly on the effect line: summon lines need `SummonedUnitDefinition` plus `RuntimeSummonedUnitClass`, while trap/aura lines need `TileEffectDefinition` plus `RuntimeTileEffectClass`.
-6. Add elemental bonuses only when the card has a clear optional payoff. The bonus group owns the required element, charge count, spend/check behavior, and its own effect-line list.
+6. Add elemental bonuses only when the card has a clear optional payoff. Elemental bonuses are player-chosen at card play time; the bonus group owns the required element, charge count, spend/check behavior, and its own effect-line list.
 7. Run Data Validation and the card catalog audit. Compare the authored description against `CardDescriptionSuggestions.csv` and keep descriptions rules-first.
 
 ## Examples
@@ -99,9 +99,17 @@ Element bonus card:
 
 ```text
 Base: Operation=Gain Element Delivery=Self Payload=1 Fire charge
-Bonus: Spend 2 Fire charges: Operation=Damage Delivery=Single Enemy Payload=2 damage
-Rules text: Gain 1 Fire charge. Spend 2 Fire charges: Deal 2 damage.
+Bonus: Optional: Spend 2 Fire charges: Operation=Damage Delivery=Single Enemy Payload=2 damage
+Rules text: Gain 1 Fire charge. Optional: Spend 2 Fire charges: Deal 2 damage.
 ```
+
+## Elemental Bonus Choice
+
+Elemental bonuses are optional player-chosen payoffs, not automatic follow-up effects. A card resolves its base effect lines first. If the player selected one or more eligible bonus groups, those selected groups resolve afterward in authored order.
+
+If no elemental bonus choice widget class is assigned on the combat controller, cards still play normally and resolve base effects only. This keeps unhooked UI from blocking card play while making automatic bonus spending impossible.
+
+Blueprint prompt setup should use a Blueprint child of `UElementalBonusChoiceWidget`. Present the eligible bonus groups from `FJargonElementalBonusChoiceRequest.Options`, then call the widget helpers to confirm selected `BonusIndex` values, skip bonuses, or cancel/back.
 
 ## Audit Expectations
 

@@ -27,6 +27,9 @@ struct JARGON_API FCardResolveContext
 
 	UPROPERTY()
 	TObjectPtr<AGridTile> TileTarget = nullptr;
+
+	UPROPERTY()
+	TArray<int32> SelectedElementalBonusIndices;
 };
 
 USTRUCT(BlueprintType)

@@ -15,6 +15,16 @@
 
 namespace
 {
+	TSet<int32> BuildSelectedElementalBonusIndexSet(const FCardResolveContext& Context)
+	{
+		TSet<int32> SelectedIndices;
+		for (const int32 BonusIndex : Context.SelectedElementalBonusIndices)
+		{
+			SelectedIndices.Add(BonusIndex);
+		}
+		return SelectedIndices;
+	}
+
 	void AppendValidUnitsFromArray(
 		const TArray<TObjectPtr<ABattleUnit>>& SourceArray,
 		TArray<ABattleUnit*>& OutUnits)
@@ -188,7 +198,7 @@ bool FCardResolver::ResolveEffectSpecCard(
 
 	if (JargonResult.bContinuesAsynchronously)
 	{
-		if (Card->GetElementalBonusScriptCount() > 0)
+		if (Context.SelectedElementalBonusIndices.Num() > 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Card '%s' started an async base effect. Elemental bonus groups are skipped for this resolve pass."),
 				*Card->DisplayName.ToString());
@@ -201,12 +211,33 @@ bool FCardResolver::ResolveEffectSpecCard(
 		return true;
 	}
 
+	const TSet<int32> SelectedBonusIndices = BuildSelectedElementalBonusIndexSet(Context);
+	if (SelectedBonusIndices.Num() <= 0)
+	{
+		return true;
+	}
+
+	for (const int32 SelectedBonusIndex : SelectedBonusIndices)
+	{
+		if (!Card->CardScript->ElementalBonuses.IsValidIndex(SelectedBonusIndex))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Card '%s' selected invalid elemental bonus group index %d. The index is ignored."),
+				*Card->DisplayName.ToString(),
+				SelectedBonusIndex);
+		}
+	}
+
 	for (int32 BonusIndex = 0; BonusIndex < Card->CardScript->ElementalBonuses.Num(); ++BonusIndex)
 	{
+		if (!SelectedBonusIndices.Contains(BonusIndex))
+		{
+			continue;
+		}
+
 		const FJargonCardElementalBonusScript& BonusGroup = Card->CardScript->ElementalBonuses[BonusIndex];
 		if (BonusGroup.ElementType == EJargonElementType::None)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Card '%s' elemental bonus group %d skipped because ElementType is None."),
+			UE_LOG(LogTemp, Warning, TEXT("Card '%s' selected elemental bonus group %d skipped because ElementType is None."),
 				*Card->DisplayName.ToString(),
 				BonusIndex);
 			continue;
@@ -215,7 +246,7 @@ bool FCardResolver::ResolveEffectSpecCard(
 		const int32 RequiredCharges = FMath::Max(0, BonusGroup.RequiredCharges);
 		if (RequiredCharges <= 0)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Card '%s' elemental bonus group %d skipped because RequiredCharges is not positive."),
+			UE_LOG(LogTemp, Warning, TEXT("Card '%s' selected elemental bonus group %d skipped because RequiredCharges is not positive."),
 				*Card->DisplayName.ToString(),
 				BonusIndex);
 			continue;
@@ -223,7 +254,7 @@ bool FCardResolver::ResolveEffectSpecCard(
 
 		if (!BonusGroup.HasAnyActions())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Card '%s' elemental bonus group %d skipped because it has no actions."),
+			UE_LOG(LogTemp, Warning, TEXT("Card '%s' selected elemental bonus group %d skipped because it has no actions."),
 				*Card->DisplayName.ToString(),
 				BonusIndex);
 			continue;
@@ -231,6 +262,11 @@ bool FCardResolver::ResolveEffectSpecCard(
 
 		if (!Context.GameMode->HasElementCharges(BonusGroup.ElementType, RequiredCharges))
 		{
+			UE_LOG(LogTemp, Log, TEXT("Card '%s' selected elemental bonus group %d skipped because %d %s charges are no longer available."),
+				*Card->DisplayName.ToString(),
+				BonusIndex,
+				RequiredCharges,
+				*GetElementDisplayText(BonusGroup.ElementType).ToString());
 			continue;
 		}
 
@@ -245,6 +281,12 @@ bool FCardResolver::ResolveEffectSpecCard(
 					BonusIndex);
 				continue;
 			}
+
+			UE_LOG(LogTemp, Log, TEXT("Card '%s' spent %d %s charges for elemental bonus group %d."),
+				*Card->DisplayName.ToString(),
+				RequiredCharges,
+				*GetElementDisplayText(BonusGroup.ElementType).ToString(),
+				BonusIndex);
 		}
 
 		TArray<FJargonEffectSpec> BonusJargonEffects;

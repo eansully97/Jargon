@@ -679,9 +679,14 @@ bool AJargonCombatGameMode::TrySpendElementCharges(EJargonElementType Element, i
 {
 	if (!HasElementCharges(Element, Amount))
 	{
+		UE_LOG(LogTemp, Log, TEXT("TrySpendElementCharges failed for %s. Requested=%d Current=%d."),
+			*GetCombatGameModeElementDisplayText(Element).ToString(),
+			Amount,
+			GetElementCharges(Element));
 		return false;
 	}
 
+	const int32 OldAmount = GetElementCharges(Element);
 	const int32 NewAmount = GetElementCharges(Element) - Amount;
 	if (NewAmount > 0)
 	{
@@ -692,6 +697,11 @@ bool AJargonCombatGameMode::TrySpendElementCharges(EJargonElementType Element, i
 		ElementCharges.Remove(Element);
 	}
 
+	UE_LOG(LogTemp, Log, TEXT("Spent %d %s charges. %d -> %d."),
+		Amount,
+		*GetCombatGameModeElementDisplayText(Element).ToString(),
+		OldAmount,
+		FMath::Max(0, NewAmount));
 	OnElementChargesChanged.Broadcast();
 	RefreshHeroRuntimeStateFromElements();
 	return true;
@@ -3316,7 +3326,8 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 	UCardDefinition* Card,
 	AGridTile* TileTarget,
 	ABattleUnit* ExplicitUnitTarget,
-	bool bSkipRangeValidation)
+	bool bSkipRangeValidation,
+	const TArray<int32>& SelectedElementalBonusIndices)
 {
 	if (CombatPhase != ECombatPhase::PlayerTurn)
 	{
@@ -3384,6 +3395,7 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 	ResolveContext.SourceUnit = PlayerUnit;
 	ResolveContext.UnitTarget = ResolvedUnitTarget;
 	ResolveContext.TileTarget = TileTarget;
+	ResolveContext.SelectedElementalBonusIndices = SelectedElementalBonusIndices;
 
 	FCardResolveResult ResolveResult;
 
@@ -3417,7 +3429,7 @@ bool AJargonCombatGameMode::TryPlayCardWithResolvedTile(
 			UE_LOG(LogTemp, Display, TEXT("Jargon next card effect trace: no FJargonEffectResolver trace was produced. The card likely failed before base effects reached the shared resolver."));
 		}
 
-		if (CardEffectTrace.bContinuedAsynchronously && Card->GetElementalBonusScriptCount() > 0)
+		if (CardEffectTrace.bContinuedAsynchronously && SelectedElementalBonusIndices.Num() > 0)
 		{
 			UE_LOG(LogTemp, Display, TEXT("Card trace note: base effects continued asynchronously. Elemental bonus groups are skipped by CardResolver for this resolve pass."));
 		}
@@ -3736,16 +3748,34 @@ bool AJargonCombatGameMode::TryBasicAttackWithPlayerUnit(ABattleUnit* Target)
 
 bool AJargonCombatGameMode::TryPlayCardOnTarget(UCardDefinition* Card, ABattleUnit* Target)
 {
+	const TArray<int32> EmptySelectedElementalBonusIndices;
+	return TryPlayCardOnTarget(Card, Target, EmptySelectedElementalBonusIndices);
+}
+
+bool AJargonCombatGameMode::TryPlayCardOnTarget(
+	UCardDefinition* Card,
+	ABattleUnit* Target,
+	const TArray<int32>& SelectedElementalBonusIndices)
+{
 	if (!Card || !Target)
 	{
 		return false;
 	}
 
 	AGridTile* TargetTile = Target->GetCurrentTile();
-	return TryPlayCardWithResolvedTile(Card, TargetTile, Target, false);
+	return TryPlayCardWithResolvedTile(Card, TargetTile, Target, false, SelectedElementalBonusIndices);
 }
 
 bool AJargonCombatGameMode::TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget)
+{
+	const TArray<int32> EmptySelectedElementalBonusIndices;
+	return TryPlayCardOnTile(Card, TileTarget, EmptySelectedElementalBonusIndices);
+}
+
+bool AJargonCombatGameMode::TryPlayCardOnTile(
+	UCardDefinition* Card,
+	AGridTile* TileTarget,
+	const TArray<int32>& SelectedElementalBonusIndices)
 {
 	if (!Card || !TileTarget)
 	{
@@ -3758,10 +3788,18 @@ bool AJargonCombatGameMode::TryPlayCardOnTile(UCardDefinition* Card, AGridTile* 
 		return false;
 	}
 
-	return TryPlayCardWithResolvedTile(Card, TileTarget, TileTarget->GetOccupyingUnit(), false);
+	return TryPlayCardWithResolvedTile(Card, TileTarget, TileTarget->GetOccupyingUnit(), false, SelectedElementalBonusIndices);
 }
 
 bool AJargonCombatGameMode::TryPlayCardOnSelf(UCardDefinition* Card)
+{
+	const TArray<int32> EmptySelectedElementalBonusIndices;
+	return TryPlayCardOnSelf(Card, EmptySelectedElementalBonusIndices);
+}
+
+bool AJargonCombatGameMode::TryPlayCardOnSelf(
+	UCardDefinition* Card,
+	const TArray<int32>& SelectedElementalBonusIndices)
 {
 	if (!Card || !PlayerUnit)
 	{
@@ -3781,7 +3819,7 @@ bool AJargonCombatGameMode::TryPlayCardOnSelf(UCardDefinition* Card)
 		return false;
 	}
 
-	return TryPlayCardWithResolvedTile(Card, PlayerUnit->GetCurrentTile(), PlayerUnit, true);
+	return TryPlayCardWithResolvedTile(Card, PlayerUnit->GetCurrentTile(), PlayerUnit, true, SelectedElementalBonusIndices);
 }
 
 void AJargonCombatGameMode::HandleUnitDied(ABattleUnit* DeadUnit, AGridTile* DeathTile)

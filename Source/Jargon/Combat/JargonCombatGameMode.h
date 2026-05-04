@@ -120,8 +120,11 @@ public:
 	bool TryMovePlayerUnitToTile(AGridTile* DestinationTile);
 	bool TryBasicAttackWithPlayerUnit(ABattleUnit* Target);
 	bool TryPlayCardOnTarget(UCardDefinition* Card, ABattleUnit* Target);
+	bool TryPlayCardOnTarget(UCardDefinition* Card, ABattleUnit* Target, const TArray<int32>& SelectedElementalBonusIndices);
 	bool TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget);
+	bool TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget, const TArray<int32>& SelectedElementalBonusIndices);
 	bool TryPlayCardOnSelf(UCardDefinition* Card);
+	bool TryPlayCardOnSelf(UCardDefinition* Card, const TArray<int32>& SelectedElementalBonusIndices);
 	bool StartPlayerControlledMoveSequence(ABattleUnit* MovingUnit, const TArray<AGridTile*>& Path, bool bConsumeMoveAction);
 	void ExecuteOnDeathEffects(ABattleUnit* DeadUnit, AGridTile* DeathTile);
 	ABattleTileEffect* SpawnPersistentTileEffectFromDefinition(
@@ -431,7 +434,12 @@ protected:
 		AGridTile* TargetTile,
 		bool bAttackExhaustedOnSpawn,
 		bool bRegisterEnemyTeam);
-	bool TryPlayCardWithResolvedTile(UCardDefinition* Card, AGridTile* TileTarget, ABattleUnit* ExplicitUnitTarget, bool bSkipRangeValidation);
+	bool TryPlayCardWithResolvedTile(
+		UCardDefinition* Card,
+		AGridTile* TileTarget,
+		ABattleUnit* ExplicitUnitTarget,
+		bool bSkipRangeValidation,
+		const TArray<int32>& SelectedElementalBonusIndices);
 	AGridTile* FindBestEnemyMoveDestination(ABattleUnit* EnemyUnit, ABattleUnit* TargetUnit) const;
 	int32 GetPreferredEnemyDistance(const ABattleUnit* EnemyUnit) const;
 	bool CanUnitAttackFromTile(const ABattleUnit* EnemyUnit, const AGridTile* FromTile, const ABattleUnit* TargetUnit) const;

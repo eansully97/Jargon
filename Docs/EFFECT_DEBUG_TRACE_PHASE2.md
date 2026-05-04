@@ -57,7 +57,7 @@ Visible trace events depend on what the resolver observes, but may include:
 
 Trace logs use stable enum token names, such as `OperationApplied`, `DealDamage`, `ExplicitUnit`, `EnemyToSource`, and `OnPlayed`, rather than localized display names or raw integer values.
 
-If the base trace continues asynchronously and the card has elemental bonus groups, the log also prints:
+If the base trace continues asynchronously and the player selected elemental bonus groups, the log also prints:
 
 ```text
 Card trace note: base effects continued asynchronously. Elemental bonus groups are skipped by CardResolver for this resolve pass.

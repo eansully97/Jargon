@@ -18,6 +18,7 @@ Jargon is a single-player Unreal Engine tactical card / board game.
 - Cards author gameplay through inline `CardScript` actions that build `FJargonEffectSpec` arrays. Do not reintroduce raw card effect structs or compatibility authoring arrays.
 - Card authoring should distinguish `Operation` from `Keyword`: operations are backend primitives such as damage/heal/draw/summon, while keywords are reusable rules terms such as status definitions, traits, and future modifiers.
 - Card effect lines should be described as `Operation + Delivery + Filter + Payload`, with lightweight conditions only where already supported, such as elemental bonuses.
+- Elemental bonuses are manually chosen at card play time through an assigned elemental bonus choice widget class. Do not restore automatic elemental bonus resolution or boolean-gated prompt flow.
 - Cards must own a `CardElement` value. `EJargonElementType::None` is the internal neutral value for cards; card-facing audit/UI language should call it Neutral.
 - Deck editing is limited to three unique non-neutral card elements plus any number of Neutral cards. `CardElement` remains for filtering, packs, audits, and content identity.
 - Hero aspects are combat-long transformations. The first authored element to reach 10 combat-local charges locks its aspect for the rest of combat; other element charges remain useful for bonuses and spending but do not change the transformation. Element charges are not Energy.

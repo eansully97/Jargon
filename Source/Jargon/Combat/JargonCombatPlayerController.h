@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/Widgets/ElementalBonusChoiceTypes.h"
 #include "Combat/Widgets/JargonHoverInfoTypes.h"
 #include "Core/JargonHeroTypes.h"
 #include "Core/JargonTypes.h"
@@ -15,6 +16,7 @@ class ABattleUnit;
 class UCardDefinition;
 class UCombatHUDWidget;
 class UCombatHoverInfoWidget;
+class UElementalBonusChoiceWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDeckChangedSignature, int32, NewCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHandChangedSignature, int32, NewCount);
@@ -65,6 +67,36 @@ public:
 		return CombatHoverInfoWidget;
 	}
 
+	UFUNCTION(BlueprintPure, Category = "Combat|Elemental Bonus")
+	UElementalBonusChoiceWidget* GetElementalBonusChoiceWidget() const
+	{
+		return ElementalBonusChoiceWidget;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Elemental Bonus")
+	FJargonElementalBonusChoiceRequest GetPendingElementalBonusChoiceRequest() const
+	{
+		return PendingElementalBonusChoiceRequest;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Elemental Bonus")
+	bool HasPendingElementalBonusChoiceRequest() const
+	{
+		return PendingElementalBonusChoiceRequest.bHasUsableOptions;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Elemental Bonus")
+	bool ConfirmPendingElementalBonusChoices(const TArray<int32>& SelectedBonusIndices);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Elemental Bonus")
+	bool ConfirmFirstPendingElementalBonusChoice();
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Elemental Bonus")
+	bool SkipPendingElementalBonusChoices();
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Elemental Bonus")
+	void CancelPendingElementalBonusChoice();
+
 	UFUNCTION(BlueprintCallable, Category = "Combat|Cards")
 	int32 GetDeckCount() const
 	{
@@ -104,12 +136,17 @@ protected:
 	void RefreshCombatStateHUD();
 	void BroadcastCardCounts();
 	void InitializeCombatHoverInfoWidget();
+	void InitializeElementalBonusChoiceWidget();
 	void UpdateCombatHoverInfo();
 	void SetCurrentCombatHoverInfo(const FJargonCombatHoverInfo& NewHoverInfo);
 	FJargonCombatHoverInfo BuildCombatHoverInfoFromHit(const FHitResult& HitResult) const;
 	FJargonCombatHoverInfo MakeCombatHoverInfoFromUnit(ABattleUnit* Unit) const;
 	FJargonCombatHoverInfo MakeCombatHoverInfoFromTileEffect(ABattleTileEffect* TileEffect) const;
 	FJargonCombatHoverInfo MakeCombatHoverInfoFromTile(AGridTile* Tile) const;
+	bool TryBeginElementalBonusChoice(UCardDefinition* Card, AGridTile* TileTarget, bool bSelfTarget);
+	FJargonElementalBonusChoiceRequest BuildElementalBonusChoiceRequest(UCardDefinition* Card) const;
+	bool ExecutePendingElementalBonusCardPlay(const TArray<int32>& SelectedBonusIndices);
+	void ClearPendingElementalBonusChoiceRequest(bool bNotifyWidget = true);
 
 	UFUNCTION()
 	void HandleCombatPhaseChanged(ECombatPhase NewPhase);
@@ -127,7 +164,7 @@ protected:
 	void HandlePlayerActionAvailabilityChanged(bool bCanMove, bool bCanAttack);
 
 protected:
-	UPROPERTY(VisibleInstanceOnly, Category = "Combat|UI")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|UI")
 	TObjectPtr<UCombatHUDWidget> CombatHUD = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Hover", meta = (AllowPrivateAccess = "true", ToolTip = "Optional Blueprint child of CombatHoverInfoWidget. When assigned, the controller creates it and feeds description-only hover info into it."))
@@ -138,6 +175,15 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Hover", meta = (AllowPrivateAccess = "true"))
 	int32 CombatHoverInfoWidgetZOrder = 20;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Elemental Bonus", meta = (AllowPrivateAccess = "true", ToolTip = "Optional Blueprint child of ElementalBonusChoiceWidget. When assigned, eligible elemental bonus groups prompt through this widget after target selection. When unassigned, bonuses are skipped and cards play base effects only."))
+	TSubclassOf<UElementalBonusChoiceWidget> ElementalBonusChoiceWidgetClass;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Elemental Bonus", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UElementalBonusChoiceWidget> ElementalBonusChoiceWidget = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Elemental Bonus", meta = (AllowPrivateAccess = "true"))
+	int32 ElementalBonusChoiceWidgetZOrder = 25;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
 	TObjectPtr<UCardDefinition> SelectedCard = nullptr;
@@ -159,4 +205,19 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Hover", meta = (AllowPrivateAccess = "true"))
 	FJargonCombatHoverInfo CurrentCombatHoverInfo;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Elemental Bonus", meta = (AllowPrivateAccess = "true"))
+	FJargonElementalBonusChoiceRequest PendingElementalBonusChoiceRequest;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Elemental Bonus")
+	TObjectPtr<UCardDefinition> PendingElementalBonusCard = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Elemental Bonus")
+	TObjectPtr<AGridTile> PendingElementalBonusTileTarget = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Elemental Bonus")
+	bool bPendingElementalBonusSelfTarget = false;
+
+	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Elemental Bonus")
+	bool bLoggedMissingElementalBonusPromptThisCombat = false;
 };
