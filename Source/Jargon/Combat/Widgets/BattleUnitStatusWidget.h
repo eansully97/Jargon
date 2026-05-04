@@ -16,22 +16,28 @@ class JARGON_API UBattleUnitStatusWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 
+	/** Sets the runtime unit this widget mirrors. The widget does not own the unit. */
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit Status")
 	void SetObservedUnit(ABattleUnit* InUnit);
 
+	/** Pulls HP, attack, shield, and status counters from the observed unit into bound text widgets. */
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit Status")
 	void RefreshFromObservedUnit();
 
 protected:
+	/** Required TextBlock binding named HPText. */
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> HPText = nullptr;
 
+	/** Required TextBlock binding named AttackText. */
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> AttackText = nullptr;
 
+	/** Required TextBlock binding named ShieldText. */
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> ShieldText = nullptr;
 
+	/** Optional status TextBlock bindings; missing bindings simply omit that status from native text refresh. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StunText = nullptr;
 
@@ -59,6 +65,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Battle Unit Status")
 	FSlateColor AttackUnavailableColor = FSlateColor(FLinearColor(0.45f, 0.45f, 0.45f, 0.85f));
 
+	/** Runtime unit mirrored by this widget component or HUD entry. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Battle Unit Status")
 	TObjectPtr<ABattleUnit> ObservedUnit = nullptr;
 };

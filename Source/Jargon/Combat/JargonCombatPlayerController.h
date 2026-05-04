@@ -35,18 +35,30 @@ public:
 	virtual void PlayerTick(float DeltaTime) override;
 	virtual void SetupInputComponent() override;
 
+	/** Shuffles the runtime draw pile owned by this combat controller. Safe for Blueprint/debug use in combat. */
 	UFUNCTION(BlueprintCallable, Category = "Cards")
 	void ShuffleDrawPile();
 
+	/** Selects a hand card for targeting/highlight mode; actual play happens after target and bonus choice. */
 	UFUNCTION(BlueprintCallable, Category = "Cards")
 	void SelectCard(UCardDefinition* Card);
 
+	/** Creates and binds combat HUD widgets owned by this controller. */
 	void InitializeCombatUI();
+
+	/** Seeds draw pile from the active run deck or combat emergency deck. */
 	void InitializeStartingDeck();
+
+	/** Draws cards from draw pile into hand, reshuffling discard as needed. */
 	void DrawCards(int32 Count);
 
+	/** Clears local card selection and card-targeting presentation. */
 	void ClearSelectedCard();
+
+	/** Removes a resolved card from hand and pushes it to discard. */
 	void RemoveCardFromHand(UCardDefinition* Card);
+
+	/** Input-facing requests forwarded to the combat GameMode after hit testing. */
 	void RequestSelectFriendlyUnit(ABattleUnit* Unit);
 	void RequestMoveToTile(AGridTile* Tile);
 	bool RequestBasicAttackOnUnit(ABattleUnit* Unit);
@@ -141,6 +153,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Hover")
 	FOnCombatHoverInfoChangedSignature OnCombatHoverInfoChanged;
 
+	/** Enables native hover-info hit testing. Blueprint HUDs can still ignore the broadcast data. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Hover")
 	bool bEnableCombatHoverInfo = true;
 
@@ -185,6 +198,7 @@ protected:
 	void HandlePlayerActionAvailabilityChanged(bool bCanMove, bool bCanAttack);
 
 protected:
+	/** Runtime HUD widget created by this controller and refreshed from GameMode/card state. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|UI")
 	TObjectPtr<UCombatHUDWidget> CombatHUD = nullptr;
 
@@ -218,6 +232,7 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
 	TObjectPtr<UCardDefinition> SelectedCard = nullptr;
 
+	/** Runtime card piles owned by the controller for this combat only. Run deck state stays in GameInstance. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
 	TArray<TObjectPtr<UCardDefinition>> DrawPile;
 
@@ -227,6 +242,7 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
 	TArray<TObjectPtr<UCardDefinition>> DiscardPile;
 
+	/** True while a selected card is waiting for a unit/tile/self target. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
 	bool bCardTargetingMode = false;
 
@@ -236,9 +252,11 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Hover", meta = (AllowPrivateAccess = "true"))
 	FJargonCombatHoverInfo CurrentCombatHoverInfo;
 
+	/** Pending manual elemental bonus prompt; resolved or skipped before card play reaches GameMode. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat|Elemental Bonus", meta = (AllowPrivateAccess = "true"))
 	FJargonElementalBonusChoiceRequest PendingElementalBonusChoiceRequest;
 
+	/** Cached card/target tuple held while the elemental bonus widget waits for player choice. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Elemental Bonus")
 	TObjectPtr<UCardDefinition> PendingElementalBonusCard = nullptr;
 

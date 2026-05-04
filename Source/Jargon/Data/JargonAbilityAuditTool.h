@@ -6,6 +6,9 @@
 
 /**
  * Editor-only audit helper for reusable ability definitions and remaining raw non-card effect hooks.
+ *
+ * The report finds missing references/classes and migration pressure points. It still requires
+ * manual review to judge whether authored hooks play well or have the intended presentation.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "Jargon Ability Audit Tool"))
 class JARGON_API UJargonAbilityAuditTool : public UDataAsset
@@ -24,6 +27,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability Audit|Output", meta = (ToolTip = "When true, writes AbilityAudit.csv under Project/Saved/OutputSubfolder."))
 	bool bExportCsvReport = true;
 
+	/** Runs the read-only ability migration report from the editor. Does not save or modify scanned assets. */
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Ability Audit", meta = (ToolTip = "Scans ability definitions and remaining raw non-card effect hooks, then writes a migration-focused CSV report. Does not modify assets."))
 	void RunAbilityAudit();
 };

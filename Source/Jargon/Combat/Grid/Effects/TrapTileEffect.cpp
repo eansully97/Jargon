@@ -44,6 +44,11 @@ void ATrapTileEffect::HandleUnitEnteredTile(AJargonCombatGameMode* CombatGameMod
 		return;
 	}
 
+	if (!IsValid(this))
+	{
+		return;
+	}
+
 	EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered, EnteringUnit);
 
 	if (Definition->bDestroyAfterUnitEnter && IsValid(this))

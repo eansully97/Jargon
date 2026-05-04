@@ -9,6 +9,7 @@
 class UTexture2D;
 class UJargonAbilityDefinition;
 
+/** Data Asset trigger that determines which runtime tile-effect hook executes TriggerAbility. */
 UENUM(BlueprintType)
 enum class EJargonTileEffectTrigger : uint8
 {
@@ -31,10 +32,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Visual", meta = (ToolTip = "Optional icon for future UI. Runtime mesh/VFX presentation belongs on the generic tile-effect Blueprint shell."))
 	TObjectPtr<UTexture2D> Icon = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ToolTip = "When this tile effect resolves its authored Effects. Trap-like definitions normally use On Unit Enter; aura-like definitions normally use On Player Turn Start."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ToolTip = "When this tile effect resolves its TriggerAbility. Trap definitions must use On Unit Enter; Aura definitions must use On Player Turn Start."))
 	EJargonTileEffectTrigger Trigger = EJargonTileEffectTrigger::OnUnitEnter;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ToolTip = "Card category represented by this placed tile effect. Use Trap or Aura for normal tile effect definitions."))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ToolTip = "Runtime category represented by this placed tile effect. Trap definitions use On Unit Enter; Aura definitions use On Player Turn Start."))
 	ECardCategory TileEffectCategory = ECardCategory::Trap;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Runtime", meta = (ClampMin = "0", ToolTip = "How many player turn starts this placed tile effect lasts. 0 means infinite."))
@@ -49,6 +50,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tile Effect|Ability", meta = (ToolTip = "Reusable ability definition resolved when this tile effect triggers. Required for valid trap and aura definitions."))
 	TObjectPtr<UJargonAbilityDefinition> TriggerAbility = nullptr;
 
+	/** Checks static trap/aura authoring. Runtime duration and tile ownership live on ABattleTileEffect. */
 	UFUNCTION(BlueprintPure, Category = "Tile Effect|Validation")
 	bool IsValidDefinition() const;
 

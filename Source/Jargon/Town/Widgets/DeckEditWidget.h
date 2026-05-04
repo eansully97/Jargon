@@ -14,9 +14,11 @@ struct FDeckEditStackedDeckEntry
 {
 	GENERATED_BODY()
 
+	/** Card Data Asset represented by this stacked deck row. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TObjectPtr<UCardDefinition> Card = nullptr;
 
+	/** Number of copies of this card in the active run deck. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	int32 DeckCount = 0;
 
@@ -32,6 +34,7 @@ struct FDeckEditLibraryCardEntry
 {
 	GENERATED_BODY()
 
+	/** Card Data Asset represented by this library entry. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TObjectPtr<UCardDefinition> Card = nullptr;
 
@@ -72,6 +75,7 @@ struct FDeckEditLibraryCardEntry
 	FText AddToDeckBlockedReason;
 };
 
+/** Runtime filter state used by deck edit UI; it does not mutate the run deck by itself. */
 USTRUCT(BlueprintType)
 struct FDeckEditLibraryFilter
 {
@@ -108,9 +112,11 @@ class JARGON_API UDeckEditWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** Copies run deck/owned/reserve state from GameInstance and rebuilds Blueprint-readable view arrays. */
 	UFUNCTION(BlueprintCallable, Category = "Deck Edit")
 	virtual void RefreshFromRunState(UJargonGameInstance* JargonGameInstance);
 
+	/** Refreshes from the last cached GameInstance, useful after UI-only filter/page changes. */
 	UFUNCTION(BlueprintCallable, Category = "Deck Edit")
 	virtual void RefreshFromCachedRunState();
 
@@ -295,7 +301,10 @@ public:
 	void BP_OnLibraryFilterChanged();
 
 protected:
+	/** Resolves explicit or cached run state for Blueprint calls. Returns null when no active run state is available. */
 	UJargonGameInstance* ResolveRunState(UJargonGameInstance* ExplicitRunState) const;
+
+	/** Rebuilds all Blueprint-readable deck/library arrays from cached run-state card references. */
 	void RebuildViewData();
 	void RebuildFilteredLibraryEntries();
 	void RebuildCurrentLibraryPageEntries();
@@ -303,18 +312,23 @@ protected:
 	bool DoesLibraryEntryPassFilter(const FDeckEditLibraryCardEntry& Entry) const;
 	static bool SortCardsByCostThenName(const UCardDefinition& LeftCard, const UCardDefinition& RightCard);
 
+	/** Cached active deck card references copied from GameInstance; duplicate entries represent copies. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TArray<TObjectPtr<UCardDefinition>> RunDeckCards;
 
+	/** Cached owned card collection copied from GameInstance. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TArray<TObjectPtr<UCardDefinition>> RunOwnedCards;
 
+	/** Cached reserve card collection copied from GameInstance. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TArray<TObjectPtr<UCardDefinition>> RunReserveCards;
 
+	/** Stacked active deck rows for Blueprint list/grid rendering. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TArray<FDeckEditStackedDeckEntry> StackedDeckEntries;
 
+	/** Full unfiltered library entries, including add/remove availability reasons. */
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit")
 	TArray<FDeckEditLibraryCardEntry> LibraryEntries;
 
@@ -348,6 +362,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Deck Edit|Library")
 	int32 CurrentLibraryPageIndex = 0;
 
+	/** Cached GameInstance pointer for UI-only refreshes; the GameInstance owns authoritative run state. */
 	UPROPERTY(Transient)
 	TObjectPtr<UJargonGameInstance> CachedRunState = nullptr;
 };

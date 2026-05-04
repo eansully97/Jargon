@@ -34,4 +34,5 @@ void APlayerBattleUnit::InitializeFromHeroDefinition(UJargonHeroDefinition* Hero
 	}
 
 	BP_OnHeroDefinitionApplied(HeroDefinition);
+	InitializeIdlePresentation();
 }

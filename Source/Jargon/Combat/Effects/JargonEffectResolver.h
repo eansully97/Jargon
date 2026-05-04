@@ -7,25 +7,35 @@ class ABattleUnit;
 class ABattleTileEffect;
 class AGridTile;
 
+/**
+ * Low-level shared effect runtime.
+ *
+ * Normal gameplay callers should enter through FJargonEffectExecutor so logging,
+ * ability context validation, traces, and no-op handling stay consistent.
+ */
 class JARGON_API FJargonEffectResolver
 {
 public:
+	/** Resolves an ordered list of specs against a complete runtime context. Prefer FJargonEffectExecutor. */
 	static bool ResolveEffects(
 		const TArray<FJargonEffectSpec>& Effects,
 		const FJargonEffectContext& Context,
 		FJargonEffectResult& OutResult);
 
+	/** Resolves an ordered list of specs while collecting validation, targeting, and operation trace events. */
 	static bool ResolveEffects(
 		const TArray<FJargonEffectSpec>& Effects,
 		const FJargonEffectContext& Context,
 		FJargonEffectResult& OutResult,
 		FJargonEffectTrace* OutTrace);
 
+	/** Resolves one effect spec without trace capture. Prefer the batch executor for authored gameplay. */
 	static bool ResolveEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,
 		FJargonEffectResult& OutResult);
 
+	/** Resolves one effect spec with trace capture for editor/debug diagnostics. */
 	static bool ResolveEffect(
 		const FJargonEffectSpec& EffectSpec,
 		const FJargonEffectContext& Context,

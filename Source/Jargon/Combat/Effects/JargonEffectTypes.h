@@ -13,6 +13,7 @@ class UJargonStatusEffectDefinition;
 class UJargonSummonedUnitDefinition;
 class UJargonTileEffectDefinition;
 
+/** Backend primitives that execute gameplay. Designer-facing keywords should map to these operations. */
 UENUM(BlueprintType)
 enum class EJargonEffectOperation : uint8
 {
@@ -38,6 +39,7 @@ enum class EJargonEffectOperation : uint8
 	CleanseStatus UMETA(DisplayName = "Cleanse Status")
 };
 
+/** Target acquisition strategy used before operation payloads are applied. */
 UENUM(BlueprintType)
 enum class EJargonEffectDelivery : uint8
 {
@@ -49,6 +51,7 @@ enum class EJargonEffectDelivery : uint8
 	ChainUnits UMETA(DisplayName = "Chain Units")
 };
 
+/** Team/role filter applied after delivery gathers candidate units. */
 UENUM(BlueprintType)
 enum class EJargonEffectTargetFilter : uint8
 {
@@ -59,6 +62,7 @@ enum class EJargonEffectTargetFilter : uint8
 	SourceOnly UMETA(DisplayName = "Source Only")
 };
 
+/** Runtime hook reason used by cards, unit hooks, tile effects, artifacts, and hero aspects. */
 UENUM(BlueprintType)
 enum class EJargonEffectTrigger : uint8
 {
@@ -72,6 +76,7 @@ enum class EJargonEffectTrigger : uint8
 	OnEnemyDeath UMETA(DisplayName = "On Enemy Death")
 };
 
+/** Explicit non-card hook contexts; each value documents which runtime roles should be available. */
 UENUM(BlueprintType)
 enum class EJargonAbilityHookContextType : uint8
 {
@@ -94,30 +99,39 @@ struct JARGON_API FJargonAbilityHookContextProfile
 {
 	GENERATED_BODY()
 
+	/** Hook context being described for validation and editor summaries. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	EJargonAbilityHookContextType ContextType = EJargonAbilityHookContextType::None;
 
+	/** True when the hook provides a source combat unit role. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	bool bHasSourceUnit = false;
 
+	/** True when the hook provides the source unit/tile-effect tile role. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	bool bHasSourceTile = false;
 
+	/** True when the hook provides a primary unit target role for ability targeting. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	bool bHasPrimaryUnit = false;
 
+	/** True when the hook provides a primary tile target role for ability targeting or placement. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	bool bHasPrimaryTile = false;
 
+	/** True when the hook provides the unit that caused the event, such as an entering unit or dead enemy. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	bool bHasTriggeringUnit = false;
 
+	/** True when the hook is owned by a runtime trap/aura actor. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	bool bHasOwningTileEffect = false;
 
+	/** Source team is always available for authored filter decisions even when no source unit exists. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability|Hook Context")
 	bool bHasSourceTeam = true;
 
+	/** Returns the expected role availability for a hook context; used by validation and audit summaries. */
 	static FJargonAbilityHookContextProfile FromContextType(EJargonAbilityHookContextType ContextType)
 	{
 		FJargonAbilityHookContextProfile Profile;
@@ -227,6 +241,7 @@ struct JARGON_API FJargonAbilityHookContextProfile
 	}
 };
 
+/** Placement anchor for spawn-style actions. This is intentionally separate from delivery names. */
 UENUM(BlueprintType)
 enum class EJargonAbilityPlacementAnchor : uint8
 {
@@ -374,6 +389,7 @@ struct JARGON_API FJargonEffectSpec
 
 namespace JargonEffectContracts
 {
+	/** Lightweight validation/summary helpers shared by Data Asset validation and audit output. */
 	inline FString GetEnumTokenName(const UEnum* Enum, int64 Value)
 	{
 		if (Enum)
@@ -707,36 +723,47 @@ struct JARGON_API FJargonEffectContext
 {
 	GENERATED_BODY()
 
+	/** Combat owner for runtime state, board queries, spawning, element charges, and presentation cues. */
 	UPROPERTY()
 	TObjectPtr<AJargonCombatGameMode> GameMode = nullptr;
 
+	/** UObject that authored or owns the effect, such as a card, ability, artifact, or tile effect. */
 	UPROPERTY()
 	TObjectPtr<UObject> SourceObject = nullptr;
 
+	/** Source combat unit when the hook is unit-owned or a card is played by a unit. */
 	UPROPERTY()
 	TObjectPtr<ABattleUnit> SourceUnit = nullptr;
 
+	/** Source team used by target filters when no source unit is available. */
 	UPROPERTY()
 	ETeam SourceTeam = ETeam::Player;
 
+	/** Tile associated with the source unit or tile effect at resolve time. */
 	UPROPERTY()
 	TObjectPtr<AGridTile> SourceTile = nullptr;
 
+	/** Primary unit selected or supplied by the hook context. */
 	UPROPERTY()
 	TObjectPtr<ABattleUnit> PrimaryUnitTarget = nullptr;
 
+	/** Primary tile selected or supplied by the hook context. */
 	UPROPERTY()
 	TObjectPtr<AGridTile> PrimaryTileTarget = nullptr;
 
+	/** Event-causing unit for hooks such as trap entry or enemy death. */
 	UPROPERTY()
 	TObjectPtr<ABattleUnit> TriggeringUnit = nullptr;
 
+	/** Runtime trap/aura actor that owns a tile-effect hook. */
 	UPROPERTY()
 	TObjectPtr<ABattleTileEffect> OwningTileEffect = nullptr;
 
+	/** Card source when the effect began from card play; used for cue/audit context. */
 	UPROPERTY()
 	TObjectPtr<UCardDefinition> SourceCard = nullptr;
 
+	/** Hook reason currently resolving. */
 	UPROPERTY()
 	EJargonEffectTrigger Trigger = EJargonEffectTrigger::OnPlayed;
 };
@@ -746,25 +773,32 @@ struct JARGON_API FJargonEffectResult
 {
 	GENERATED_BODY()
 
+	/** True when at least one spec applied gameplay or started async work. */
 	UPROPERTY()
 	bool bResolvedAnyEffect = false;
 
+	/** True when a movement/presentation sequence continues after the resolver returns. */
 	UPROPERTY()
 	bool bContinuesAsynchronously = false;
 
+	/** Card-specific output indicating a card effect consumed the player's move action. */
 	UPROPERTY()
 	bool bConsumePlayerMove = false;
 
+	/** Card-specific output for GainEnergy effects that apply after paying card cost. */
 	UPROPERTY()
 	int32 EnergyGainAfterCost = 0;
 
+	/** Last unit spawned by this resolution, if any. */
 	UPROPERTY()
 	TObjectPtr<ABattleUnit> SpawnedUnit = nullptr;
 
+	/** Last persistent tile effect spawned by this resolution, if any. */
 	UPROPERTY()
 	TObjectPtr<ABattleTileEffect> SpawnedTileEffect = nullptr;
 };
 
+/** Trace categories for effect debugging; these are diagnostics and do not drive gameplay. */
 UENUM(BlueprintType)
 enum class EJargonEffectTraceEventType : uint8
 {
@@ -787,9 +821,11 @@ struct JARGON_API FJargonEffectTraceEvent
 {
 	GENERATED_BODY()
 
+	/** Index of the authored spec that produced this event, or INDEX_NONE for aggregate events. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
 	int32 EffectIndex = INDEX_NONE;
 
+	/** Diagnostic stage represented by this trace event. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
 	EJargonEffectTraceEventType EventType = EJargonEffectTraceEventType::ResolveStarted;
 
@@ -862,18 +898,22 @@ struct JARGON_API FJargonEffectTraceEvent
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
 	EJargonElementType ElementType = EJargonElementType::None;
 
+	/** Delta applied to combat-local element charges by this event. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
 	int32 ElementChargeDelta = 0;
 
+	/** Compact Operation + Delivery + Filter + Payload snapshot captured for logs. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
 	FString PayloadSummary;
 };
 
+/** Caller-owned debug trace for one effect execution request. */
 USTRUCT(BlueprintType)
 struct JARGON_API FJargonEffectTrace
 {
 	GENERATED_BODY()
 
+	/** Unique ID for correlating compact and multiline trace logs. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
 	FGuid TraceId;
 
@@ -901,6 +941,7 @@ struct JARGON_API FJargonEffectTrace
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Effect Trace")
 	FString Summary;
 
+	/** Resets this trace for reuse before resolving a new context. */
 	void ResetForContext(const FJargonEffectContext& Context)
 	{
 		TraceId = FGuid::NewGuid();

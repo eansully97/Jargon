@@ -11,6 +11,7 @@ class AGridTile;
 class UCardDefinition;
 class UJargonArtifactDefinition;
 
+/** Presentation-only cue taxonomy emitted by gameplay systems after gameplay has already resolved. */
 UENUM(BlueprintType)
 enum class EJargonCombatCueType : uint8
 {
@@ -60,12 +61,15 @@ struct JARGON_API FJargonCombatCueEvent
 {
 	GENERATED_BODY()
 
+	/** Presentation event type. This should never be used as a gameplay source of truth. */
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	EJargonCombatCueType CueType = EJargonCombatCueType::None;
 
+	/** Gameplay operation that caused the cue, when it came from the shared effect runtime. */
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	EJargonEffectOperation Operation = EJargonEffectOperation::None;
 
+	/** Hook that produced the cue, such as card play, turn start, trap entry, or death. */
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	EJargonEffectTrigger Trigger = EJargonEffectTrigger::OnPlayed;
 
@@ -102,6 +106,7 @@ struct JARGON_API FJargonCombatCueEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue|Element")
 	EJargonElementType ElementType = EJargonElementType::None;
 
+	/** Current or spent combat-local element charge amount relevant to the cue. */
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue|Element")
 	int32 ElementChargeCount = 0;
 
@@ -120,6 +125,7 @@ struct JARGON_API FJargonCombatCueEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	FText TextOverride;
 
+	/** Optional explicit world-space cue location when source/target actors are insufficient. */
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	bool bHasWorldLocation = false;
 

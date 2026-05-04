@@ -28,6 +28,7 @@ class JARGON_API AJargonExplorationPlayerController : public APlayerController
 public:
 	AJargonExplorationPlayerController();
 
+	/** Enables/disables click-to-move while menus, prompts, or scripted interactions are active. */
 	UFUNCTION(BlueprintCallable, Category = "Exploration|Input")
 	void SetWorldClickMovementEnabled(bool bEnabled);
 
@@ -49,6 +50,7 @@ public:
 	void NotifyInteractableEnteredRange(AJargonInteractableActor* Interactable);
 	void NotifyInteractableExitedRange(AJargonInteractableActor* Interactable);
 
+	/** Executes the currently prioritized nearby interactable. Safe for Blueprint input binding. */
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void InteractWithCurrentInteractable();
 
@@ -201,10 +203,14 @@ protected:
 	FVector CameraPanOffset = FVector::ZeroVector;
 
 	TArray<TWeakObjectPtr<AJargonInteractableActor>> NearbyInteractables;
+
+	/** Current best interactable chosen from nearby overlaps; weak because actors own their own lifetime. */
 	TWeakObjectPtr<AJargonInteractableActor> CurrentInteractable;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (AllowPrivateAccess = "true"))
 	FJargonInteractionPromptData CurrentInteractionPromptData;
 
+	/** Optional runtime prompt widget created and owned by this controller. */
 	UPROPERTY(Transient)
 	TObjectPtr<UJargonInteractionPromptWidget> InteractionPromptWidget = nullptr;
 

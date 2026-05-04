@@ -30,5 +30,10 @@ void AAuraTileEffect::HandlePlayerTurnStart(AJargonCombatGameMode* CombatGameMod
 		return;
 	}
 
+	if (!IsValid(this))
+	{
+		return;
+	}
+
 	EmitTileEffectCue(EJargonCombatCueType::TileEffectTriggered);
 }

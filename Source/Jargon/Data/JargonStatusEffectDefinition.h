@@ -17,6 +17,7 @@ enum class EJargonStatusEffectKind : uint8
 	Weak UMETA(DisplayName = "Weak")
 };
 
+/** Authoring intent for validation/audit text; runtime filtering still comes from effect specs. */
 UENUM(BlueprintType)
 enum class EJargonStatusEffectIntent : uint8
 {
@@ -55,6 +56,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status", meta = (ToolTip = "Default targeting intent for validation/audit language. This does not drive runtime behavior yet."))
 	EJargonStatusEffectIntent TargetIntent = EJargonStatusEffectIntent::Hostile;
 
+	/** Checks required static fields. Runtime stack/turn counters live on ABattleUnit instances. */
 	UFUNCTION(BlueprintPure, Category = "Status|Validation")
 	bool IsValidDefinition() const;
 

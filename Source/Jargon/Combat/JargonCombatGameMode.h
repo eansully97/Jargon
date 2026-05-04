@@ -43,6 +43,7 @@ struct JARGON_API FJargonCombatPacingSummary
 {
 	GENERATED_BODY()
 
+	/** Snapshot metrics collected during one combat and handed to post-match reporting/audits. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Pacing")
 	int32 InitialEnemyCount = 0;
 
@@ -114,12 +115,22 @@ public:
 
 	virtual void BeginPlay() override;
 
+	/** Runtime combat bootstrap: board, units, deck/hand, hero state, artifacts, and initial turn flow. */
 	void InitializeCombat();
+
+	/** Applies initial facing after combatants are spawned and placed on the board. */
 	void InitializeCombatantFacing();
 
+	/** Selects a friendly unit for player actions when the unit is valid for the current combat phase. */
 	bool TrySelectFriendlyUnit(ABattleUnit* FriendlyUnit);
+
+	/** Attempts a player-controlled move and starts movement presentation when pathing succeeds. */
 	bool TryMovePlayerUnitToTile(AGridTile* DestinationTile);
+
+	/** Attempts a basic attack with the selected/player unit and routes through presentation timing. */
 	bool TryBasicAttackWithPlayerUnit(ABattleUnit* Target);
+
+	/** Card-play entry points used by the combat controller after target selection and optional bonus choice. */
 	bool TryPlayCardOnTarget(UCardDefinition* Card, ABattleUnit* Target);
 	bool TryPlayCardOnTarget(UCardDefinition* Card, ABattleUnit* Target, const TArray<int32>& SelectedElementalBonusIndices);
 	bool TryPlayCardOnTile(UCardDefinition* Card, AGridTile* TileTarget);
@@ -127,19 +138,27 @@ public:
 	bool TryPlayCardOnSelf(UCardDefinition* Card);
 	bool TryPlayCardOnSelf(UCardDefinition* Card, const TArray<int32>& SelectedElementalBonusIndices);
 	bool StartPlayerControlledMoveSequence(ABattleUnit* MovingUnit, const TArray<AGridTile*>& Path, bool bConsumeMoveAction);
+
+	/** Executes a unit death hook once, preserving the death tile for effects that need placement/target context. */
 	void ExecuteOnDeathAbility(ABattleUnit* DeadUnit, AGridTile* DeathTile);
+
+	/** Spawns a persistent trap/aura runtime actor from a Data Asset and registers it with combat state. */
 	ABattleTileEffect* SpawnPersistentTileEffectFromDefinition(
 		UJargonTileEffectDefinition* Definition,
 		TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass,
 		const UCardDefinition* Card,
 		const ABattleUnit* SourceUnit,
 		AGridTile* TargetTile);
+
+	/** Spawns a persistent tile effect when only source team is known, such as non-unit ability hooks. */
 	ABattleTileEffect* SpawnPersistentTileEffectFromDefinitionForTeam(
 		UJargonTileEffectDefinition* Definition,
 		TSubclassOf<ABattleTileEffect> RuntimeTileEffectClass,
 		const UCardDefinition* Card,
 		ETeam SourceTeam,
 		AGridTile* TargetTile);
+
+	/** Spawns a summoned combat unit from a Data Asset and runtime Blueprint shell. */
 	ABattleUnit* SpawnSummonedUnitFromDefinition(
 		UJargonSummonedUnitDefinition* Definition,
 		TSubclassOf<ABattleUnit> RuntimeSummonedUnitClass,
@@ -147,10 +166,17 @@ public:
 		AGridTile* TargetTile,
 		bool bAttackExhaustedOverride,
 		bool bUseAttackExhaustedOverride);
+
+	/** Removes a tile effect from GameMode tracking after destruction or expiry. */
 	void UnregisterPersistentTileEffect(ABattleTileEffect* TileEffect);
+
+	/** Broadcasts unit-entry triggers to active tile effects after movement enters a tile. */
 	void NotifyTileEffectsUnitEntered(ABattleUnit* EnteringUnit, AGridTile* EnteredTile);
 	
+	/** Updates target highlights for a selected card; presentation only, no card resolution. */
 	void RefreshCardTargetHighlights(ABattleUnit* SourceUnit, const UCardDefinition* Card);
+
+	/** Updates movement highlights for the currently selected friendly unit. */
 	void RefreshPlayerMovementHighlights();
 	
 	UFUNCTION(BlueprintCallable, Category = "Combat|Preview")
@@ -161,7 +187,10 @@ public:
 	void HandleDefeat();
 	void ReturnToExploration();
 
+	/** Player-facing turn request; validates phase before ending the turn. */
 	void RequestEndPlayerTurn();
+
+	/** Debug helper: asks the next card resolve to emit a full effect trace to logs. */
 	void RequestLogNextCardEffectTrace();
 
 	APlayerBattleUnit* GetPlayerUnit() const
@@ -235,6 +264,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void AddCurrentEnergy(int32 Amount);
 
+	/** Returns combat-local element charges owned by this GameMode. Element charges are not Energy. */
 	UFUNCTION(BlueprintPure, Category = "Combat|Elements")
 	int32 GetElementCharges(EJargonElementType Element) const;
 
@@ -253,6 +283,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|Elements")
 	bool TrySpendElementCharges(EJargonElementType Element, int32 Amount);
 
+	/** Clears combat-local element charges, normally at combat setup/teardown boundaries. */
 	UFUNCTION(BlueprintCallable, Category = "Combat|Elements")
 	void ClearElementCharges();
 
@@ -348,6 +379,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Elements")
 	FOnElementChargesChangedSignature OnElementChargesChanged;
 
+	/** Blueprint-assignable delegate fired after C++ updates hero aspect/class runtime state. */
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Hero")
 	FOnHeroRuntimeStateChangedSignature OnHeroRuntimeStateChanged;
 
@@ -367,6 +399,7 @@ public:
 	FOnCurrentActingEnemyChangedSignature OnCurrentActingEnemyChanged;
 
 protected:
+	/** Finds or spawns combat-owned actors and wires runtime state before the first player turn. */
 	void InitializeCameraPawn();
 	void InitializePresentationManager();
 	void FindGridBoard();
@@ -474,21 +507,27 @@ protected:
 	};
 
 protected:
+	/** Runtime board actor owned by the level; cached by GameMode for pathing, spawning, and targeting. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<AGridBoard> GridBoard = nullptr;
 
+	/** Player hero battle unit spawned/controlled for this combat only. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<APlayerBattleUnit> PlayerUnit = nullptr;
 
+	/** Static hero Data Asset selected by run state; copied into runtime unit/aspect state at combat start. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Hero")
 	TObjectPtr<UJargonHeroDefinition> ActiveHeroDefinition = nullptr;
 
+	/** Combat-local hero class/aspect state derived from element charges and active hero definition. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Hero")
 	FJargonHeroRuntimeState HeroRuntimeState;
 
+	/** Runtime friendly units currently participating in combat, including player summons. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TArray<TObjectPtr<ABattleUnit>> FriendlyUnits;
 
+	/** Runtime enemy units currently participating in combat. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TArray<TObjectPtr<ABattleUnit>> EnemyUnits;
 
@@ -509,15 +548,19 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<ABattleUnit> CurrentActingEnemy = nullptr;
 
+	/** Friendly unit selected for player movement, attacks, and card source context. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<ABattleUnit> SelectedFriendlyUnit = nullptr;
 
+	/** Persistent tile-effect actors owned by the world and tracked by GameMode for turn/entry hooks. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Cards")
 	TArray<TObjectPtr<ABattleTileEffect>> ActiveTileEffects;
 
+	/** Camera pawn spawned by combat when a map does not already provide one. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat")
 	TObjectPtr<ATacticsCameraPawn> SpawnedCameraPawn = nullptr;
 
+	/** Runtime presentation actor receiving gameplay cue events. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Combat|Presentation")
 	TObjectPtr<AJargonCombatPresentationManager> PresentationManager = nullptr;
 
@@ -587,6 +630,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Turn|Presentation")
 	FLinearColor SelectedFriendlyUnitHighlightColor = FLinearColor(0.85f, 0.85f, 0.1f, 0.2f);
 
+	/** Pending movement/attack state used while async movement or basic attack presentation is running. */
 	EPendingMovementContext PendingMovementContext = EPendingMovementContext::None;
 	TWeakObjectPtr<ABattleUnit> PendingMovementUnit;
 	TWeakObjectPtr<ABattleUnit> PendingAttackAttacker;

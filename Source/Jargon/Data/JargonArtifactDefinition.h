@@ -10,6 +10,7 @@ class UJargonHeroDefinition;
 class UJargonAbilityDefinition;
 class UTexture2D;
 
+/** How an Artifact enters the run: earned reward or default class ability container. */
 UENUM(BlueprintType)
 enum class EJargonArtifactRole : uint8
 {
@@ -60,9 +61,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Artifact|Abilities", meta = (ToolTip = "Reusable ability definition resolved after an enemy dies. Leave empty for no enemy-death hook."))
 	TObjectPtr<UJargonAbilityDefinition> OnEnemyDeathAbility = nullptr;
 
+	/** Returns true if any reusable ability hook is assigned. */
 	UFUNCTION(BlueprintPure, Category = "Artifact")
 	bool HasAnyEffects() const;
 
+	/** Runtime/editor sanity check; Data Validation provides detailed missing-reference feedback. */
 	UFUNCTION(BlueprintPure, Category = "Artifact")
 	bool IsValidDefinition() const;
 

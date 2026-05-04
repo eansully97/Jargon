@@ -15,9 +15,11 @@ class JARGON_API UElementalBonusChoiceWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 
+	/** Opens/rebuilds the manual elemental bonus prompt from a combat controller request. */
 	UFUNCTION(BlueprintCallable, Category = "Elemental Bonus Choice")
 	void SetChoiceRequest(const FJargonElementalBonusChoiceRequest& InRequest);
 
+	/** Clears the current request and selected bonus indices without playing a card. */
 	UFUNCTION(BlueprintCallable, Category = "Elemental Bonus Choice")
 	void ClearChoiceRequest();
 
@@ -48,6 +50,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Elemental Bonus Choice")
 	bool SkipBonuses();
 
+	/** Cancels the pending prompt; the controller decides whether card targeting remains active. */
 	UFUNCTION(BlueprintCallable, Category = "Elemental Bonus Choice")
 	void CancelChoice();
 
@@ -97,15 +100,19 @@ protected:
 	void BP_OnChoiceRequestCleared();
 
 protected:
+	/** Optional Button binding named ConfirmButton for confirming the current manual selection. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Elemental Bonus Choice")
 	TObjectPtr<UButton> ConfirmButton = nullptr;
 
+	/** Optional Button binding named SpendButton for UIs that label confirmation as charge spending. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Elemental Bonus Choice")
 	TObjectPtr<UButton> SpendButton = nullptr;
 
+	/** Optional Button binding named SkipButton for playing only base card effects. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Elemental Bonus Choice")
 	TObjectPtr<UButton> SkipButton = nullptr;
 
+	/** Optional Button binding named CancelButton for backing out of the pending choice. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Elemental Bonus Choice")
 	TObjectPtr<UButton> CancelButton = nullptr;
 
@@ -118,9 +125,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Elemental Bonus Choice|Layout", meta = (ClampMin = "0.0", ToolTip = "Minimum screen-space padding kept between the choice prompt and viewport edges."))
 	FVector2D ViewportPadding = FVector2D(16.0f, 16.0f);
 
+	/** Runtime-selected elemental bonus indices. These map to the card's ElementalBonuses array. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Elemental Bonus Choice")
 	TArray<int32> SelectedBonusIndices;
 
+	/** Current prompt data supplied by the combat controller; authoritative card play remains there. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Elemental Bonus Choice")
 	FJargonElementalBonusChoiceRequest CurrentChoiceRequest;
 };

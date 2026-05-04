@@ -15,9 +15,11 @@ class JARGON_API UCardDisplayWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** Assigns the card Data Asset this widget should render. Safe for Blueprint setup and spawned widget initialization. */
 	UFUNCTION(BlueprintCallable, Category = "Card Display")
 	void SetCardDefinition(UCardDefinition* InCardDefinition);
 
+	/** Pulls display text, cost, type, and art from the assigned card definition into optional widget bindings. */
 	UFUNCTION(BlueprintCallable, Category = "Card Display")
 	void RefreshFromCardDefinition();
 
@@ -37,24 +39,31 @@ protected:
 	FText GetCardCategoryText() const;
 
 protected:
+	/** Card Data Asset currently rendered by this widget; can be supplied on spawn for reusable card UI. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Display", meta = (ExposeOnSpawn = "true"))
 	TObjectPtr<UCardDefinition> CardDefinition = nullptr;
 
+	/** Optional TextBlock binding named CostText. When absent, card display still refreshes the remaining bindings. */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CostText = nullptr;
 
+	/** Optional TextBlock binding named CardNameText for the card display name. */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CardNameText = nullptr;
 
+	/** Optional TextBlock binding named TypeText for the card category label. */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> TypeText = nullptr;
 
+	/** Optional TextBlock binding named DescriptionText for player-facing card rules/flavor text. */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> DescriptionText = nullptr;
 
+	/** Optional Image binding named CardArt for manually assigned card artwork. */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
 	TObjectPtr<UImage> CardArt = nullptr;
 
+	/** Optional Image binding named CardFrame for Blueprint-owned frame/accent styling. */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional))
 	TObjectPtr<UImage> CardFrame = nullptr;
 

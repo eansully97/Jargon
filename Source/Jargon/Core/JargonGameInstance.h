@@ -39,6 +39,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run")
 	void StartNewRun(const TArray<UCardDefinition*>& InitialDeck, const FJargonCurrencyAmount& StartingCurrency);
 
+	/** Ensures prototype maps can enter the loop with a seeded run deck when no save/run exists yet. */
 	void EnsureRunInitializedFromSeedDeck(const TArray<UCardDefinition*>& SeedDeck);
 
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run")
@@ -47,6 +48,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
 	bool SaveCurrentRun();
 
+	/** Save/load APIs are Blueprint-safe menu operations; they mutate GameInstance run state, not Data Assets. */
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Save")
 	bool LoadSavedRun();
 
@@ -77,6 +79,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Hero")
 	void SetActiveHeroDefinition(UJargonHeroDefinition* HeroDefinition);
 
+	/** Returns the selected hero, assigning the supplied default only when no active hero exists. */
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Hero")
 	UJargonHeroDefinition* EnsureActiveHeroDefinition(UJargonHeroDefinition* DefaultHeroDefinition);
 
@@ -100,6 +103,7 @@ public:
 		return ActiveRunDeck;
 	}
 
+	/** Returns reserve cards not currently in the active deck. */
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run")
 	TArray<UCardDefinition*> GetRunReserveCards() const;
 
@@ -174,6 +178,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Deck")
 	bool MoveCardFromReserveToDeck(UCardDefinition* Card);
 
+	/** Deck editing mutators enforce deck size, copy, ownership, and non-neutral element limits. */
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Deck")
 	bool MoveCardFromDeckToReserve(UCardDefinition* Card);
 
@@ -237,6 +242,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
 	void PrepareReturnToExploration();
 
+	/** Completes map return bookkeeping after combat/travel has restored the exploration world. */
 	UFUNCTION(BlueprintCallable, Category = "Jargon|Encounter")
 	void CompleteReturnToExploration();
 
@@ -303,10 +309,12 @@ public:
 		return PendingEncounterData.HasConfiguredCombatEncounter();
 	}
 
+	/** Returns the map that post-combat flow should load next based on pending encounter/return state. */
 	UFUNCTION(BlueprintPure, Category = "Jargon|Encounter")
 	FName GetPostCombatDestinationMapName() const;
 
 protected:
+	/** Helper conversions keep Blueprint-friendly arrays separate from internal TObjectPtr storage. */
 	static TArray<UCardDefinition*> ConvertCardArray(const TArray<TObjectPtr<UCardDefinition>>& SourceCards);
 	static bool RemoveCardFromCollection(TArray<TObjectPtr<UCardDefinition>>& CardCollection, UCardDefinition* Card);
 	int32 CountUniqueNonNeutralElements(const TArray<TObjectPtr<UCardDefinition>>& CardCollection) const;
@@ -326,6 +334,8 @@ protected:
 	int32 GetRecyclableOwnedRunCardCopyCount(const UCardDefinition* Card) const;
 	void GatherRecyclableExtraOwnedRunCardCopies(TArray<UCardDefinition*>& OutCards) const;
 	void SeedDefaultClassArtifactForActiveHero();
+
+	/** Clears runtime run state. Static Data Asset definitions are never modified here. */
 	void ClearRuntimeRunState(bool bResetHeroDefinition);
 	void SaveCurrentRunIfActive();
 	UJargonSaveIndex* LoadOrCreateSaveIndex() const;
@@ -343,6 +353,7 @@ protected:
 	FString GetSaveGameFilePath(const FString& SaveSlotName) const;
 
 protected:
+	/** Active save slot used for the current run; menus may switch this before load/save. */
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Save")
 	FString RunSaveSlotName = TEXT("Jargon_Run");
 
@@ -358,6 +369,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Save", meta = (ClampMin = "0"))
 	int32 RunSaveUserIndex = 0;
 
+	/** Exploration map and transform captured before combat travel so victory/defeat can return correctly. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	FName ReturnMapName = NAME_None;
 
@@ -371,12 +383,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	bool bReturningFromCombat = false;
 
+	/** Run-persistent IDs for defeated exploration encounters. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Encounter")
 	TSet<FName> ClearedEncounterIds;
 
+	/** Run-persistent IDs for one-shot exploration rewards or interactions. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Exploration")
 	TSet<FName> CompletedExplorationInteractionIds;
 
+	/** True after a new or loaded run has initialized deck, currency, hero, and artifacts. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run")
 	bool bHasActiveRun = false;
 
@@ -387,29 +402,35 @@ protected:
 	int32 MaxCopiesPerDeckCard = 3;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "1"))
-	int32 MaxRunDeckSize = 30;
+	int32 MaxRunDeckSize = 40;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Deck", meta = (ClampMin = "0", ToolTip = "Maximum number of unique non-neutral card elements allowed in the active run deck. Neutral cards do not count."))
-	int32 MaxRunDeckElements = 3;
+	int32 MaxRunDeckElements = 2;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Jargon|Run|Economy", meta = (ToolTip = "Currency awarded when recycling one owned card copy above the useful owned copy limit. Normal decks keep at least MaxCopiesPerDeckCard copies."))
 	FJargonCurrencyAmount CardRecycleValue;
 
+	/** Active run deck. Entries are card Data Asset references; duplicate entries represent duplicate copies. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> ActiveRunDeck;
 
+	/** Full owned card collection for the active run. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> RunOwnedCards;
 
+	/** Owned cards not currently assigned to the active run deck. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Cards")
 	TArray<TObjectPtr<UCardDefinition>> RunReserveCards;
 
+	/** Run-persistent currencies. Combat-local resources, such as Energy and element charges, live in combat systems. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Economy")
 	FJargonCurrencyAmount RunCurrencies;
 
+	/** Run-persistent Artifact Data Asset references, including default class artifacts and earned rewards. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Artifacts")
 	TArray<TObjectPtr<UJargonArtifactDefinition>> RunArtifacts;
 
+	/** Selected hero Data Asset for this run/save. Runtime combat state is copied into GameMode per combat. */
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Hero")
 	TObjectPtr<UJargonHeroDefinition> ActiveHeroDefinition = nullptr;
 

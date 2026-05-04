@@ -1042,7 +1042,7 @@ bool FJargonEffectResolver::ResolvePullTargetEffect(
 			continue;
 		}
 
-		const TArray<AGridTile*> PathToSource = GridBoard->BuildPath(TargetTile, SourceTile);
+		const TArray<AGridTile*> PathToSource = GridBoard->BuildPathAllowingOccupiedEndTile(TargetTile, SourceTile);
 		if (PathToSource.Num() < 3)
 		{
 			continue;

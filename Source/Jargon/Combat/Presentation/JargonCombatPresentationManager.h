@@ -20,11 +20,14 @@ public:
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	/** Wires this runtime manager to combat-owned settings and GameMode state. */
 	void InitializePresentation(UJargonCombatPresentationSettings* InSettings, AJargonCombatGameMode* InCombatGameMode);
 
+	/** Presentation entry point for gameplay cues; safe for Blueprint forwarding and C++ GameMode calls. */
 	UFUNCTION(BlueprintCallable, Category = "Combat Presentation")
 	void HandleCombatCue(const FJargonCombatCueEvent& Cue);
 
+	/** Debug-only style setup check for missing presentation settings/classes; it cannot prove visual correctness. */
 	UFUNCTION(BlueprintCallable, Category = "Combat Presentation|Debug")
 	bool ValidatePresentationSetup(bool bLogWarnings = true) const;
 
@@ -90,6 +93,7 @@ protected:
 	void DrawDebugCue(const FJargonCombatCueEvent& Cue, const FVector& CueLocation) const;
 	void DispatchBlueprintCueEvents(const FJargonCombatCueEvent& Cue);
 
+	/** Blueprint catch-all hook for additional cue presentation. Gameplay should already be resolved. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
 	void BP_OnCombatCue(const FJargonCombatCueEvent& Cue);
 
@@ -130,9 +134,11 @@ protected:
 	void BP_OnElementalBonusTriggeredCue(const FJargonCombatCueEvent& Cue);
 
 protected:
+	/** Data Asset assigned by the combat GameMode; presentation only, no gameplay authority. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat Presentation")
 	TObjectPtr<UJargonCombatPresentationSettings> PresentationSettings = nullptr;
 
+	/** Owning combat GameMode used for coordinate and viewport lookups. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat Presentation")
 	TObjectPtr<AJargonCombatGameMode> CombatGameMode = nullptr;
 
@@ -143,6 +149,7 @@ protected:
 		int32 TotalValue = 0;
 	};
 
+	/** Short-lived aggregation buffer so rapid damage ticks can present as one floating number. */
 	TMap<TWeakObjectPtr<ABattleUnit>, FPendingFloatingDamageCue> PendingDamageFloatingTextByTarget;
 	FTimerHandle DamageFloatingTextAggregationTimerHandle;
 };

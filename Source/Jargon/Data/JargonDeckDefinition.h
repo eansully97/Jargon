@@ -21,9 +21,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck", meta = (TitleProperty = "DisplayName", ToolTip = "Authored card copies in this deck. Duplicate entries represent duplicate copies."))
 	TArray<TObjectPtr<UCardDefinition>> Cards;
 
+	/** Returns the authored card copies as Blueprint-friendly raw pointers without mutating the deck asset. */
 	UFUNCTION(BlueprintPure, Category = "Deck")
 	TArray<UCardDefinition*> GetResolvedCards() const;
 
+	/** Validates that the deck has usable authored card references. */
 	UFUNCTION(BlueprintPure, Category = "Deck")
 	bool IsValidDefinition() const;
 

@@ -22,6 +22,7 @@ class JARGON_API AGridTile : public AActor
 public:
 	AGridTile();
 
+	/** Hex coordinate assigned by the owning GridBoard during generation. */
 	UFUNCTION(BlueprintPure, Category = "Grid")
 	FHexCoord GetCoord() const
 	{
@@ -76,6 +77,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grid|Effects")
 	void RemoveTileEffect(ABattleTileEffect* TileEffect);
 
+	/** Runtime tile effects currently registered on this tile; actors remain owned by the world/GameMode. */
 	const TArray<TObjectPtr<ABattleTileEffect>>& GetTileEffects() const
 	{
 		return TileEffects;
@@ -93,18 +95,23 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> TileMesh;
 
+	/** Hex board coordinate; visible at runtime and assigned by GridBoard generation. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Grid")
 	FHexCoord Coord;
 
+	/** Instance-authored blocker flag for fixed map obstacles. */
 	UPROPERTY(EditInstanceOnly, Category = "Grid")
 	bool bBlocked = false;
 
+	/** Runtime occupancy pointer; ABattleUnit is responsible for updating it when moving tiles. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Grid")
 	TObjectPtr<ABattleUnit> OccupyingUnit = nullptr;
 
+	/** Presentation state set by movement, targeting, and selection highlight code. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Grid")
 	ETileHighlightState HighlightState = ETileHighlightState::None;
 
+	/** Runtime trap/aura actors registered on this tile. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Grid|Effects")
 	TArray<TObjectPtr<ABattleTileEffect>> TileEffects;
 

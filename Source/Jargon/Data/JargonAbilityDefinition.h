@@ -20,6 +20,7 @@ class FDataValidationContext;
 
 class UJargonAbilityDefinition;
 
+/** Designer-facing presets for non-card ability hooks before conversion to resolver delivery/filter values. */
 UENUM(BlueprintType)
 enum class EJargonAbilityTargetingPreset : uint8
 {
@@ -67,8 +68,12 @@ struct JARGON_API FJargonAbilityTargetingProfile
 	EJargonEffectDelivery GetDelivery() const;
 	EJargonEffectTargetFilter GetTargetFilter() const;
 	FString GetSummary() const;
+
+	/** Returns whether this profile needs a radius value when building shared effect specs. */
 	bool UsesRadius() const;
 	bool UsesChain() const;
+
+	/** Applies this profile to one shared effect spec during ability action build. */
 	void ApplyToEffectSpec(FJargonEffectSpec& Effect) const;
 };
 
@@ -131,6 +136,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect Line|Advanced Targeting", meta = (AdvancedDisplay, ToolTip = "Optional targeting override for this effect line.", EditCondition = "bOverrideTargetingProfile", EditConditionHides))
 	FJargonAbilityTargetingProfile TargetingOverride;
 
+	/** Converts this non-card ability effect line into one or more shared runtime effect specs. */
 	virtual void BuildEffectSpecs(const UJargonAbilityDefinition* AbilityDefinition, TArray<FJargonEffectSpec>& OutEffects) const;
 	virtual FString GetOperationName() const;
 	virtual FString GetDeliverySummary() const;
@@ -138,6 +144,8 @@ public:
 	virtual FString GetActionSummary() const;
 	virtual FString GetRulesText() const;
 	virtual void RefreshEditorTitle();
+
+	/** Applies either the ability default targeting profile or this line's override to a built spec. */
 	void ApplyTargetingToEffectSpec(const UJargonAbilityDefinition* AbilityDefinition, FJargonEffectSpec& Effect) const;
 
 	virtual void PostLoad() override;
@@ -459,8 +467,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Ability|Effect Lines", meta = (TitleProperty = "EditorTitle", ToolTip = "Readable Effect Lines. Each line builds one or more FJargonEffectSpec entries for the shared executor/resolver pipeline."))
 	TArray<TObjectPtr<UJargonAbilityAction>> Actions;
 
+	/** Builds shared effect specs for FJargonEffectExecutor. Does not execute gameplay by itself. */
 	void BuildEffectSpecs(TArray<FJargonEffectSpec>& OutEffects) const;
 
+	/** Lightweight validity check for runtime/editor callers. Full Data Validation reports detailed authoring issues. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Validation")
 	bool IsValidDefinition() const;
 

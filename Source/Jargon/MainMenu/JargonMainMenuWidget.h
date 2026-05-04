@@ -17,6 +17,7 @@ class JARGON_API UJargonMainMenuWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	/** Page navigation helpers used by native button handlers and Blueprint menu flows. */
 	UFUNCTION(BlueprintCallable, Category = "Main Menu")
 	void ShowMainPage();
 
@@ -79,9 +80,11 @@ protected:
 	void StartNewSaveWithHeroDefinition(const TCHAR* HeroDefinitionPath, const TCHAR* ClassDisplayName);
 	void OpenTownMap();
 
+	/** Map opened after loading or creating a run from the main menu. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Main Menu|Travel")
 	FName TownMapName = TEXT("L_TownMap");
 
+	/** Runtime widget references found from the rebuilt UMG tree; the widget does not own class defaults. */
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetSwitcher> PageSwitcher = nullptr;
 
@@ -136,6 +139,7 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> DeleteSaveSummaryText = nullptr;
 
+	/** Currently selected save slot summary used by load/delete confirmation pages. */
 	UPROPERTY(BlueprintReadOnly, Category = "Main Menu|Save")
 	FJargonSaveSlotSummary SelectedSaveSlotSummary;
 };

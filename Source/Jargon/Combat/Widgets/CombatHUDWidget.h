@@ -26,7 +26,10 @@ class JARGON_API UCombatHUDWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	
+	/** Rebuilds the hand from the combat controller's current hand array. Runtime UI only. */
 	void RefreshHand(const TArray<TObjectPtr<UCardDefinition>>& HandCards);
+
+	/** Updates selected-card presentation without changing combat selection state. */
 	void SetSelectedCard(UCardDefinition* SelectedCard);
 
 	UFUNCTION(BlueprintCallable, Category = "Combat HUD|Hand Layout")
@@ -44,6 +47,7 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetEnergyValues(int32 NewEnergy, int32 NewMaxEnergy);
 
+	/** Refreshes combat-local element charge display values owned by the combat GameMode. */
 	void SetElementChargeValues(const TMap<EJargonElementType, int32>& NewElementCharges);
 
 	UFUNCTION(BlueprintPure, Category = "Combat HUD|Elements")
@@ -107,21 +111,27 @@ protected:
 		int32 Quietus);
 
 protected:
+	/** Optional CanvasPanel binding named HandCanvasPanel; required only for native fanned-card layout. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UCanvasPanel> HandCanvasPanel = nullptr;
 
+	/** Optional TextBlock binding named SelectedCardText for compact selected-card text. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> SelectedCardText = nullptr;
 
+	/** Required Button binding named EndTurnButton for native end-turn clicks. */
 	UPROPERTY(meta = (BindWidget), BlueprintReadOnly)
 	TObjectPtr<UButton> EndTurnButton = nullptr;
 
+	/** Required TextBlock binding named PhaseText. */
 	UPROPERTY(meta = (BindWidget), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> PhaseText = nullptr;
 
+	/** Required TextBlock binding named EnergyText. */
 	UPROPERTY(meta = (BindWidget), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> EnergyText = nullptr;
 
+	/** Optional element charge TextBlock bindings; Blueprint events can render element HUDs instead. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> FireChargeText = nullptr;
 
@@ -140,6 +150,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> QuietusChargeText = nullptr;
 
+	/** Optional hero identity TextBlock bindings for C++-driven fallback HUD text. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> HeroClassText = nullptr;
 
@@ -164,6 +175,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> HeroIdentitySummaryText = nullptr;
 
+	/** Optional element icon bindings; C++ does not assign art, only exposes hooks for Blueprint layout. */
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UImage> FireChargeIcon = nullptr;
 
@@ -185,6 +197,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly)
 	TObjectPtr<UTextBlock> ActionAvailabilityText = nullptr;
 
+	/** Card entry widget Blueprint class spawned for each card in hand. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD")
 	TSubclassOf<UCardEntryWidget> CardEntryWidgetClass;
 
@@ -203,12 +216,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat HUD|Hand Layout", meta = (ToolTip = "Offset from the center anchor of the hand canvas. Usually stays at 0,0 when the Canvas Panel itself is positioned in Blueprint."))
 	FVector2D HandCenterPosition = FVector2D::ZeroVector;
 
+	/** Runtime-owned card widgets currently spawned into the hand canvas. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat HUD")
 	TArray<TObjectPtr<UCardEntryWidget>> SpawnedCardWidgets;
 
+	/** Cached selected card definition used only for HUD presentation. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat HUD")
 	TObjectPtr<UCardDefinition> SelectedCardDefinition = nullptr;
 
+	/** Last element charge values displayed by the HUD; authoritative values live on the combat GameMode. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Combat HUD|Elements")
 	TMap<EJargonElementType, int32> DisplayedElementCharges;
 

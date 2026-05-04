@@ -12,5 +12,6 @@ class JARGON_API UJargonAbilityContextMigrationCommandlet : public UCommandlet
 public:
 	UJargonAbilityContextMigrationCommandlet();
 
+	/** Editor commandlet entry point for ability hook-context migration/audit work. Intended for explicit offline runs. */
 	virtual int32 Main(const FString& Params) override;
 };

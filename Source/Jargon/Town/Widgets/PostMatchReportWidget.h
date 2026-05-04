@@ -17,9 +17,11 @@ class JARGON_API UPostMatchReportWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 
+	/** Caches post-combat report data and notifies Blueprint presentation. */
 	UFUNCTION(BlueprintCallable, Category = "Post Match Report")
 	void RefreshFromReportData(const FJargonPostCombatReportData& InReportData);
 
+	/** Broadcasts the continue request to the combat controller/GameInstance return flow. */
 	UFUNCTION(BlueprintCallable, Category = "Post Match Report")
 	void RequestContinue();
 
@@ -33,9 +35,11 @@ public:
 	FOnPostMatchContinueRequestedSignature OnPostMatchContinueRequested;
 
 protected:
+	/** Runtime report payload owned by this widget; authoritative post-combat state lives in GameInstance. */
 	UPROPERTY(BlueprintReadOnly, Category = "Post Match Report")
 	FJargonPostCombatReportData ReportData;
 
+	/** Optional Button binding named ContinueButton. Blueprint can also call RequestContinue directly. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Post Match Report")
 	TObjectPtr<UButton> ContinueButton = nullptr;
 

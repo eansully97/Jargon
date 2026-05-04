@@ -939,7 +939,9 @@ void UJargonCardPlaceTileEffectAction::BuildEffectSpecs(const UCardDefinition* C
 	Effect.TargetFilter = EJargonEffectTargetFilter::None;
 	Effect.TileEffectDefinition = TileEffectDefinition;
 	Effect.RuntimeTileEffectClass = RuntimeTileEffectClass;
-	Effect.TileEffectCategory = Card ? Card->Category : ECardCategory::Trap;
+	Effect.TileEffectCategory = TileEffectDefinition
+		? TileEffectDefinition->TileEffectCategory
+		: (Card ? Card->Category : ECardCategory::Trap);
 	OutEffects.Add(Effect);
 }
 
@@ -1000,6 +1002,21 @@ bool UJargonCardPlaceTileEffectAction::ValidateAction(const UCardDefinition* Car
 	}
 	else if (TileEffectDefinition)
 	{
+		if (Card &&
+			(Card->Category == ECardCategory::Trap || Card->Category == ECardCategory::Aura) &&
+			Card->Category != TileEffectDefinition->TileEffectCategory)
+		{
+			JargonDataAssetValidation::AddError(
+				Context,
+				Card,
+				FString::Printf(
+					TEXT("%s card category %s does not match TileEffectDefinition category %s."),
+					*ActionLabel,
+					*JargonEffectContracts::GetEnumTokenName(StaticEnum<ECardCategory>(), static_cast<int64>(Card->Category)),
+					*JargonEffectContracts::GetEnumTokenName(StaticEnum<ECardCategory>(), static_cast<int64>(TileEffectDefinition->TileEffectCategory))));
+			bValid = false;
+		}
+
 		const bool bDefinitionIsTrap = TileEffectDefinition->TileEffectCategory == ECardCategory::Trap;
 		const bool bDefinitionIsAura = TileEffectDefinition->TileEffectCategory == ECardCategory::Aura;
 		if (bDefinitionIsTrap && !RuntimeTileEffectClass->IsChildOf(ATrapTileEffect::StaticClass()))

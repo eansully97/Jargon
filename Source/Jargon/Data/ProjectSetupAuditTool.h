@@ -18,6 +18,7 @@ class JARGON_API UProjectSetupAuditTool : public UDataAsset
 public:
 	UProjectSetupAuditTool();
 
+	/** Editor-only setup report. It checks references/classes/properties but cannot verify visual polish or map layout quality. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Project Setup Audit")
 	void RunProjectSetupAudit();
 
@@ -61,6 +62,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Project Setup Audit|Output", meta = (ToolTip = "Subfolder under Project/Saved where the setup audit CSV is written."))
 	FString OutputSubdirectory = TEXT("ProjectAudit");
 
+	/** When true, writes a CSV report under Saved; this tool remains read-only against project assets. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Project Setup Audit|Output")
 	bool bExportCsvReport = true;
 };

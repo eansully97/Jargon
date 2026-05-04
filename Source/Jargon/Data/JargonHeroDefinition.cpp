@@ -80,10 +80,10 @@ void UJargonHeroDefinition::ApplyRecommendedClassPreset()
 		{
 			DisplayName = FText::FromString(TEXT("Paladin"));
 		}
-		MaxHP = 7;
+		MaxHP = 30;
 		MoveRange = 3;
 		AttackRange = 1;
-		AttackDamage = 2;
+		AttackDamage = 3;
 		break;
 
 	case EJargonHeroClass::Mage:
@@ -91,10 +91,10 @@ void UJargonHeroDefinition::ApplyRecommendedClassPreset()
 		{
 			DisplayName = FText::FromString(TEXT("Mage"));
 		}
-		MaxHP = 4;
-		MoveRange = 3;
-		AttackRange = 3;
-		AttackDamage = 1;
+		MaxHP = 25;
+		MoveRange = 4;
+		AttackRange = 2;
+		AttackDamage = 2;
 		break;
 
 	case EJargonHeroClass::Rogue:
@@ -102,17 +102,17 @@ void UJargonHeroDefinition::ApplyRecommendedClassPreset()
 		{
 			DisplayName = FText::FromString(TEXT("Rogue"));
 		}
-		MaxHP = 5;
+		MaxHP = 25;
 		MoveRange = 4;
 		AttackRange = 1;
-		AttackDamage = 2;
+		AttackDamage = 4;
 		break;
 
 	default:
-		MaxHP = 5;
+		MaxHP = 30;
 		MoveRange = 3;
 		AttackRange = 1;
-		AttackDamage = 1;
+		AttackDamage = 3;
 		break;
 	}
 }

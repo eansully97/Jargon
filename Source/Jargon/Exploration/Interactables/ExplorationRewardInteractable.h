@@ -23,9 +23,11 @@ public:
 
 	virtual void Interact_Implementation(AJargonExplorationPlayerController* InteractingController) override;
 
+	/** Returns the persistent completion ID, falling back to actor identity when no explicit ID is authored. */
 	UFUNCTION(BlueprintPure, Category = "Exploration Reward")
 	FName GetResolvedCompletionId() const;
 
+	/** Checks run-persistent completion state in the GameInstance. */
 	UFUNCTION(BlueprintPure, Category = "Exploration Reward")
 	bool IsRewardCompleted() const;
 
@@ -33,7 +35,10 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void HandlePlayerEnteredRange(AJargonExplorationPlayerController* InteractingController) override;
 
+	/** Override point for concrete reward types. Return true only after the reward has actually been granted. */
 	virtual bool GrantReward(AJargonExplorationPlayerController* InteractingController);
+
+	/** Claims once, grants the reward, persists completion, and disables/destroys the actor according to settings. */
 	bool TryClaimReward(AJargonExplorationPlayerController* InteractingController);
 
 	void MarkCompletedAndDisable(AJargonExplorationPlayerController* InteractingController);
@@ -46,6 +51,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exploration Reward", meta = (ToolTip = "Stable ID used to persist this reward as completed for the current run. If left empty, the actor name is used as a fallback."))
 	FName CompletionId = NAME_None;
 
+	/** When true, removes the actor after completion; otherwise it remains disabled/hidden by completed state. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exploration Reward")
 	bool bDestroyWhenCompleted = true;
 

@@ -276,6 +276,16 @@ TArray<AGridTile*> AGridBoard::FindReachableTiles(AGridTile* StartTile, int32 Mo
 
 TArray<AGridTile*> AGridBoard::BuildPath(AGridTile* StartTile, AGridTile* EndTile) const
 {
+	return BuildPathInternal(StartTile, EndTile, false);
+}
+
+TArray<AGridTile*> AGridBoard::BuildPathAllowingOccupiedEndTile(AGridTile* StartTile, AGridTile* EndTile) const
+{
+	return BuildPathInternal(StartTile, EndTile, true);
+}
+
+TArray<AGridTile*> AGridBoard::BuildPathInternal(AGridTile* StartTile, AGridTile* EndTile, bool bAllowOccupiedEndTile) const
+{
 	TArray<AGridTile*> Path;
 
 	if (!StartTile || !EndTile)
@@ -289,7 +299,7 @@ TArray<AGridTile*> AGridBoard::BuildPath(AGridTile* StartTile, AGridTile* EndTil
 		return Path;
 	}
 
-	if (!EndTile->IsWalkable())
+	if (EndTile->IsBlocked() || (!bAllowOccupiedEndTile && EndTile->IsOccupied()))
 	{
 		return Path;
 	}

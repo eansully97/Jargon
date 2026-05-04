@@ -20,32 +20,29 @@ enum class EJargonHeroAspect : uint8
 {
 	None UMETA(DisplayName = "None"),
 
-	// Legacy/compatibility aspect. Runtime aspect selection no longer assigns this directly.
-	RadiantChampion UMETA(DisplayName = "Radiant Champion"),
-
 	// Mage aspects: the first authored element to reach the charge cap locks the combat transformation.
-	Pyromancer UMETA(DisplayName = "Mage / Fire - Pyromancer"),
-	Cryomancer UMETA(DisplayName = "Mage / Frost - Cryomancer"),
-	Stormcaller UMETA(DisplayName = "Mage / Storm - Stormcaller"),
-	Wildheart UMETA(DisplayName = "Mage / Nature - Wildheart"),
-	Lightweaver UMETA(DisplayName = "Mage / Radiance - Lightweaver"),
-	Necromancer UMETA(DisplayName = "Mage / Quietus - Necromancer"),
+	Pyromancer UMETA(DisplayName = "Pyromancer"),
+	Cryomancer UMETA(DisplayName = "Cryomancer"),
+	Stormcaller UMETA(DisplayName = "Stormcaller"),
+	Wildheart UMETA(DisplayName = "Wildheart"),
+	Lightweaver UMETA(DisplayName = "Lightweaver"),
+	Necromancer UMETA(DisplayName = "Necromancer"),
 
 	// Rogue aspects: the first authored element to reach the charge cap locks the combat transformation.
-	Ashblade UMETA(DisplayName = "Rogue / Fire - Ashblade"),
-	Frostknife UMETA(DisplayName = "Rogue / Frost - Frostknife"),
-	Tempest UMETA(DisplayName = "Rogue / Storm - Tempest"),
-	Venomshade UMETA(DisplayName = "Rogue / Nature - Venomshade"),
-	Inquisitor UMETA(DisplayName = "Rogue / Radiance - Inquisitor"),
-	Reaper UMETA(DisplayName = "Rogue / Quietus - Reaper"),
+	Ashblade UMETA(DisplayName = "Ashblade"),
+	Frostknife UMETA(DisplayName = "Frostknife"),
+	Tempest UMETA(DisplayName = "Tempest"),
+	Venomshade UMETA(DisplayName = "Venomshade"),
+	Inquisitor UMETA(DisplayName = "Inquisitor"),
+	Reaper UMETA(DisplayName = "Reaper"),
 
 	// Paladin aspects: the first authored element to reach the charge cap locks the combat transformation.
-	Sunbreaker UMETA(DisplayName = "Paladin / Fire - Sunbreaker"),
-	Frostwarden UMETA(DisplayName = "Paladin / Frost - Frostwarden"),
-	Stormguard UMETA(DisplayName = "Paladin / Storm - Stormguard"),
-	Oathwarden UMETA(DisplayName = "Paladin / Nature - Oathwarden"),
-	Templar UMETA(DisplayName = "Paladin / Radiance - Templar"),
-	Graveknight UMETA(DisplayName = "Paladin / Quietus - Graveknight")
+	Sunbreaker UMETA(DisplayName = "Sunbreaker"),
+	Frostwarden UMETA(DisplayName = "Frostwarden"),
+	Stormguard UMETA(DisplayName = "Stormguard"),
+	Oathwarden UMETA(DisplayName = "Oathwarden"),
+	Templar UMETA(DisplayName = "Templar"),
+	Graveknight UMETA(DisplayName = "Graveknight")
 };
 
 USTRUCT(BlueprintType)

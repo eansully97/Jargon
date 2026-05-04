@@ -104,7 +104,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Hero|Validation", meta = (ToolTip = "Returns true when required combat stat values are usable. This is a backend validation helper, not an editor workflow requirement."))
 	bool IsValidDefinition() const;
 
+	/** Finds static aspect authoring by enum identity. Runtime transformation state lives in combat GameMode. */
 	const FJargonHeroAspectDefinition* FindAspectDefinitionByAspect(EJargonHeroAspect Aspect) const;
+
+	/** Finds the first authored aspect that transforms from the supplied element. */
 	const FJargonHeroAspectDefinition* FindAspectDefinitionForElement(EJargonElementType Element) const;
 
 	const TArray<FJargonHeroAspectDefinition>& GetAuthoredAspectDefinitions() const

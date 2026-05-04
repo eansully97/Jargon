@@ -10,6 +10,21 @@
 #if WITH_EDITOR
 namespace
 {
+bool IsTriggerCompatibleWithCategory(ECardCategory TileEffectCategory, EJargonTileEffectTrigger Trigger)
+{
+	switch (TileEffectCategory)
+	{
+	case ECardCategory::Trap:
+		return Trigger == EJargonTileEffectTrigger::OnUnitEnter;
+
+	case ECardCategory::Aura:
+		return Trigger == EJargonTileEffectTrigger::OnPlayerTurnStart;
+
+	default:
+		return false;
+	}
+}
+
 void ValidateTileEffectTriggerAbility(
 	const UJargonTileEffectDefinition* Owner,
 	FDataValidationContext& Context)
@@ -67,7 +82,8 @@ bool UJargonTileEffectDefinition::IsValidDefinition() const
 		&& TriggerAbility->IsValidDefinition()
 		&& Duration >= 0
 		&& EffectRadius >= 0
-		&& (TileEffectCategory == ECardCategory::Trap || TileEffectCategory == ECardCategory::Aura);
+		&& (TileEffectCategory == ECardCategory::Trap || TileEffectCategory == ECardCategory::Aura)
+		&& IsTriggerCompatibleWithCategory(TileEffectCategory, Trigger);
 }
 
 #if WITH_EDITOR
@@ -83,6 +99,19 @@ EDataValidationResult UJargonTileEffectDefinition::IsDataValid(FDataValidationCo
 	if (TileEffectCategory != ECardCategory::Trap && TileEffectCategory != ECardCategory::Aura)
 	{
 		JargonDataAssetValidation::AddError(Context, this, TEXT("TileEffectCategory must be Trap or Aura."));
+	}
+	else if (!IsTriggerCompatibleWithCategory(TileEffectCategory, Trigger))
+	{
+		const TCHAR* ExpectedTriggerText = TileEffectCategory == ECardCategory::Trap
+			? TEXT("On Unit Enter")
+			: TEXT("On Player Turn Start");
+		JargonDataAssetValidation::AddError(
+			Context,
+			this,
+			FString::Printf(
+				TEXT("TileEffectCategory %s requires Trigger=%s. Trap definitions do not fire on turn start, and Aura definitions do not fire on unit enter."),
+				*JargonEffectContracts::GetEnumTokenName(StaticEnum<ECardCategory>(), static_cast<int64>(TileEffectCategory)),
+				ExpectedTriggerText));
 	}
 
 	if (Duration < 0)

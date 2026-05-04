@@ -91,6 +91,7 @@ public:
 		return TargetType != ECardTargetType::Self;
 	}
 
+	/** Targeting helper for UI/highlights; gameplay still resolves through CardScript effect specs. */
 	UFUNCTION(BlueprintPure, Category = "Card")
 	bool RequiresUnitOnTargetTile() const
 	{
@@ -123,10 +124,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Card|Effects")
 	bool HasEffectOperation(EJargonEffectOperation Operation) const;
 
+	/** Builds the base Operation + Delivery + Filter + Payload specs from the inline CardScript. */
 	bool BuildBaseEffectSpecs(TArray<FJargonEffectSpec>& OutEffects) const;
+
+	/** Builds one manually chosen elemental bonus group into shared effect specs. */
 	bool BuildElementalBonusEffectSpecs(int32 BonusIndex, TArray<FJargonEffectSpec>& OutEffects) const;
+
+	/** Number of optional elemental bonus groups offered to the manual bonus-choice widget. */
 	int32 GetElementalBonusScriptCount() const;
 
+	/** Lightweight runtime/editor validity check. Full editor validation reports richer asset authoring issues. */
 	UFUNCTION(BlueprintPure, Category = "Card")
 	bool IsValidDefinition() const;
 

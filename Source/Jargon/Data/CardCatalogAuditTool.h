@@ -18,6 +18,7 @@ class JARGON_API UCardCatalogAuditTool : public UDataAsset
 public:
 	UCardCatalogAuditTool();
 
+	/** Editor-only report pass. Detects missing references and basic authoring gaps; it does not prove balance or visuals. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Card Catalog")
 	void RunCardCatalogAudit();
 
@@ -34,6 +35,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Output", meta = (ToolTip = "Subfolder under Project/Saved where CSV reports are written."))
 	FString OutputSubdirectory = TEXT("CardCatalog");
 
+	/** When true, writes CSV snapshots under Saved; no card, pack, or summon assets are modified. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Catalog|Output")
 	bool bExportCsvReports = true;
 

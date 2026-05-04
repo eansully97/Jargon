@@ -17,6 +17,7 @@ class JARGON_API UJargonCombatPresentationSettings : public UDataAsset
 public:
 	UJargonCombatPresentationSettings();
 
+	/** Master presentation toggles; disabling these never changes gameplay resolution. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
 	bool bEnableVFX = true;
 
@@ -26,6 +27,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
 	bool bEnableFloatingText = true;
 
+	/** Default Niagara systems keyed by cue type; Blueprint presentation can still add bespoke effects. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation|VFX")
 	TMap<EJargonCombatCueType, TObjectPtr<UNiagaraSystem>> DefaultNiagaraByCue;
 
@@ -134,6 +136,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation|SFX")
 	TMap<EJargonCombatCueType, TObjectPtr<USoundBase>> DefaultSoundByCue;
 
+	/** Widget class spawned into the viewport for native floating combat text. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation|Floating Text")
 	TSubclassOf<UJargonFloatingCombatTextWidget> FloatingTextWidgetClass;
 
@@ -191,6 +194,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation|Colors")
 	FLinearColor DefaultColor = FLinearColor::White;
 
+	/** Returns the authored presentation color for a cue type, falling back to DefaultColor. */
 	UFUNCTION(BlueprintPure, Category = "Presentation")
 	FLinearColor GetColorForCue(EJargonCombatCueType CueType) const;
 };

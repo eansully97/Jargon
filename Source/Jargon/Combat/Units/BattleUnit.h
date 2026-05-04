@@ -33,9 +33,13 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
+	/** Rotates the unit toward a world-space direction for board-facing and attack presentation. */
 	void FaceDirection(const FVector& WorldDirection);
+
+	/** Rotates the unit toward a world-space location without moving it. */
 	void FaceLocation(const FVector& WorldLocation);
 
+	/** Enables/disables native material highlight feedback; safe for Blueprint presentation calls. */
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Visual")
 	void SetHighlightEnabled(bool bEnabled);
 
@@ -126,6 +130,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void PlaceOnTile(AGridTile* Tile);
 
+	/** Clears this unit from its current tile without choosing a new tile. Used during movement/death cleanup. */
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void ClearCurrentTileOccupancy();
 
@@ -144,6 +149,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void ApplyDamage(int32 Amount);
 
+	/** Damage helpers that preserve source/context for cues, pacing metrics, lifesteal, and status rules. */
 	void ApplyDamageFromSource(int32 Amount, ABattleUnit* DamageSourceUnit);
 	void ApplyDamageFromEffectContext(int32 Amount, const FJargonEffectContext& EffectContext);
 	int32 ApplyDamageFromSourceAndGetHealthDamage(int32 Amount, ABattleUnit* DamageSourceUnit);
@@ -161,6 +167,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	void SetBaseCombatStats(int32 NewMaxHP, int32 NewMoveRange, int32 NewAttackRange, int32 NewAttackDamage, bool bRestoreToFullHealth = true);
 
+	/** Copies static summon Data Asset stats, animations, and hooks onto this runtime unit. */
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Summon")
 	void ApplySummonedUnitDefinition(UJargonSummonedUnitDefinition* Definition);
 
@@ -176,6 +183,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit")
 	bool PerformBasicAttack(ABattleUnit* Target);
 
+	/** Plays native/Blueprint attack presentation; damage timing remains coordinated by GameMode. */
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Presentation")
 	void PlayBasicAttackPresentation(ABattleUnit* Target);
 
@@ -320,6 +328,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit | Status")
 	bool CleanseAllNegativeStatuses();
 
+	/** Presentation highlight for the enemy currently taking an AI action. */
 	UFUNCTION(BlueprintCallable, Category = "Battle Unit|Presentation")
 	void SetActingHighlight(bool bInActingHighlight);
 
@@ -334,6 +343,7 @@ public:
 		return MovementCompletedDelegate;
 	}
 
+	/** Reusable ability hooks copied from unit definitions or authored on specialized unit Blueprints. */
 	UJargonAbilityDefinition* GetOnSummonedAbility() const
 	{
 		return OnSummonedAbility;
@@ -363,9 +373,13 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
+	/** Creates and binds the status widget component instance if a widget class is assigned. */
 	void InitializeStatusWidget();
+
+	/** Pushes runtime HP/shield/status values to the status widget and Blueprint presentation hooks. */
 	void RefreshStatusWidget();
 
+	/** Creates dynamic material instances so highlight and hit-flash feedback does not mutate shared materials. */
 	void InitializeDynamicMaterials();
 	void RefreshMaterialFeedback();
 	void SetFlashColor(const FLinearColor& InColor);
@@ -384,6 +398,7 @@ protected:
 	void StopPathMovement();
 
 	void PlayIdleAnimation();
+	void InitializeIdlePresentation();
 	void PlayDeathPresentation();
 	void FinalizeDeathAndDestroy();
 	int32 ApplyDamageInternal(int32 Amount, const FJargonCombatCueEvent* DamageCueSource);
@@ -422,21 +437,27 @@ protected:
 	void BP_OnWeakChanged(int32 NewWeakDamageReduction);
 	
 protected:
+	/** Runtime component hierarchy root owned by the battle unit actor. */
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<USceneComponent> SceneRoot = nullptr;
 
+	/** Mesh component configured by the unit Blueprint; C++ drives animations and material feedback when assigned. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USkeletalMeshComponent> UnitMesh = nullptr;
 
+	/** Dynamic material instances created at runtime for highlight and hit-flash parameters. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> DynamicMaterialInstances;
 
+	/** Widget component that owns the native battle unit status widget instance. */
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<UWidgetComponent> StatusWidgetComponent = nullptr;
 
+	/** Status widget Blueprint class displayed above this unit; optional for purely Blueprint-driven presentation. */
 	UPROPERTY(VisibleDefaultsOnly, Category = "UI")
 	TSubclassOf<UBattleUnitStatusWidget> StatusWidgetClass = nullptr;
 
+	/** Combat team used by targeting filters and AI decisions. */
 	UPROPERTY(EditDefaultsOnly, Category = "Battle Unit")
 	ETeam Team = ETeam::Enemy;
 
@@ -470,12 +491,15 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Battle Unit|Summon", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UJargonSummonedUnitDefinition> AppliedSummonedUnitDefinition = nullptr;
 
+	/** Tile currently occupied by this runtime unit. The tile stores the reciprocal occupancy pointer. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit")
 	TObjectPtr<AGridTile> CurrentTile = nullptr;
 
+	/** Runtime death flag; Data Assets never store current HP/death state. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit | Status")
 	bool bIsDead = false;
 
+	/** Guards death hooks so OnDeath abilities resolve once even if multiple damage paths report death. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit | Status")
 	bool bHasExecutedDeathEffects = false;
 	
@@ -527,6 +551,7 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Turn")
 	bool bMovementBlockedByRootThisTurn = false;
 
+	/** Runtime path data for async tile-by-tile movement presentation. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AGridTile>> ActiveMovePath;
 
@@ -551,6 +576,7 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Movement")
 	FVector ActiveMoveSegmentEnd = FVector::ZeroVector;
 
+	/** Runtime visual flags that feed dynamic material parameters. */
 	UPROPERTY(VisibleInstanceOnly, Category = "Battle Unit|Visual")
 	bool bActingHighlight = false;
 

@@ -18,6 +18,7 @@ class JARGON_API AJargonInteractableActor : public AActor
 public:
 	AJargonInteractableActor();
 
+	/** Blueprint-native interaction entry point called by the exploration controller. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Interaction")
 	void Interact(AJargonExplorationPlayerController* InteractingController);
 	virtual void Interact_Implementation(AJargonExplorationPlayerController* InteractingController);
@@ -44,6 +45,7 @@ public:
 	FJargonInteractionPromptData BuildInteractionPromptData(AJargonExplorationPlayerController* InteractingController);
 	virtual FJargonInteractionPromptData BuildInteractionPromptData_Implementation(AJargonExplorationPlayerController* InteractingController);
 
+	/** Notification hooks from the controller when the shared prompt becomes visible/hidden for this actor. */
 	void NotifyInteractionPromptShown(AJargonExplorationPlayerController* InteractingController);
 	void NotifyInteractionPromptHidden(AJargonExplorationPlayerController* InteractingController);
 
@@ -54,6 +56,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
 
+	/** Collision volume that reports nearby exploration controllers for interaction selection. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
 	TObjectPtr<UBoxComponent> InteractionBox;
 
@@ -102,5 +105,6 @@ private:
 
 	AJargonExplorationPlayerController* ResolveInteractingController(AActor* OtherActor) const;
 
+	/** Weak overlap cache because controllers own their own lifetime. */
 	TArray<TWeakObjectPtr<AJargonExplorationPlayerController>> OverlappingControllers;
 };

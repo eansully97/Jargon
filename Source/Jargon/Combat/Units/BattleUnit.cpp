@@ -83,7 +83,7 @@ void ABattleUnit::BeginPlay()
 
 	InitializeDynamicMaterials();
 	RefreshMaterialFeedback();
-	PlayIdleAnimation();
+	InitializeIdlePresentation();
 }
 
 void ABattleUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -746,6 +746,22 @@ void ABattleUnit::PlayIdleAnimation()
 	}
 
 	UnitMesh->PlayAnimation(IdleAnimation, true);
+}
+
+void ABattleUnit::InitializeIdlePresentation()
+{
+	if (bIsDead || !UnitMesh)
+	{
+		return;
+	}
+
+	if (UnitMesh->GetAnimationMode() == EAnimationMode::AnimationBlueprint && UnitMesh->GetAnimClass())
+	{
+		UnitMesh->SetAnimationMode(EAnimationMode::AnimationBlueprint, true);
+		return;
+	}
+
+	PlayIdleAnimation();
 }
 
 void ABattleUnit::PlayDeathPresentation()

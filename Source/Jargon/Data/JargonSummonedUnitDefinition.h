@@ -73,6 +73,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Summon|Abilities", meta = (ToolTip = "Reusable ability definition resolved once when this summon dies. Leave empty for no death hook."))
 	TObjectPtr<UJargonAbilityDefinition> OnDeathAbility = nullptr;
 
+	/** Checks required static summon authoring. Runtime HP, team actions, and status state live on spawned units. */
 	UFUNCTION(BlueprintPure, Category = "Summon|Validation")
 	bool IsValidDefinition() const;
 

@@ -40,6 +40,7 @@ enum class EJargonCardKeyword : uint8
 	Lifesteal UMETA(DisplayName = "Lifesteal")
 };
 
+/** Focused authoring options for the Chain card action before it becomes shared effect specs. */
 UENUM(BlueprintType)
 enum class EJargonCardChainActionType : uint8
 {
@@ -59,7 +60,10 @@ public:
 	UPROPERTY(VisibleAnywhere, Transient, BlueprintReadOnly, Category = "Effect Line", meta = (ToolTip = "Readable collapsed editor label generated from this effect line's operation, delivery, and payload values."))
 	FText EditorTitle;
 
+	/** Converts this designer-facing card effect line into shared runtime effect specs. */
 	virtual void BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const;
+
+	/** Audit helper used by CardDefinition and editor reports to find authored operations. */
 	virtual bool HasRuntimeOperation(EJargonEffectOperation Operation) const;
 	virtual EJargonCardKeyword GetKeyword() const;
 	virtual FString GetKeywordName() const;
@@ -542,7 +546,10 @@ struct JARGON_API FJargonCardElementalBonusScript
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Elemental Bonus", meta = (TitleProperty = "EditorTitle", ToolTip = "Focused effect lines resolved after base card effect lines when this bonus triggers."))
 	TArray<TObjectPtr<UJargonCardAction>> Actions;
 
+	/** Returns whether this manually chosen bonus group has any authored effect lines. */
 	bool HasAnyActions() const;
+
+	/** Builds specs only after the player manually chooses this bonus group. */
 	void BuildEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const;
 	bool HasRuntimeOperation(EJargonEffectOperation Operation) const;
 	FString GetBonusSummary() const;
@@ -560,13 +567,18 @@ class JARGON_API UJargonCardScript : public UObject
 	GENERATED_BODY()
 
 public:
+	/** Base card effect lines resolved every time the card successfully plays. */
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Card Effects|Base", meta = (TitleProperty = "EditorTitle", ToolTip = "Base card effect lines in resolve order. Each line exposes only the operation, delivery, and payload fields it uses."))
 	TArray<TObjectPtr<UJargonCardAction>> Actions;
 
+	/** Optional manual elemental bonus groups shown by the assigned choice widget when affordable. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Card Effects|Elemental Bonuses", meta = (TitleProperty = "EditorTitle", ToolTip = "Optional elemental payoff groups using focused effect-line lists."))
 	TArray<FJargonCardElementalBonusScript> ElementalBonuses;
 
+	/** Returns whether this script has any base card effect lines. */
 	bool HasAnyActions() const;
+
+	/** Shared conversion boundary from card-authored base lines into FJargonEffectSpec arrays. */
 	void BuildBaseEffectSpecs(const UCardDefinition* Card, TArray<FJargonEffectSpec>& OutEffects) const;
 	bool BuildElementalBonusEffectSpecs(const UCardDefinition* Card, int32 BonusIndex, TArray<FJargonEffectSpec>& OutEffects) const;
 	bool HasRuntimeOperation(EJargonEffectOperation Operation) const;
