@@ -8,7 +8,7 @@
 
 class UCardDefinition;
 class UJargonHeroDefinition;
-class UJargonRelicDefinition;
+class UJargonArtifactDefinition;
 
 USTRUCT(BlueprintType)
 struct JARGON_API FJargonSaveSlotSummary
@@ -74,7 +74,7 @@ public:
 	TArray<TSoftObjectPtr<UCardDefinition>> RunReserveCards;
 
 	UPROPERTY(SaveGame)
-	TArray<TSoftObjectPtr<UJargonRelicDefinition>> RunRelics;
+	TArray<TSoftObjectPtr<UJargonArtifactDefinition>> RunArtifacts;
 
 	UPROPERTY(SaveGame)
 	TSoftObjectPtr<UJargonHeroDefinition> ActiveHeroDefinition;

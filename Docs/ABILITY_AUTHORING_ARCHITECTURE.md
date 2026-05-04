@@ -53,17 +53,17 @@ Future runtime hooks should call `FJargonEffectExecutor::ExecuteAbility` when th
 
 Non-card hooks migrated so far are ability-authored only:
 
-- hero class passives
+- default class Artifact hooks
 - hero aspect transformation, turn-start, and enemy-death hooks
 - summon `OnSummoned`, `OnTurnStart`, and `OnDeath` hooks
 - trap/aura tile-effect trigger hooks
-- hero boon/relic combat-start, turn-start, and enemy-death hooks
+- Artifact combat-start, turn-start, and enemy-death hooks
 
 Runtime uses assigned ability definitions only for these hooks. Missing ability references mean the hook is empty.
 
 ## Migration Direction
 
-Raw non-card effect arrays have been removed from the migrated hero, summon, tile-effect, and hero boon authoring surfaces. Future ability migration should continue with systems that have not yet received ability-definition hooks, such as enemy/unit active abilities.
+Raw non-card effect arrays have been removed from the migrated hero, summon, tile-effect, and Artifact authoring surfaces. Future ability migration should continue with systems that have not yet received ability-definition hooks, such as enemy/unit active abilities.
 
 Use `UJargonAbilityAuditTool` to write `Saved/AbilityAudit/AbilityAudit.csv`. The report lists ability definitions, hook references, hook context, available context roles, targeting summaries, placement summaries, context warnings, cue metadata, and whether each migrated hook is `Ability` or `Empty`.
 

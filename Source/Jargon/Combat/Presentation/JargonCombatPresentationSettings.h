@@ -183,7 +183,7 @@ public:
 	FLinearColor FreezeColor = FLinearColor(0.35f, 0.85f, 1.f, 1.f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation|Colors")
-	FLinearColor RelicColor = FLinearColor(0.85f, 0.45f, 1.f, 1.f);
+	FLinearColor ArtifactColor = FLinearColor(0.85f, 0.45f, 1.f, 1.f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation|Colors")
 	FLinearColor ElementalBonusColor = FLinearColor(1.f, 0.58f, 0.12f, 1.f);

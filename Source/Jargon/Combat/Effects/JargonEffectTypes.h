@@ -76,8 +76,6 @@ UENUM(BlueprintType)
 enum class EJargonAbilityHookContextType : uint8
 {
 	None UMETA(DisplayName = "None"),
-	HeroClassCombatStart UMETA(DisplayName = "Hero Class - Combat Start"),
-	HeroClassTurnStart UMETA(DisplayName = "Hero Class - Turn Start"),
 	HeroAspectTransformed UMETA(DisplayName = "Hero Aspect - Transformed"),
 	HeroAspectTurnStart UMETA(DisplayName = "Hero Aspect - Turn Start"),
 	HeroAspectEnemyDeath UMETA(DisplayName = "Hero Aspect - Enemy Death"),
@@ -86,9 +84,9 @@ enum class EJargonAbilityHookContextType : uint8
 	SummonDeath UMETA(DisplayName = "Summon - Death"),
 	TrapUnitEnter UMETA(DisplayName = "Trap - Unit Enter"),
 	AuraPlayerTurnStart UMETA(DisplayName = "Aura - Player Turn Start"),
-	BoonCombatStart UMETA(DisplayName = "Boon - Combat Start"),
-	BoonPlayerTurnStart UMETA(DisplayName = "Boon - Player Turn Start"),
-	BoonEnemyDeath UMETA(DisplayName = "Boon - Enemy Death")
+	ArtifactCombatStart UMETA(DisplayName = "Artifact - Combat Start"),
+	ArtifactPlayerTurnStart UMETA(DisplayName = "Artifact - Player Turn Start"),
+	ArtifactEnemyDeath UMETA(DisplayName = "Artifact - Enemy Death")
 };
 
 USTRUCT(BlueprintType)
@@ -127,14 +125,12 @@ struct JARGON_API FJargonAbilityHookContextProfile
 
 		switch (ContextType)
 		{
-		case EJargonAbilityHookContextType::HeroClassCombatStart:
-		case EJargonAbilityHookContextType::HeroClassTurnStart:
 		case EJargonAbilityHookContextType::HeroAspectTransformed:
 		case EJargonAbilityHookContextType::HeroAspectTurnStart:
 		case EJargonAbilityHookContextType::SummonOnSummoned:
 		case EJargonAbilityHookContextType::SummonTurnStart:
-		case EJargonAbilityHookContextType::BoonCombatStart:
-		case EJargonAbilityHookContextType::BoonPlayerTurnStart:
+		case EJargonAbilityHookContextType::ArtifactCombatStart:
+		case EJargonAbilityHookContextType::ArtifactPlayerTurnStart:
 			Profile.bHasSourceUnit = true;
 			Profile.bHasSourceTile = true;
 			Profile.bHasPrimaryUnit = true;
@@ -142,7 +138,7 @@ struct JARGON_API FJargonAbilityHookContextProfile
 			break;
 
 		case EJargonAbilityHookContextType::HeroAspectEnemyDeath:
-		case EJargonAbilityHookContextType::BoonEnemyDeath:
+		case EJargonAbilityHookContextType::ArtifactEnemyDeath:
 			Profile.bHasSourceUnit = true;
 			Profile.bHasSourceTile = true;
 			Profile.bHasPrimaryUnit = true;
@@ -250,7 +246,7 @@ enum class EJargonAbilityPlacementAnchor : uint8
  *
  * Operation is the backend primitive. Target acquisition lives in Delivery and TargetFilter.
  * Payload fields are operation-specific parameters, not hidden conditions or modifiers.
- * CardScript actions, tile effects, summons, boons, and hero passives build this shared type directly.
+ * CardScript actions, tile effects, summons, artifacts, and hero passives build this shared type directly.
  */
 USTRUCT(BlueprintType)
 struct JARGON_API FJargonEffectSpec

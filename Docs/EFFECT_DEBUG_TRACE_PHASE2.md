@@ -74,7 +74,7 @@ Phase 2A intentionally does not add:
 - card trace storage
 - elemental bonus charge check/spend/refund trace events
 - per-bonus `FJargonEffectTrace` output
-- trace output for relics, auras, traps, summons, tile effects, or turn-start effects
+- trace output for artifacts, auras, traps, summons, tile effects, or turn-start effects
 - trace-driven gameplay branching
 
 Elemental bonus tracing should be a later card-level wrapper around base and bonus resolver calls.

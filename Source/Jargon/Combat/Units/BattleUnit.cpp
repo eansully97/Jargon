@@ -1,4 +1,4 @@
-﻿// BattleUnit.cpp
+// BattleUnit.cpp
 
 #include "BattleUnit.h"
 
@@ -10,7 +10,7 @@
 #include "Components/WidgetComponent.h"
 #include "Combat/Widgets/BattleUnitStatusWidget.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -425,7 +425,7 @@ int32 ABattleUnit::ApplyDamageFromEffectContextAndGetHealthDamage(int32 Amount, 
 	DamageCueSource.SourceTile = EffectContext.SourceTile;
 	DamageCueSource.OwningTileEffect = EffectContext.OwningTileEffect;
 	DamageCueSource.SourceCard = EffectContext.SourceCard;
-	DamageCueSource.SourceRelic = Cast<UJargonRelicDefinition>(EffectContext.SourceObject.Get());
+	DamageCueSource.SourceArtifact = Cast<UJargonArtifactDefinition>(EffectContext.SourceObject.Get());
 
 	int32 AdjustedAmount = Amount;
 	if (ABattleUnit* SourceUnit = EffectContext.SourceUnit.Get())
@@ -927,7 +927,7 @@ void ABattleUnit::EmitDamageCue(int32 Value, AGridTile* CueTile, const FJargonCo
 	Cue.SourceTile = DamageCueSource ? DamageCueSource->SourceTile : nullptr;
 	Cue.OwningTileEffect = DamageCueSource ? DamageCueSource->OwningTileEffect : nullptr;
 	Cue.SourceCard = DamageCueSource ? DamageCueSource->SourceCard : nullptr;
-	Cue.SourceRelic = DamageCueSource ? DamageCueSource->SourceRelic : nullptr;
+	Cue.SourceArtifact = DamageCueSource ? DamageCueSource->SourceArtifact : nullptr;
 	Cue.TargetUnit = this;
 	Cue.TargetTile = CueTile ? CueTile : CurrentTile.Get();
 	Cue.Value = Value;

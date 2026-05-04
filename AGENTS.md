@@ -17,7 +17,8 @@ Jargon is a single-player Unreal Engine tactical card / board game.
 - Energy remains the normal card play resource. Element charges are combat-local optional combo resources.
 - `UCardDefinition` owns manual card art prompt generation. Do not recreate `CardCreationTemplateTool`, image generation, PNG import, or placeholder art assignment unless explicitly requested.
 - Cards author gameplay through inline `CardScript` actions that build `FJargonEffectSpec` arrays. Do not reintroduce raw card effect structs or compatibility authoring arrays.
-- Non-card ability hooks should use `UJargonAbilityDefinition` with an explicit hook context, targeting profile, placement profile for spawn-style actions, presentation-only cue metadata, and instanced ability effect lines. Do not reintroduce raw non-card `FJargonEffectSpec` authoring arrays for heroes, summons, tile effects, or hero boons.
+- Non-card ability hooks should use `UJargonAbilityDefinition` with an explicit hook context, targeting profile, placement profile for spawn-style actions, presentation-only cue metadata, and instanced ability effect lines. Do not reintroduce raw non-card `FJargonEffectSpec` authoring arrays for heroes, summons, tile effects, or Artifacts.
+- Artifacts drive hero class/base abilities. Each hero should seed class abilities through `DefaultClassArtifact`; do not reintroduce hero-owned class passive arrays or Relic/Boon terminology.
 - New non-card hooks must define which context roles they provide, such as source unit, source tile, primary unit, primary tile, triggering unit, owning tile effect, and source team.
 - Spawn-style ability actions must use placement profiles. Do not encode placement behavior into delivery names.
 - Card authoring should distinguish `Operation` from `Keyword`: operations are backend primitives such as damage/heal/draw/summon, while keywords are reusable rules terms such as status definitions, traits, and future modifiers.
@@ -39,7 +40,7 @@ Jargon is a single-player Unreal Engine tactical card / board game.
 
 - Data Assets are static authored definitions only: tuning, UI text, default config, and content references.
 - Do not store runtime state in Data Assets, such as current HP, owners, cooldowns, temporary buffs, or per-match counters.
-- Data Assets are the gameplay source of truth for cards, summons, enemies, encounters, traps, auras, boons, heroes, and other definition-style systems wherever practical.
+- Data Assets are the gameplay source of truth for cards, summons, enemies, encounters, traps, auras, artifacts, heroes, and other definition-style systems wherever practical.
 - Prefer `UPrimaryDataAsset` for catalog-style gameplay definitions when it can be done without breaking existing assets or references.
 - Use soft references for heavy art, mesh, VFX, SFX, widget, and Blueprint class content when a safe migration path exists.
 - Keep editor tooling guarded and out of runtime dependencies; editor-only mutation, generation, and package-save code belongs behind editor guards.

@@ -1,4 +1,4 @@
-﻿// JargonCombatGameMode.h
+// JargonCombatGameMode.h
 
 #pragma once
 
@@ -21,7 +21,7 @@ class ATacticsCameraPawn;
 class UCardDefinition;
 class UCombatHUDWidget;
 class AJargonCombatPlayerController;
-class UJargonRelicDefinition;
+class UJargonArtifactDefinition;
 class AJargonCombatPresentationManager;
 class UJargonCombatPresentationSettings;
 class UJargonDeckDefinition;
@@ -397,16 +397,9 @@ protected:
 	void ResolveNextEnemyAction();
 	bool ResolveSingleEnemyAction(ABattleUnit* EnemyUnit);
 	void EndEnemyTurn();
-	void ExecuteRunRelicOnCombatStartAbilities();
-	void ExecuteRunRelicOnPlayerTurnStartAbilities();
-	void ExecuteRunRelicOnEnemyDeathAbilities(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
-	void ExecuteHeroClassCombatStartPassive();
-	void ExecuteHeroClassPlayerTurnStartPassive();
-	void ResolveHeroClassPassiveEffects(
-		EJargonEffectTrigger Trigger,
-		const FText& PassiveName,
-		const TArray<FJargonEffectSpec>& Effects,
-		const UJargonAbilityDefinition* AbilityDefinition);
+	void ExecuteRunArtifactOnCombatStartAbilities();
+	void ExecuteRunArtifactOnPlayerTurnStartAbilities();
+	void ExecuteRunArtifactOnEnemyDeathAbilities(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
 	void ExecuteHeroAspectPlayerTurnStartPassive();
 	void ExecuteHeroAspectEnemyDeathPassive(ABattleUnit* DeadEnemy, AGridTile* DeathTile);
 	void ResolveHeroAspectPassiveEffects(

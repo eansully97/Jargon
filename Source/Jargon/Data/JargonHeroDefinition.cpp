@@ -1,6 +1,7 @@
 #include "Data/JargonHeroDefinition.h"
 
 #include "Data/JargonAbilityDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 
 #if WITH_EDITOR
 #include "Data/JargonDataAssetValidationHelpers.h"
@@ -243,8 +244,21 @@ EDataValidationResult UJargonHeroDefinition::IsDataValid(FDataValidationContext&
 		JargonDataAssetValidation::AddError(Context, this, FString::Printf(TEXT("AttackDamage must be >= 0. Current value: %d."), AttackDamage));
 	}
 
-	ValidateHeroAbilityForHook(this, CombatStartPassive.Ability, TEXT("CombatStartPassive Ability"), EJargonEffectTrigger::OnCombatStart, EJargonAbilityHookContextType::HeroClassCombatStart, Context);
-	ValidateHeroAbilityForHook(this, PlayerTurnStartPassive.Ability, TEXT("PlayerTurnStartPassive Ability"), EJargonEffectTrigger::OnTurnStart, EJargonAbilityHookContextType::HeroClassTurnStart, Context);
+	if (DefaultClassArtifact)
+	{
+		if (!DefaultClassArtifact->IsValidDefinition())
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("DefaultClassArtifact is assigned but is not a valid Artifact definition."));
+		}
+		if (!DefaultClassArtifact->IsEligibleForHeroDefinition(this))
+		{
+			JargonDataAssetValidation::AddError(Context, this, TEXT("DefaultClassArtifact is not eligible for this hero class."));
+		}
+	}
+	else if (HeroClass != EJargonHeroClass::None)
+	{
+		JargonDataAssetValidation::AddWarning(Context, this, TEXT("DefaultClassArtifact is empty. Real hero classes should seed class abilities through a default Artifact."));
+	}
 
 	TSet<EJargonHeroAspect> SeenAspects;
 	TSet<EJargonElementType> SeenRequiredElements;

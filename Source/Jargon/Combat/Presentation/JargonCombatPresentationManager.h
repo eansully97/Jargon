@@ -50,7 +50,7 @@ public:
 	bool IsTileCue(const FJargonCombatCueEvent& Cue) const;
 
 	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
-	bool IsRelicCue(const FJargonCombatCueEvent& Cue) const;
+	bool IsArtifactCue(const FJargonCombatCueEvent& Cue) const;
 
 	UFUNCTION(BlueprintPure, Category = "Combat Presentation|Cue")
 	int32 GetCueTypeId(const FJargonCombatCueEvent& Cue) const;
@@ -118,7 +118,7 @@ protected:
 	void BP_OnTileEffectCue(const FJargonCombatCueEvent& Cue);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
-	void BP_OnRelicTriggeredCue(const FJargonCombatCueEvent& Cue);
+	void BP_OnArtifactTriggeredCue(const FJargonCombatCueEvent& Cue);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat Presentation")
 	void BP_OnHeroClassPassiveTriggeredCue(const FJargonCombatCueEvent& Cue);

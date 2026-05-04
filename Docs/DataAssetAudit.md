@@ -8,7 +8,7 @@ Scope: source/docs-only guardrail pass for current `UDataAsset` and `UPrimaryDat
 
 Jargon is moving in the right direction: gameplay content is already mostly authored through Data Assets and interpreted by C++ runtime systems. This pass made the static gameplay catalog definitions `UPrimaryDataAsset` subclasses, kept audit/settings objects as `UDataAsset`, added Unreal asset-validation hooks, and improved collapsed-array readability with `TitleProperty` metadata.
 
-The project direction is now no-fallback Data Asset ownership. Data Assets should become the canonical authoring surface for cards, summons, enemies, encounters, traps, auras, boons, heroes, and other definition-style gameplay systems. Legacy compatibility paths should be removed once a replacement Data Asset path exists and the required asset authoring work is identified.
+The project direction is now no-fallback Data Asset ownership. Data Assets should become the canonical authoring surface for cards, summons, enemies, encounters, traps, auras, artifacts, heroes, and other definition-style gameplay systems. Legacy compatibility paths should be removed once a replacement Data Asset path exists and the required asset authoring work is identified.
 
 The biggest remaining architecture risk is not the base class of the assets. It is the growing "wide union" shared effect-data shape: `FJargonEffectSpec` continues to accumulate operation-specific fields and enum entries. That is acceptable for the current prototype, but status/effect growth should eventually move toward generic status definitions and/or instanced effect payloads once the gameplay language stabilizes.
 
@@ -18,8 +18,8 @@ The biggest remaining architecture risk is not the base class of the assets. It 
 | --- | --- | --- | --- | --- | --- |
 | `UCardDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | High | Core card catalog definition. Added validation for missing/invalid effects, summon/tile requirements, element bonus sanity, and hard-reference warnings. |
 | `UCardPackDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | High | Static shop/pack catalog data. Added validation for pack price, grant count, pool entries, weights, and referenced cards. |
-| `UJargonHeroDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | High | Static hero class/aspect definition. Added validation for core stats, passive/aspect effect specs, duplicate/invalid aspect authoring, and hard presentation references. |
-| `UJargonRelicDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | Medium | Static Hero Boon/relic definition. Added validation for required text/effects, eligibility filters, icon hard-reference warning, and effect specs. |
+| `UJargonHeroDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | High | Static hero class/aspect definition. Added validation for core stats, default class Artifact assignment, duplicate/invalid aspect authoring, and hard presentation references. |
+| `UJargonArtifactDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | Medium | Static Artifact definition. Artifacts own class/default and collected run ability hooks. |
 | `UJargonSummonedUnitDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | High | Static data-driven summon definition. Added validation for unit stats, required skeletal mesh and animation overrides, optional special runtime shell override, and lifecycle effect specs. |
 | `UJargonTileEffectDefinition` | New | `UPrimaryDataAsset` | Added | High | Static data-driven trap/aura definition. Runtime shell class, required static mesh override, trigger, duration, radius, and shared effects are authored here. |
 | `UEncounterDefinition` | `UDataAsset` | `UPrimaryDataAsset` | Converted | Medium | Static encounter definition. Added validation for combat map, enemy spawns, reward values, and hard enemy class references. |
@@ -33,9 +33,8 @@ The biggest remaining architecture risk is not the base class of the assets. It 
 | --- | --- | --- |
 | `CardScript` action classes | Card effect-line authoring | Card actions now build `FJargonEffectSpec` directly. The old raw card effect structs were removed after migration. |
 | `FJargonCardElementalBonusScript` | Card elemental bonus authoring | Readable collapsed entries for bonus groups and bonus actions. Validation checks required element, charge count, and empty actions. |
-| `FJargonEffectSpec` | Shared effect payload | Used by hero passives, boons, summons, and shared resolver. Validation helper now checks common invalid combinations. |
+| `FJargonEffectSpec` | Shared effect payload | Used by Artifact hooks, aspects, summons, tile effects, cards, and shared resolver. Validation helper now checks common invalid combinations. |
 | `FWeightedCardPackEntry` | Card pack entry | Added editor ToolTips and pack array `TitleProperty`. Validation checks null card and invalid weight. |
-| `FJargonHeroClassPassiveDefinition` | Hero passive authoring | Added `TitleProperty` to effect arrays. Validation checks authored effect specs. |
 | `FJargonHeroAspectDefinition` | Hero aspect authoring | Added `TitleProperty` to effect arrays. Aspect transformation uses the global element charge cap, currently 10, rather than per-aspect thresholds. Transformation effects fire once when the first eligible element reaches the cap; turn-start and enemy-death effects fire only while transformed. Validation warns about duplicate or incomplete aspect entries. |
 | `FEncounterEnemySpawn` | Encounter authoring | Forward-declared `ABattleUnit`, added ToolTips, and made encounter arrays readable by unit class. |
 | `FJargonCurrencyAmount` | Currency values | Used in packs and encounter rewards. Validation now catches negative denominations where definitions own rewards/prices. |
@@ -48,7 +47,7 @@ Deferred watch items:
 
 - `UJargonCombatPresentationSettings` is runtime-facing configuration, not gameplay state. It should remain static settings and avoid accumulating live combat state.
 - Future saved deck data should stay in run/save structs, not in card or pack definition assets.
-- Hero Boon/relic ownership should remain in run state (`RunRelics` / boon aliases), not in `UJargonRelicDefinition`.
+- Artifact ownership should remain in run state (`RunArtifacts`), not in `UJargonArtifactDefinition`.
 
 ## Hard Reference Risks
 
@@ -60,7 +59,7 @@ Current hard-reference risks:
 - CardScript summon keywords now require `SummonedUnitDefinition` plus `RuntimeSummonedUnitClass`; the runtime class is authored on the card keyword, not on the summon definition.
 - CardScript trap/aura keywords now require `TileEffectDefinition` plus `RuntimeTileEffectClass`; the runtime class is authored on the card keyword, not on the tile-effect definition.
 - `UJargonHeroDefinition::HeroSkeletalMesh` and `Portrait` are hard presentation references.
-- `UJargonRelicDefinition::Icon` is a hard UI reference.
+- `UJargonArtifactDefinition::Icon` is a hard UI reference.
 - `UJargonSummonedUnitDefinition::Icon` and animation overrides are hard references. The skeletal mesh now belongs on the runtime summon Blueprint child.
 - `UJargonTileEffectDefinition::Icon` is a hard reference. Static mesh/VFX presentation now belongs on the runtime trap/aura Blueprint child.
 - `UEncounterDefinition::EnemySpawns` uses hard `ABattleUnit` classes.
@@ -165,21 +164,21 @@ Validation should still report:
 - Empty `DisplayName`.
 - Suspicious `HeroClass=None`.
 - Invalid HP, move range, attack range, or attack damage.
-- Invalid class passive effect specs.
+- Invalid default class Artifact assignment.
 - Duplicate aspect entries.
 - Duplicate required element entries.
 - Aspect entries with `Aspect=None` or `RequiredElement=None`.
 - Aspect entries with no transformation or passive effects.
 - Invalid aspect passive effect specs.
 
-### Hero Boons / Relics
+### Artifacts
 
-`UJargonRelicDefinition::IsDataValid` now reports:
+`UJargonArtifactDefinition::IsDataValid` now reports:
 
 - Empty `DisplayName`.
 - No authored combat/player-turn/enemy-death effects.
-- Eligibility arrays containing `None`.
-- Invalid shared effect specs.
+- Eligibility class arrays containing `None`.
+- Invalid assigned ability hooks.
 
 ### Summoned Units
 
@@ -211,7 +210,7 @@ Validation should still report:
 
 ## Designer UX Improvements Applied
 
-- Added `TitleProperty` to card effects, elemental bonus groups, bonus effects, pack card pools, hero passive/aspect effects, boon/relic effect arrays, summon lifecycle effect arrays, and encounter enemy spawns.
+- Added `TitleProperty` to card effects, elemental bonus groups, bonus effects, pack card pools, hero aspect effects, Artifact ability hooks, summon lifecycle effect arrays, and encounter enemy spawns.
 - Added obvious ToolTips and clamp metadata to pack, encounter, and shared run-state authoring fields.
 - Kept existing editor buttons and reflected debug fields stable for Blueprint compatibility.
 - Did not wrap reflected editor fields in `WITH_EDITORONLY_DATA` in this pass because that can alter serialized property availability and editor workflows.
@@ -242,7 +241,7 @@ These were intentionally documented instead of applied:
 - Migrate existing trap/aura card assets to `UJargonTileEffectDefinition` assets and then remove the deprecated serialized card/effect fields.
 - Replace enum growth like `ApplyBurn`, `ApplyRoot`, and `ApplyVulnerable` with a generic `ApplyStatus` plus `UStatusEffectDefinition`.
 - Replace wide structs like `FJargonEffectSpec` with `FInstancedStruct`, polymorphic effect definitions, or another variant system only if the shared effect payload becomes a real maintenance blocker.
-- Split gameplay definition data from presentation-only data for cards, heroes, summons, boons, and encounters.
+- Split gameplay definition data from presentation-only data for cards, heroes, summons, artifacts, and encounters.
 - Remove deprecated serialized summon/tile fields after production assets are migrated to the definition-owned path.
 
 ## Priority Recommendations
@@ -256,7 +255,7 @@ High:
 Medium:
 
 - Add soft-reference migration plans for card art, hero portraits, summon icons, and presentation assets.
-- Add centralized effect validation shared by cards, boons, heroes, summons, traps, auras, and encounters.
+- Add centralized effect validation shared by cards, artifacts, heroes, summons, traps, auras, and encounters.
 - Add audit output for hard-reference load pressure.
 
 Low:

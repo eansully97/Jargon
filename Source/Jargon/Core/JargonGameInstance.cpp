@@ -5,7 +5,7 @@
 #include "Core/JargonSaveGame.h"
 #include "Data/CardPackDefinition.h"
 #include "Data/JargonHeroDefinition.h"
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 #include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Paths.h"
@@ -162,6 +162,7 @@ void UJargonGameInstance::StartNewRun(const TArray<UCardDefinition*>& InitialDec
 {
 	ResetRunState();
 	SetRunDeckInternal(InitialDeck);
+	SeedDefaultClassArtifactForActiveHero();
 	RunCurrencies = StartingCurrency;
 	NormalizeRunCurrencies();
 	RefreshRunReserveCardsFromAvailableShopPacks();
@@ -201,6 +202,7 @@ void UJargonGameInstance::EnsureRunInitializedFromSeedDeck(const TArray<UCardDef
 	}
 
 	SetRunDeckInternal(SeedCards);
+	SeedDefaultClassArtifactForActiveHero();
 	RunCurrencies = FJargonCurrencyAmount();
 	bHasActiveRun = ActiveRunDeck.Num() > 0;
 	RefreshRunReserveCardsFromAvailableShopPacks();
@@ -239,7 +241,7 @@ bool UJargonGameInstance::SaveCurrentRun()
 	StoreSoftAssetReferences(ActiveRunDeck, SaveGame->ActiveRunDeck);
 	StoreSoftAssetReferences(RunOwnedCards, SaveGame->RunOwnedCards);
 	StoreSoftAssetReferences(RunReserveCards, SaveGame->RunReserveCards);
-	StoreSoftAssetReferences(RunRelics, SaveGame->RunRelics);
+	StoreSoftAssetReferences(RunArtifacts, SaveGame->RunArtifacts);
 	SaveGame->ActiveHeroDefinition = ActiveHeroDefinition
 		? TSoftObjectPtr<UJargonHeroDefinition>(ActiveHeroDefinition.Get())
 		: TSoftObjectPtr<UJargonHeroDefinition>();
@@ -279,7 +281,7 @@ bool UJargonGameInstance::LoadSavedRun()
 	LoadSoftAssetReferences(SaveGame->ActiveRunDeck, ActiveRunDeck);
 	LoadSoftAssetReferences(SaveGame->RunOwnedCards, RunOwnedCards);
 	LoadSoftAssetReferences(SaveGame->RunReserveCards, RunReserveCards);
-	LoadSoftAssetReferences(SaveGame->RunRelics, RunRelics);
+	LoadSoftAssetReferences(SaveGame->RunArtifacts, RunArtifacts);
 
 	ActiveHeroDefinition = SaveGame->ActiveHeroDefinition.LoadSynchronous();
 	RunCurrencies = SaveGame->RunCurrencies;
@@ -303,12 +305,12 @@ bool UJargonGameInstance::LoadSavedRun()
 		return false;
 	}
 
-	UE_LOG(LogJargon, Log, TEXT("Loaded saved run from slot '%s'. Deck=%d Owned=%d ReserveCatalog=%d Relics=%d Currency=%d"),
+	UE_LOG(LogJargon, Log, TEXT("Loaded saved run from slot '%s'. Deck=%d Owned=%d ReserveCatalog=%d Artifacts=%d Currency=%d"),
 		*RunSaveSlotName,
 		ActiveRunDeck.Num(),
 		RunOwnedCards.Num(),
 		RunReserveCards.Num(),
-		RunRelics.Num(),
+		RunArtifacts.Num(),
 		RunCurrencies.GetTotalCopperValue());
 	return true;
 }
@@ -563,83 +565,68 @@ FJargonCurrencyAmount UJargonGameInstance::GetCardRecycleValue(const UCardDefini
 	return RecycleValue;
 }
 
-TArray<UJargonRelicDefinition*> UJargonGameInstance::GetRunRelics() const
+TArray<UJargonArtifactDefinition*> UJargonGameInstance::GetRunArtifacts() const
 {
-	TArray<UJargonRelicDefinition*> Relics;
-	Relics.Reserve(RunRelics.Num());
+	TArray<UJargonArtifactDefinition*> Artifacts;
+	Artifacts.Reserve(RunArtifacts.Num());
 
-	for (UJargonRelicDefinition* RelicDefinition : RunRelics)
+	for (UJargonArtifactDefinition* ArtifactDefinition : RunArtifacts)
 	{
-		if (RelicDefinition)
+		if (ArtifactDefinition)
 		{
-			Relics.Add(RelicDefinition);
+			Artifacts.Add(ArtifactDefinition);
 		}
 	}
 
-	return Relics;
+	return Artifacts;
 }
 
-TArray<UJargonRelicDefinition*> UJargonGameInstance::GetRunBoons() const
+bool UJargonGameInstance::AddRunArtifact(UJargonArtifactDefinition* ArtifactDefinition)
 {
-	return GetRunRelics();
-}
-
-bool UJargonGameInstance::AddRunRelic(UJargonRelicDefinition* RelicDefinition)
-{
-	if (!RelicDefinition)
+	if (!ArtifactDefinition)
 	{
-		UE_LOG(LogJargon, Warning, TEXT("AddRunRelic rejected a null relic definition."));
+		UE_LOG(LogJargon, Warning, TEXT("AddRunArtifact rejected a null artifact definition."));
 		return false;
 	}
 
 	if (!bHasActiveRun)
 	{
-		UE_LOG(LogJargon, Warning, TEXT("AddRunRelic accepted '%s' while no active run is marked. It will still be stored until run state resets."),
-			*GetNameSafe(RelicDefinition));
+		UE_LOG(LogJargon, Warning, TEXT("AddRunArtifact accepted '%s' while no active run is marked. It will still be stored until run state resets."),
+			*GetNameSafe(ArtifactDefinition));
 	}
 
-	if (HasRunRelic(RelicDefinition))
+	if (HasRunArtifact(ArtifactDefinition))
 	{
-		UE_LOG(LogJargon, Log, TEXT("AddRunRelic skipped duplicate relic '%s'."), *GetNameSafe(RelicDefinition));
+		UE_LOG(LogJargon, Log, TEXT("AddRunArtifact skipped duplicate artifact '%s'."), *GetNameSafe(ArtifactDefinition));
 		return false;
 	}
 
-	RunRelics.Add(RelicDefinition);
+	RunArtifacts.Add(ArtifactDefinition);
 
-	UE_LOG(LogJargon, Log, TEXT("Added run relic '%s'. Total relics=%d"),
-		*GetNameSafe(RelicDefinition),
-		RunRelics.Num());
+	UE_LOG(LogJargon, Log, TEXT("Added run artifact '%s'. Total artifacts=%d"),
+		*GetNameSafe(ArtifactDefinition),
+		RunArtifacts.Num());
 
 	SaveCurrentRunIfActive();
 	return true;
 }
 
-bool UJargonGameInstance::AddRunBoon(UJargonRelicDefinition* BoonDefinition)
+bool UJargonGameInstance::HasRunArtifact(const UJargonArtifactDefinition* ArtifactDefinition) const
 {
-	return AddRunRelic(BoonDefinition);
-}
-
-bool UJargonGameInstance::HasRunRelic(const UJargonRelicDefinition* RelicDefinition) const
-{
-	if (!RelicDefinition)
+	if (!ArtifactDefinition)
 	{
 		return false;
 	}
 
-	for (const TObjectPtr<UJargonRelicDefinition>& RunRelic : RunRelics)
+	for (const TObjectPtr<UJargonArtifactDefinition>& RunArtifact : RunArtifacts)
 	{
-		if (RunRelic == RelicDefinition)
+		if (RunArtifact == ArtifactDefinition)
 		{
 			return true;
 		}
 	}
 
 	return false;
-}
-
-bool UJargonGameInstance::HasRunBoon(const UJargonRelicDefinition* BoonDefinition) const
-{
-	return HasRunRelic(BoonDefinition);
 }
 
 bool UJargonGameInstance::TrySpendCurrency(const FJargonCurrencyAmount& Cost)
@@ -1335,13 +1322,48 @@ void UJargonGameInstance::GatherRecyclableExtraOwnedRunCardCopies(TArray<UCardDe
 	}
 }
 
+void UJargonGameInstance::SeedDefaultClassArtifactForActiveHero()
+{
+	if (!ActiveHeroDefinition)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("Cannot seed a default class Artifact because no active hero definition is assigned."));
+		return;
+	}
+
+	UJargonArtifactDefinition* DefaultClassArtifact = ActiveHeroDefinition->DefaultClassArtifact;
+	if (!DefaultClassArtifact)
+	{
+		UE_LOG(LogJargon, Warning, TEXT("Hero '%s' has no DefaultClassArtifact; class Artifact hooks will be empty for this run."),
+			*GetNameSafe(ActiveHeroDefinition.Get()));
+		return;
+	}
+
+	if (!DefaultClassArtifact->IsEligibleForHeroDefinition(ActiveHeroDefinition))
+	{
+		UE_LOG(LogJargon, Warning, TEXT("Hero '%s' default class Artifact '%s' is not eligible for that hero class and was not seeded."),
+			*GetNameSafe(ActiveHeroDefinition.Get()),
+			*GetNameSafe(DefaultClassArtifact));
+		return;
+	}
+
+	if (HasRunArtifact(DefaultClassArtifact))
+	{
+		return;
+	}
+
+	RunArtifacts.Insert(DefaultClassArtifact, 0);
+	UE_LOG(LogJargon, Log, TEXT("Seeded default class Artifact '%s' for hero '%s'."),
+		*GetNameSafe(DefaultClassArtifact),
+		*GetNameSafe(ActiveHeroDefinition.Get()));
+}
+
 void UJargonGameInstance::ClearRuntimeRunState(bool bResetHeroDefinition)
 {
 	bHasActiveRun = false;
 	ActiveRunDeck.Reset();
 	RunOwnedCards.Reset();
 	RunReserveCards.Reset();
-	RunRelics.Reset();
+	RunArtifacts.Reset();
 	RunCurrencies = FJargonCurrencyAmount();
 	PendingEncounterData.Reset();
 	bReturningFromCombat = false;

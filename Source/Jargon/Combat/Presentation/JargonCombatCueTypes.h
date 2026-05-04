@@ -9,7 +9,7 @@ class ABattleTileEffect;
 class ABattleUnit;
 class AGridTile;
 class UCardDefinition;
-class UJargonRelicDefinition;
+class UJargonArtifactDefinition;
 
 UENUM(BlueprintType)
 enum class EJargonCombatCueType : uint8
@@ -32,7 +32,7 @@ enum class EJargonCombatCueType : uint8
 	TileEffectPlaced UMETA(DisplayName = "Tile Effect Placed"),
 	TileEffectTriggered UMETA(DisplayName = "Tile Effect Triggered"),
 	TileEffectExpired UMETA(DisplayName = "Tile Effect Expired"),
-	RelicTriggered UMETA(DisplayName = "Relic Triggered"),
+	ArtifactTriggered UMETA(DisplayName = "Artifact Triggered"),
 	TurnStart UMETA(DisplayName = "Turn Start"),
 	EnemyTurnStart UMETA(DisplayName = "Enemy Turn Start"),
 	ClassPassiveTriggered UMETA(DisplayName = "Class Passive Triggered"),
@@ -91,7 +91,7 @@ struct JARGON_API FJargonCombatCueEvent
 	TObjectPtr<UCardDefinition> SourceCard = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
-	TObjectPtr<UJargonRelicDefinition> SourceRelic = nullptr;
+	TObjectPtr<UJargonArtifactDefinition> SourceArtifact = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Combat Cue")
 	EJargonHeroClass HeroClass = EJargonHeroClass::None;

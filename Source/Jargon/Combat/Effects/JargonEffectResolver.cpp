@@ -7,7 +7,7 @@
 #include "Combat/Presentation/JargonCombatCueTypes.h"
 #include "Combat/Units/BattleUnit.h"
 #include "Data/CardDefinition.h"
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 #include "Data/JargonStatusEffectDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
 #include "Data/JargonTileEffectDefinition.h"
@@ -86,7 +86,7 @@ namespace
 		Cue.TargetTile = TargetTile ? TargetTile : (TargetUnit ? TargetUnit->GetCurrentTile() : Context.PrimaryTileTarget.Get());
 		Cue.OwningTileEffect = Context.OwningTileEffect;
 		Cue.SourceCard = Context.SourceCard;
-		Cue.SourceRelic = Cast<UJargonRelicDefinition>(Context.SourceObject.Get());
+		Cue.SourceArtifact = Cast<UJargonArtifactDefinition>(Context.SourceObject.Get());
 		Cue.Value = Value;
 		Cue.Radius = EffectSpec.Radius;
 

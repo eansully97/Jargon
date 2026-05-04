@@ -52,8 +52,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Project Setup Audit|Assets", meta = (ToolTip = "Card pack paths scanned recursively for basic pack content checks."))
 	TArray<FName> PackScanPaths;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Project Setup Audit|Assets", meta = (ToolTip = "Relic paths scanned recursively for basic relic content checks."))
-	TArray<FName> RelicScanPaths;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Project Setup Audit|Assets", meta = (ToolTip = "Artifact paths scanned recursively for basic artifact content checks."))
+	TArray<FName> ArtifactScanPaths;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Project Setup Audit|Assets", meta = (ToolTip = "Blueprint paths scanned recursively for reward interactable setup checks."))
 	TArray<FName> RewardBlueprintScanPaths;

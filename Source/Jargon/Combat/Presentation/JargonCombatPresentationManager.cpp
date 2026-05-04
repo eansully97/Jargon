@@ -8,7 +8,7 @@
 #include "Combat/Units/BattleUnit.h"
 #include "Components/SceneComponent.h"
 #include "Data/CardDefinition.h"
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraComponent.h"
@@ -272,12 +272,12 @@ FText AJargonCombatPresentationManager::GetCueDisplayText(const FJargonCombatCue
 	case EJargonCombatCueType::UnitSummoned:
 		return FText::FromString(TEXT("Summoned"));
 
-	case EJargonCombatCueType::RelicTriggered:
-		if (Cue.SourceRelic && !Cue.SourceRelic->DisplayName.IsEmpty())
+	case EJargonCombatCueType::ArtifactTriggered:
+		if (Cue.SourceArtifact && !Cue.SourceArtifact->DisplayName.IsEmpty())
 		{
-			return FText::Format(FText::FromString(TEXT("{0} triggered")), Cue.SourceRelic->DisplayName);
+			return FText::Format(FText::FromString(TEXT("{0} triggered")), Cue.SourceArtifact->DisplayName);
 		}
-		return FText::FromString(TEXT("Relic triggered"));
+		return FText::FromString(TEXT("Artifact triggered"));
 
 	case EJargonCombatCueType::ClassPassiveTriggered:
 		if (Cue.HeroClass != EJargonHeroClass::None)
@@ -385,9 +385,9 @@ bool AJargonCombatPresentationManager::IsTileCue(const FJargonCombatCueEvent& Cu
 	}
 }
 
-bool AJargonCombatPresentationManager::IsRelicCue(const FJargonCombatCueEvent& Cue) const
+bool AJargonCombatPresentationManager::IsArtifactCue(const FJargonCombatCueEvent& Cue) const
 {
-	return Cue.CueType == EJargonCombatCueType::RelicTriggered || Cue.SourceRelic != nullptr;
+	return Cue.CueType == EJargonCombatCueType::ArtifactTriggered || Cue.SourceArtifact != nullptr;
 }
 
 int32 AJargonCombatPresentationManager::GetCueTypeId(const FJargonCombatCueEvent& Cue) const
@@ -948,8 +948,8 @@ void AJargonCombatPresentationManager::DispatchBlueprintCueEvents(const FJargonC
 		BP_OnTileEffectCue(Cue);
 		break;
 
-	case EJargonCombatCueType::RelicTriggered:
-		BP_OnRelicTriggeredCue(Cue);
+	case EJargonCombatCueType::ArtifactTriggered:
+		BP_OnArtifactTriggeredCue(Cue);
 		break;
 
 	case EJargonCombatCueType::ClassPassiveTriggered:

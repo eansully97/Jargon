@@ -3,7 +3,7 @@
 #include "Combat/Effects/JargonEffectTypes.h"
 #include "Data/JargonAbilityDefinition.h"
 #include "Data/JargonHeroDefinition.h"
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
 #include "Data/JargonTileEffectDefinition.h"
 
@@ -243,13 +243,13 @@ void UJargonAbilityAuditTool::RunAbilityAudit()
 	TArray<UJargonHeroDefinition*> HeroDefinitions;
 	TArray<UJargonSummonedUnitDefinition*> SummonDefinitions;
 	TArray<UJargonTileEffectDefinition*> TileEffectDefinitions;
-	TArray<UJargonRelicDefinition*> RelicDefinitions;
+	TArray<UJargonArtifactDefinition*> ArtifactDefinitions;
 
 	FindAssetsByType(ScanPaths, AbilityDefinitions);
 	FindAssetsByType(ScanPaths, HeroDefinitions);
 	FindAssetsByType(ScanPaths, SummonDefinitions);
 	FindAssetsByType(ScanPaths, TileEffectDefinitions);
-	FindAssetsByType(ScanPaths, RelicDefinitions);
+	FindAssetsByType(ScanPaths, ArtifactDefinitions);
 
 	FString Csv;
 	Csv += TEXT("RecordType,AssetPath,DisplayName,HookName,AbilityPath,Trigger,HookContext,AvailableRoles,TargetingSummary,PlacementSummary,ContextWarnings,AbilitySummary,RawEffectCount,RawEffectSummary,Status,Notes") LINE_TERMINATOR;
@@ -284,8 +284,20 @@ void UJargonAbilityAuditTool::RunAbilityAudit()
 			continue;
 		}
 
-		AppendAbilityOnlyCsvLine(Csv, TEXT("Hero"), HeroDefinition->GetPathName(), HeroDefinition->DisplayName.ToString(), TEXT("CombatStartPassive"), HeroDefinition->CombatStartPassive.Ability, TEXT("OnCombatStart"), TEXT("Source/Primary Unit self"), EJargonAbilityHookContextType::HeroClassCombatStart, HeroDefinition->CombatStartPassive.Ability ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero class passives are ability-authored only."));
-		AppendAbilityOnlyCsvLine(Csv, TEXT("Hero"), HeroDefinition->GetPathName(), HeroDefinition->DisplayName.ToString(), TEXT("PlayerTurnStartPassive"), HeroDefinition->PlayerTurnStartPassive.Ability, TEXT("OnTurnStart"), TEXT("Source/Primary Unit self"), EJargonAbilityHookContextType::HeroClassTurnStart, HeroDefinition->PlayerTurnStartPassive.Ability ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero class passives are ability-authored only."));
+		AppendAbilityOnlyCsvLine(
+			Csv,
+			TEXT("HeroDefaultArtifact"),
+			HeroDefinition->GetPathName(),
+			HeroDefinition->DisplayName.ToString(),
+			TEXT("DefaultClassArtifact"),
+			nullptr,
+			TEXT(""),
+			TEXT(""),
+			EJargonAbilityHookContextType::None,
+			HeroDefinition->DefaultClassArtifact ? TEXT("Artifact") : TEXT("Empty"),
+			HeroDefinition->DefaultClassArtifact
+				? HeroDefinition->DefaultClassArtifact->GetPathName()
+				: TEXT("No default class Artifact assigned."));
 
 		for (int32 AspectIndex = 0; AspectIndex < HeroDefinition->HeroAspects.Num(); ++AspectIndex)
 		{
@@ -325,24 +337,24 @@ void UJargonAbilityAuditTool::RunAbilityAudit()
 		AppendAbilityOnlyCsvLine(Csv, TEXT("TileEffect"), TileEffectDefinition->GetPathName(), TileEffectDefinition->DisplayName.ToString(), TEXT("Trigger"), TileEffectDefinition->TriggerAbility, Trigger, TEXT("Placed tile effect"), HookContextType, TileEffectDefinition->TriggerAbility ? TEXT("Ability") : TEXT("Empty"), TEXT("Tile-effect hooks are ability-authored only."));
 	}
 
-	for (const UJargonRelicDefinition* RelicDefinition : RelicDefinitions)
+	for (const UJargonArtifactDefinition* ArtifactDefinition : ArtifactDefinitions)
 	{
-		if (!RelicDefinition)
+		if (!ArtifactDefinition)
 		{
 			continue;
 		}
 
-		AppendAbilityOnlyCsvLine(Csv, TEXT("HeroBoon"), RelicDefinition->GetPathName(), RelicDefinition->DisplayName.ToString(), TEXT("OnCombatStart"), RelicDefinition->OnCombatStartAbility, TEXT("OnCombatStart"), TEXT("Player unit"), EJargonAbilityHookContextType::BoonCombatStart, RelicDefinition->OnCombatStartAbility ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero boon hooks are ability-authored only."));
-		AppendAbilityOnlyCsvLine(Csv, TEXT("HeroBoon"), RelicDefinition->GetPathName(), RelicDefinition->DisplayName.ToString(), TEXT("OnPlayerTurnStart"), RelicDefinition->OnPlayerTurnStartAbility, TEXT("OnTurnStart"), TEXT("Player unit"), EJargonAbilityHookContextType::BoonPlayerTurnStart, RelicDefinition->OnPlayerTurnStartAbility ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero boon hooks are ability-authored only."));
-		AppendAbilityOnlyCsvLine(Csv, TEXT("HeroBoon"), RelicDefinition->GetPathName(), RelicDefinition->DisplayName.ToString(), TEXT("OnEnemyDeath"), RelicDefinition->OnEnemyDeathAbility, TEXT("OnEnemyDeath"), TEXT("Enemy death tile"), EJargonAbilityHookContextType::BoonEnemyDeath, RelicDefinition->OnEnemyDeathAbility ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero boon hooks are ability-authored only."));
+		AppendAbilityOnlyCsvLine(Csv, TEXT("Artifact"), ArtifactDefinition->GetPathName(), ArtifactDefinition->DisplayName.ToString(), TEXT("OnCombatStart"), ArtifactDefinition->OnCombatStartAbility, TEXT("OnCombatStart"), TEXT("Player unit"), EJargonAbilityHookContextType::ArtifactCombatStart, ArtifactDefinition->OnCombatStartAbility ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero artifact hooks are ability-authored only."));
+		AppendAbilityOnlyCsvLine(Csv, TEXT("Artifact"), ArtifactDefinition->GetPathName(), ArtifactDefinition->DisplayName.ToString(), TEXT("OnPlayerTurnStart"), ArtifactDefinition->OnPlayerTurnStartAbility, TEXT("OnTurnStart"), TEXT("Player unit"), EJargonAbilityHookContextType::ArtifactPlayerTurnStart, ArtifactDefinition->OnPlayerTurnStartAbility ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero artifact hooks are ability-authored only."));
+		AppendAbilityOnlyCsvLine(Csv, TEXT("Artifact"), ArtifactDefinition->GetPathName(), ArtifactDefinition->DisplayName.ToString(), TEXT("OnEnemyDeath"), ArtifactDefinition->OnEnemyDeathAbility, TEXT("OnEnemyDeath"), TEXT("Enemy death tile"), EJargonAbilityHookContextType::ArtifactEnemyDeath, ArtifactDefinition->OnEnemyDeathAbility ? TEXT("Ability") : TEXT("Empty"), TEXT("Hero artifact hooks are ability-authored only."));
 	}
 
-	UE_LOG(LogJargonAbilityAudit, Display, TEXT("Ability audit scanned Abilities=%d Heroes=%d Summons=%d TileEffects=%d HeroBoons=%d"),
+	UE_LOG(LogJargonAbilityAudit, Display, TEXT("Ability audit scanned Abilities=%d Heroes=%d Summons=%d TileEffects=%d Artifacts=%d"),
 		AbilityDefinitions.Num(),
 		HeroDefinitions.Num(),
 		SummonDefinitions.Num(),
 		TileEffectDefinitions.Num(),
-		RelicDefinitions.Num());
+		ArtifactDefinitions.Num());
 
 	if (bExportCsvReport)
 	{

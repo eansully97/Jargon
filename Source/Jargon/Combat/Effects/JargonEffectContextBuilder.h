@@ -33,9 +33,9 @@ public:
 		EJargonEffectTrigger Trigger,
 		ABattleUnit* TriggeringUnit = nullptr);
 
-	static FJargonEffectContext BuildForRelic(
+	static FJargonEffectContext BuildForArtifact(
 		AJargonCombatGameMode* GameMode,
-		UObject* SourceRelic,
+		UObject* SourceArtifact,
 		EJargonEffectTrigger Trigger,
 		ABattleUnit* SourceUnit,
 		ABattleUnit* PrimaryUnitTarget,

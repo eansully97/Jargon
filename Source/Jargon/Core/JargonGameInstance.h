@@ -1,4 +1,4 @@
-﻿// JargonGameInstance.h
+// JargonGameInstance.h
 
 #pragma once
 
@@ -10,7 +10,7 @@
 
 class UCardDefinition;
 class UCardPackDefinition;
-class UJargonRelicDefinition;
+class UJargonArtifactDefinition;
 class UJargonHeroDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActiveHeroDefinitionChangedSignature, UJargonHeroDefinition*, NewHeroDefinition);
@@ -148,28 +148,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
 	FJargonCurrencyAmount GetCardRecycleValue(const UCardDefinition* Card) const;
 
-	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Relics")
-	TArray<UJargonRelicDefinition*> GetRunRelics() const;
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Artifacts")
+	TArray<UJargonArtifactDefinition*> GetRunArtifacts() const;
 
-	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Hero Boons")
-	TArray<UJargonRelicDefinition*> GetRunBoons() const;
-
-	const TArray<TObjectPtr<UJargonRelicDefinition>>& GetRunRelicsRef() const
+	const TArray<TObjectPtr<UJargonArtifactDefinition>>& GetRunArtifactsRef() const
 	{
-		return RunRelics;
+		return RunArtifacts;
 	}
 
-	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Relics")
-	bool AddRunRelic(UJargonRelicDefinition* RelicDefinition);
+	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Artifacts")
+	bool AddRunArtifact(UJargonArtifactDefinition* ArtifactDefinition);
 
-	UFUNCTION(BlueprintCallable, Category = "Jargon|Run|Hero Boons")
-	bool AddRunBoon(UJargonRelicDefinition* BoonDefinition);
-
-	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Relics")
-	bool HasRunRelic(const UJargonRelicDefinition* RelicDefinition) const;
-
-	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Hero Boons")
-	bool HasRunBoon(const UJargonRelicDefinition* BoonDefinition) const;
+	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Artifacts")
+	bool HasRunArtifact(const UJargonArtifactDefinition* ArtifactDefinition) const;
 
 	UFUNCTION(BlueprintPure, Category = "Jargon|Run|Economy")
 	bool CanAffordCurrency(const FJargonCurrencyAmount& Cost) const;
@@ -334,6 +325,7 @@ protected:
 	int32 GetUsefulOwnedRunCardCopyFloor(const UCardDefinition* Card) const;
 	int32 GetRecyclableOwnedRunCardCopyCount(const UCardDefinition* Card) const;
 	void GatherRecyclableExtraOwnedRunCardCopies(TArray<UCardDefinition*>& OutCards) const;
+	void SeedDefaultClassArtifactForActiveHero();
 	void ClearRuntimeRunState(bool bResetHeroDefinition);
 	void SaveCurrentRunIfActive();
 	UJargonSaveIndex* LoadOrCreateSaveIndex() const;
@@ -415,8 +407,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Economy")
 	FJargonCurrencyAmount RunCurrencies;
 
-	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Relics")
-	TArray<TObjectPtr<UJargonRelicDefinition>> RunRelics;
+	UPROPERTY(VisibleAnywhere, Category = "Jargon|Run|Artifacts")
+	TArray<TObjectPtr<UJargonArtifactDefinition>> RunArtifacts;
 
 	UPROPERTY(VisibleAnywhere, Category = "Jargon|Hero")
 	TObjectPtr<UJargonHeroDefinition> ActiveHeroDefinition = nullptr;

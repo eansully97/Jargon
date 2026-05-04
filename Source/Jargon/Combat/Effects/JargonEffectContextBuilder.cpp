@@ -67,9 +67,9 @@ FJargonEffectContext FJargonEffectContextBuilder::BuildForTileEffect(
 	return Context;
 }
 
-FJargonEffectContext FJargonEffectContextBuilder::BuildForRelic(
+FJargonEffectContext FJargonEffectContextBuilder::BuildForArtifact(
 	AJargonCombatGameMode* GameMode,
-	UObject* SourceRelic,
+	UObject* SourceArtifact,
 	EJargonEffectTrigger Trigger,
 	ABattleUnit* SourceUnit,
 	ABattleUnit* PrimaryUnitTarget,
@@ -78,7 +78,7 @@ FJargonEffectContext FJargonEffectContextBuilder::BuildForRelic(
 {
 	FJargonEffectContext Context;
 	Context.GameMode = GameMode;
-	Context.SourceObject = SourceRelic;
+	Context.SourceObject = SourceArtifact;
 	Context.SourceUnit = SourceUnit;
 	Context.SourceTeam = SourceUnit ? SourceUnit->GetTeam() : ETeam::Player;
 	Context.SourceTile = SourceUnit ? SourceUnit->GetCurrentTile() : nullptr;

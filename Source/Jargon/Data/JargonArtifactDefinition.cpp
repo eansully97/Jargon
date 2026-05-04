@@ -1,4 +1,4 @@
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 
 #include "Data/JargonAbilityDefinition.h"
 #include "Data/JargonHeroDefinition.h"
@@ -11,8 +11,8 @@
 #if WITH_EDITOR
 namespace
 {
-void ValidateRelicAbilityForHook(
-	const UJargonRelicDefinition* Owner,
+void ValidateArtifactAbilityForHook(
+	const UJargonArtifactDefinition* Owner,
 	const UJargonAbilityDefinition* Ability,
 	const TCHAR* Label,
 	EJargonEffectTrigger ExpectedTrigger,
@@ -60,14 +60,14 @@ void ValidateRelicAbilityForHook(
 }
 #endif
 
-bool UJargonRelicDefinition::HasAnyEffects() const
+bool UJargonArtifactDefinition::HasAnyEffects() const
 {
 	return OnCombatStartAbility != nullptr
 		|| OnPlayerTurnStartAbility != nullptr
 		|| OnEnemyDeathAbility != nullptr;
 }
 
-bool UJargonRelicDefinition::IsValidDefinition() const
+bool UJargonArtifactDefinition::IsValidDefinition() const
 {
 	return !DisplayName.IsEmpty()
 		&& HasAnyEffects()
@@ -76,11 +76,10 @@ bool UJargonRelicDefinition::IsValidDefinition() const
 		&& (!OnEnemyDeathAbility || OnEnemyDeathAbility->IsValidDefinition());
 }
 
-bool UJargonRelicDefinition::IsEligibleForHeroDefinition(const UJargonHeroDefinition* HeroDefinition) const
+bool UJargonArtifactDefinition::IsEligibleForHeroDefinition(const UJargonHeroDefinition* HeroDefinition) const
 {
 	const bool bRequiresHeroClass = EligibleHeroClasses.Num() > 0;
-	const bool bRequiresHeroAspect = EligibleHeroAspects.Num() > 0;
-	if (!bRequiresHeroClass && !bRequiresHeroAspect)
+	if (!bRequiresHeroClass)
 	{
 		return true;
 	}
@@ -90,21 +89,8 @@ bool UJargonRelicDefinition::IsEligibleForHeroDefinition(const UJargonHeroDefini
 		return false;
 	}
 
-	if (bRequiresHeroClass && !EligibleHeroClasses.Contains(HeroDefinition->HeroClass))
+	if (!EligibleHeroClasses.Contains(HeroDefinition->HeroClass))
 	{
-		return false;
-	}
-
-	if (bRequiresHeroAspect)
-	{
-		for (const EJargonHeroAspect EligibleAspect : EligibleHeroAspects)
-		{
-			if (EligibleAspect != EJargonHeroAspect::None && HeroDefinition->FindAspectDefinitionByAspect(EligibleAspect))
-			{
-				return true;
-			}
-		}
-
 		return false;
 	}
 
@@ -112,7 +98,7 @@ bool UJargonRelicDefinition::IsEligibleForHeroDefinition(const UJargonHeroDefini
 }
 
 #if WITH_EDITOR
-EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext& Context) const
+EDataValidationResult UJargonArtifactDefinition::IsDataValid(FDataValidationContext& Context) const
 {
 	Super::IsDataValid(Context);
 
@@ -123,7 +109,7 @@ EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext
 
 	if (!HasAnyEffects())
 	{
-		JargonDataAssetValidation::AddError(Context, this, TEXT("No boon effects authored. At least one combat-start, turn-start, or enemy-death effect is required."));
+		JargonDataAssetValidation::AddError(Context, this, TEXT("No artifact effects authored. At least one combat-start, turn-start, or enemy-death effect is required."));
 	}
 
 	if (EligibleHeroClasses.Contains(EJargonHeroClass::None))
@@ -131,24 +117,24 @@ EDataValidationResult UJargonRelicDefinition::IsDataValid(FDataValidationContext
 		JargonDataAssetValidation::AddWarning(Context, this, TEXT("EligibleHeroClasses contains None; remove it or leave the array empty to allow any class."));
 	}
 
-	if (EligibleHeroAspects.Contains(EJargonHeroAspect::None))
+	if (ArtifactRole == EJargonArtifactRole::ClassDefault && EligibleHeroClasses.Num() == 0)
 	{
-		JargonDataAssetValidation::AddWarning(Context, this, TEXT("EligibleHeroAspects contains None; remove it or leave the array empty to allow any aspect kit."));
+		JargonDataAssetValidation::AddWarning(Context, this, TEXT("Class Default artifacts should normally restrict EligibleHeroClasses to the owning hero class."));
 	}
 
 	if (OnCombatStartAbility)
 	{
-		ValidateRelicAbilityForHook(this, OnCombatStartAbility, TEXT("OnCombatStartAbility"), EJargonEffectTrigger::OnCombatStart, EJargonAbilityHookContextType::BoonCombatStart, Context);
+		ValidateArtifactAbilityForHook(this, OnCombatStartAbility, TEXT("OnCombatStartAbility"), EJargonEffectTrigger::OnCombatStart, EJargonAbilityHookContextType::ArtifactCombatStart, Context);
 	}
 
 	if (OnPlayerTurnStartAbility)
 	{
-		ValidateRelicAbilityForHook(this, OnPlayerTurnStartAbility, TEXT("OnPlayerTurnStartAbility"), EJargonEffectTrigger::OnTurnStart, EJargonAbilityHookContextType::BoonPlayerTurnStart, Context);
+		ValidateArtifactAbilityForHook(this, OnPlayerTurnStartAbility, TEXT("OnPlayerTurnStartAbility"), EJargonEffectTrigger::OnTurnStart, EJargonAbilityHookContextType::ArtifactPlayerTurnStart, Context);
 	}
 
 	if (OnEnemyDeathAbility)
 	{
-		ValidateRelicAbilityForHook(this, OnEnemyDeathAbility, TEXT("OnEnemyDeathAbility"), EJargonEffectTrigger::OnEnemyDeath, EJargonAbilityHookContextType::BoonEnemyDeath, Context);
+		ValidateArtifactAbilityForHook(this, OnEnemyDeathAbility, TEXT("OnEnemyDeathAbility"), EJargonEffectTrigger::OnEnemyDeath, EJargonAbilityHookContextType::ArtifactEnemyDeath, Context);
 	}
 
 	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;

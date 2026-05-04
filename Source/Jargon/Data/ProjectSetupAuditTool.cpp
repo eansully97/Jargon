@@ -2,7 +2,7 @@
 
 #include "Data/CardDefinition.h"
 #include "Data/CardPackDefinition.h"
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 #include "Exploration/Interactables/ExplorationRewardInteractable.h"
 
 #if WITH_EDITOR
@@ -33,7 +33,7 @@ const FName DefaultCardScanPath(TEXT("/Game/Jargon/Data/Cards"));
 const FName LegacyCardScanPath(TEXT("/Game/Jargon/Cards"));
 const FName DefaultPackScanPath(TEXT("/Game/Jargon/Data/CardPacks"));
 const FName LegacyPackScanPath(TEXT("/Game/Jargon/CardPacks"));
-const FName DefaultRelicScanPath(TEXT("/Game/Jargon/Data/Relics"));
+const FName DefaultArtifactScanPath(TEXT("/Game/Jargon/Data/Artifacts"));
 const FName DefaultRewardBlueprintScanPath(TEXT("/Game/Jargon/Blueprints"));
 const FName TopDownTemplatePath(TEXT("/Game/TopDown"));
 const FName VariantStrategyTemplatePath(TEXT("/Game/Variant_Strategy"));
@@ -369,7 +369,7 @@ void AuditTownMapExplorationContent(TArray<FProjectAuditRow>& Rows, IAssetRegist
 		const FString DependencyString = Dependency.ToString();
 		if (DependencyString.Contains(TEXT("ExplorationEnemy")) ||
 			DependencyString.Contains(TEXT("CurrencyCache")) ||
-			DependencyString.Contains(TEXT("RelicReward")))
+			DependencyString.Contains(TEXT("ArtifactReward")))
 		{
 			AddRow(
 				Rows,
@@ -714,14 +714,14 @@ void AuditDataAssetCounts(
 	TArray<FProjectAuditRow>& Rows,
 	const TArray<FName>& CardScanPaths,
 	const TArray<FName>& PackScanPaths,
-	const TArray<FName>& RelicScanPaths)
+	const TArray<FName>& ArtifactScanPaths)
 {
 	TArray<UCardDefinition*> Cards;
 	TArray<UCardPackDefinition*> Packs;
-	TArray<UJargonRelicDefinition*> Relics;
+	TArray<UJargonArtifactDefinition*> Artifacts;
 	LoadAssetsFromPaths(CardScanPaths, Cards);
 	LoadAssetsFromPaths(PackScanPaths, Packs);
-	LoadAssetsFromPaths(RelicScanPaths, Relics);
+	LoadAssetsFromPaths(ArtifactScanPaths, Artifacts);
 
 	AddRow(
 		Rows,
@@ -741,11 +741,11 @@ void AuditDataAssetCounts(
 
 	AddRow(
 		Rows,
-		Relics.Num() > 0 ? TEXT("Info") : TEXT("Warning"),
+		Artifacts.Num() > 0 ? TEXT("Info") : TEXT("Warning"),
 		TEXT("Data Assets"),
-		TEXT("Relics"),
-		Relics.Num() > 0 ? TEXT("Found") : TEXT("Missing"),
-		FString::Printf(TEXT("Found %d relic definitions under configured scan paths."), Relics.Num()));
+		TEXT("Artifacts"),
+		Artifacts.Num() > 0 ? TEXT("Found") : TEXT("Missing"),
+		FString::Printf(TEXT("Found %d artifact definitions under configured scan paths."), Artifacts.Num()));
 }
 
 void AuditRewardInteractables(TArray<FProjectAuditRow>& Rows, const TArray<FName>& RewardBlueprintScanPaths)
@@ -820,7 +820,7 @@ UProjectSetupAuditTool::UProjectSetupAuditTool()
 	CardScanPaths.Add(UE::Jargon::ProjectSetupAuditToolPrivate::LegacyCardScanPath);
 	PackScanPaths.Add(UE::Jargon::ProjectSetupAuditToolPrivate::DefaultPackScanPath);
 	PackScanPaths.Add(UE::Jargon::ProjectSetupAuditToolPrivate::LegacyPackScanPath);
-	RelicScanPaths.Add(DefaultRelicScanPath);
+	ArtifactScanPaths.Add(DefaultArtifactScanPath);
 	RewardBlueprintScanPaths.Add(DefaultRewardBlueprintScanPath);
 }
 
@@ -856,7 +856,7 @@ void UProjectSetupAuditTool::RunProjectSetupAudit()
 	{
 		PathsToScan.Add(Path.ToString());
 	}
-	for (const FName& Path : RelicScanPaths)
+	for (const FName& Path : ArtifactScanPaths)
 	{
 		PathsToScan.Add(Path.ToString());
 	}
@@ -954,7 +954,7 @@ void UProjectSetupAuditTool::RunProjectSetupAudit()
 		TEXT("Manual Layout Check"),
 		TEXT("Combat HUD expects per-element count bindings: FireChargeText, FrostChargeText, StormChargeText, NatureChargeText, RadianceChargeText, QuietusChargeText. Optional icon bindings use matching Icon names."));
 
-	AuditDataAssetCounts(Rows, CardScanPaths, PackScanPaths, RelicScanPaths);
+	AuditDataAssetCounts(Rows, CardScanPaths, PackScanPaths, ArtifactScanPaths);
 	AuditElementContent(Rows, CardScanPaths);
 	AuditRewardInteractables(Rows, RewardBlueprintScanPaths);
 

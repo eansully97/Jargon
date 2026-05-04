@@ -4,7 +4,7 @@
 #include "Combat/Effects/JargonEffectTypes.h"
 #include "Data/JargonAbilityDefinition.h"
 #include "Data/JargonHeroDefinition.h"
-#include "Data/JargonRelicDefinition.h"
+#include "Data/JargonArtifactDefinition.h"
 #include "Data/JargonSummonedUnitDefinition.h"
 #include "Data/JargonTileEffectDefinition.h"
 #include "Misc/FileHelper.h"
@@ -285,13 +285,17 @@ namespace
 	{
 		if (ObjectPath.Contains(TEXT("/Hero/Abilities/")))
 		{
-			if (ObjectPath.Contains(TEXT("CombatStart")))
+			if (ObjectPath.Contains(TEXT("_Class_")) && ObjectPath.Contains(TEXT("CombatStart")))
 			{
-				return EJargonAbilityHookContextType::HeroClassCombatStart;
+				return EJargonAbilityHookContextType::ArtifactCombatStart;
 			}
 			if (ObjectPath.Contains(TEXT("_Class_")) && ObjectPath.Contains(TEXT("TurnStart")))
 			{
-				return EJargonAbilityHookContextType::HeroClassTurnStart;
+				return EJargonAbilityHookContextType::ArtifactPlayerTurnStart;
+			}
+			if (ObjectPath.Contains(TEXT("CombatStart")))
+			{
+				return EJargonAbilityHookContextType::ArtifactCombatStart;
 			}
 			if (ObjectPath.Contains(TEXT("Transform")))
 			{
@@ -323,19 +327,19 @@ namespace
 			}
 		}
 
-		if (ObjectPath.Contains(TEXT("/Relics/Abilities/")))
+		if (ObjectPath.Contains(TEXT("/Artifacts/Abilities/")))
 		{
 			if (ObjectPath.Contains(TEXT("OnCombatStart")))
 			{
-				return EJargonAbilityHookContextType::BoonCombatStart;
+				return EJargonAbilityHookContextType::ArtifactCombatStart;
 			}
 			if (ObjectPath.Contains(TEXT("OnPlayerTurnStart")))
 			{
-				return EJargonAbilityHookContextType::BoonPlayerTurnStart;
+				return EJargonAbilityHookContextType::ArtifactPlayerTurnStart;
 			}
 			if (ObjectPath.Contains(TEXT("OnEnemyDeath")))
 			{
-				return EJargonAbilityHookContextType::BoonEnemyDeath;
+				return EJargonAbilityHookContextType::ArtifactEnemyDeath;
 			}
 		}
 
@@ -365,7 +369,7 @@ int32 UJargonAbilityContextMigrationCommandlet::Main(const FString& Params)
 	TArray<UJargonHeroDefinition*> Heroes;
 	TArray<UJargonSummonedUnitDefinition*> Summons;
 	TArray<UJargonTileEffectDefinition*> TileEffects;
-	TArray<UJargonRelicDefinition*> Relics;
+	TArray<UJargonArtifactDefinition*> Artifacts;
 	TArray<UJargonAbilityDefinition*> Abilities;
 
 	for (const FAssetData& AssetData : AssetDataList)
@@ -388,9 +392,9 @@ int32 UJargonAbilityContextMigrationCommandlet::Main(const FString& Params)
 		{
 			TileEffects.Add(TileEffect);
 		}
-		else if (UJargonRelicDefinition* Relic = Cast<UJargonRelicDefinition>(Asset))
+		else if (UJargonArtifactDefinition* Artifact = Cast<UJargonArtifactDefinition>(Asset))
 		{
-			Relics.Add(Relic);
+			Artifacts.Add(Artifact);
 		}
 		else if (UJargonAbilityDefinition* Ability = Cast<UJargonAbilityDefinition>(Asset))
 		{
@@ -404,9 +408,6 @@ int32 UJargonAbilityContextMigrationCommandlet::Main(const FString& Params)
 
 	for (const UJargonHeroDefinition* Hero : Heroes)
 	{
-		SetAbilityHookContext(Hero->CombatStartPassive.Ability, EJargonAbilityHookContextType::HeroClassCombatStart, TEXT("Referenced by hero combat-start passive."), PackagesToSave, Rows);
-		SetAbilityHookContext(Hero->PlayerTurnStartPassive.Ability, EJargonAbilityHookContextType::HeroClassTurnStart, TEXT("Referenced by hero player-turn-start passive."), PackagesToSave, Rows);
-
 		for (const FJargonHeroAspectDefinition& Aspect : Hero->HeroAspects)
 		{
 			SetAbilityHookContext(Aspect.TransformationAbility, EJargonAbilityHookContextType::HeroAspectTransformed, TEXT("Referenced by hero aspect transformation hook."), PackagesToSave, Rows);
@@ -431,11 +432,11 @@ int32 UJargonAbilityContextMigrationCommandlet::Main(const FString& Params)
 		ApplyAuraTriggerTargetingDefaults(TileEffect, PackagesToSave, Rows);
 	}
 
-	for (const UJargonRelicDefinition* Relic : Relics)
+	for (const UJargonArtifactDefinition* Artifact : Artifacts)
 	{
-		SetAbilityHookContext(Relic->OnCombatStartAbility, EJargonAbilityHookContextType::BoonCombatStart, TEXT("Referenced by hero boon combat-start hook."), PackagesToSave, Rows);
-		SetAbilityHookContext(Relic->OnPlayerTurnStartAbility, EJargonAbilityHookContextType::BoonPlayerTurnStart, TEXT("Referenced by hero boon player-turn-start hook."), PackagesToSave, Rows);
-		SetAbilityHookContext(Relic->OnEnemyDeathAbility, EJargonAbilityHookContextType::BoonEnemyDeath, TEXT("Referenced by hero boon enemy-death hook."), PackagesToSave, Rows);
+		SetAbilityHookContext(Artifact->OnCombatStartAbility, EJargonAbilityHookContextType::ArtifactCombatStart, TEXT("Referenced by hero artifact combat-start hook."), PackagesToSave, Rows);
+		SetAbilityHookContext(Artifact->OnPlayerTurnStartAbility, EJargonAbilityHookContextType::ArtifactPlayerTurnStart, TEXT("Referenced by hero artifact player-turn-start hook."), PackagesToSave, Rows);
+		SetAbilityHookContext(Artifact->OnEnemyDeathAbility, EJargonAbilityHookContextType::ArtifactEnemyDeath, TEXT("Referenced by hero artifact enemy-death hook."), PackagesToSave, Rows);
 	}
 
 	for (UJargonAbilityDefinition* Ability : Abilities)

@@ -4,7 +4,7 @@ Date: 2026-05-02
 
 ## Summary
 
-Jargon should keep a small shared effect language that is easy to author, validate, trace, and reuse across cards, summons, traps, auras, hero passives, boons, and tile effects.
+Jargon should keep a small shared effect language that is easy to author, validate, trace, and reuse across cards, summons, traps, auras, hero passives, artifacts, and tile effects.
 
 The intended model is:
 

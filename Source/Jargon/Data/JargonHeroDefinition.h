@@ -8,23 +8,7 @@
 class USkeletalMesh;
 class UTexture2D;
 class UJargonAbilityDefinition;
-
-USTRUCT(BlueprintType)
-struct JARGON_API FJargonHeroClassPassiveDefinition
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Class Abilities", meta = (AdvancedDisplay, ToolTip = "Optional player-facing passive label used by combat cues and HUD text. Empty names fall back to the assigned ability label or hero display name."))
-	FText PassiveName;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Class Abilities", meta = (ToolTip = "Reusable ability definition for this class passive hook. Hero class passives are ability-authored only."))
-	TObjectPtr<UJargonAbilityDefinition> Ability = nullptr;
-
-	bool HasEffects() const
-	{
-		return Ability != nullptr;
-	}
-};
+class UJargonArtifactDefinition;
 
 USTRUCT(BlueprintType)
 struct JARGON_API FJargonHeroAspectDefinition
@@ -73,7 +57,7 @@ struct JARGON_API FJargonHeroAspectDefinition
 };
 
 /**
- * Base hero identity, combat stats, passives, and elemental aspect tuning.
+ * Base hero identity, combat stats, default class artifact, and elemental aspect tuning.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "Jargon Hero Definition"))
 class JARGON_API UJargonHeroDefinition : public UPrimaryDataAsset
@@ -108,11 +92,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Optional UI", meta = (AdvancedDisplay, ToolTip = "Optional portrait for future UI. It is not used by combat yet."))
 	TObjectPtr<UTexture2D> Portrait = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Class Abilities", meta = (DisplayName = "Combat Start Passive", ToolTip = "Class passive resolved once on the first player turn. Assign an ability definition or leave empty for no combat-start passive."))
-	FJargonHeroClassPassiveDefinition CombatStartPassive;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Class Abilities", meta = (DisplayName = "Player Turn Start Passive", ToolTip = "Class passive resolved at the start of each player turn. Assign an ability definition or leave empty for no turn-start passive."))
-	FJargonHeroClassPassiveDefinition PlayerTurnStartPassive;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Class Artifact", meta = (ToolTip = "Default Artifact seeded into a new run for this hero. This Artifact owns the hero's base class ability layout and is separate from Aspect transformations."))
+	TObjectPtr<UJargonArtifactDefinition> DefaultClassArtifact = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hero|Aspect Kit", meta = (TitleProperty = "DisplayName", ToolTip = "Aspect transformations this hero can enter when the matching element reaches the combat element charge cap. Empty arrays mean this hero has no aspect transformations."))
 	TArray<FJargonHeroAspectDefinition> HeroAspects;
